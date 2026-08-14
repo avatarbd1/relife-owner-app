@@ -183,10 +183,11 @@ export function webauthnConfig(): { rpID: string; origin: string } {
   };
 }
 
-function webauthnUserId(staffId: string): { bytes: Uint8Array; encoded: string } {
-  const bytes = createHash("sha256")
+function webauthnUserId(staffId: string): { bytes: Uint8Array<ArrayBuffer>; encoded: string } {
+  const digest = createHash("sha256")
     .update(`relife-webauthn-user:${staffId.trim()}`)
     .digest();
+  const bytes = new Uint8Array(Array.from(digest));
   return { bytes, encoded: Buffer.from(bytes).toString("base64url") };
 }
 
