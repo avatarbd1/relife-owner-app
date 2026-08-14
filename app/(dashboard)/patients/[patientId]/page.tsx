@@ -22,6 +22,9 @@ export default async function PatientFilePage({
   const appointments = await getPatientAppointmentsForContext(context, patient);
   const canSeeMoney = canPerform(context, "payment.read_amount", patient.department);
   const canCreateAppointment = canPerform(context, "appointment.create", patient.department);
+  const canSeeClinical =
+    patient.department === "Physio" &&
+    canPerform(context, "clinical.read", patient.department);
 
   return (
     <div className="space-y-4">
@@ -31,7 +34,7 @@ export default async function PatientFilePage({
           <h2 className="truncate text-lg font-semibold text-slate-900">{patient.fullName}</h2>
           <p className="text-xs text-slate-500">{patient.patientId}</p>
         </div>
-        <Link href="/patients" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">
+        <Link href="/patients" className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 active:bg-slate-50">
           Back
         </Link>
       </div>
@@ -54,13 +57,25 @@ export default async function PatientFilePage({
         <p className="text-sm leading-6 text-slate-700">{patient.diagnosis || "No diagnosis recorded."}</p>
       </Card>
 
-      {canCreateAppointment && (
-        <Link
-          href={`/appointments/new?patientId=${encodeURIComponent(patient.patientId)}`}
-          className="block rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white"
-        >
-          + নতুন Appointment
-        </Link>
+      {(canSeeClinical || canCreateAppointment) && (
+        <div className="grid grid-cols-2 gap-3">
+          {canSeeClinical && (
+            <Link
+              href={`/patients/${encodeURIComponent(patient.patientId)}/clinical`}
+              className="flex min-h-14 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
+            >
+              Clinical file
+            </Link>
+          )}
+          {canCreateAppointment && (
+            <Link
+              href={`/appointments/new?patientId=${encodeURIComponent(patient.patientId)}`}
+              className="flex min-h-14 items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
+            >
+              + Appointment
+            </Link>
+          )}
+        </div>
       )}
 
       <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
