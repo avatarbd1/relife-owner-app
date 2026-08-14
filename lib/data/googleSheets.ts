@@ -215,3 +215,79 @@ export async function appendSheetValues(
     );
   }
 }
+
+export type SpreadsheetBatchRequest = Record<string, unknown>;
+
+type SheetProperties = { sheetId: number; title: string };
+
+let sheetPropertiesCache = new Map<
+  Workbook,
+  { createdAt: number; values: SheetProperties[] }
+>();
+
+export async function getSheetProperties(
+  workbook: Workbook
+): Promise<SheetProperties[]> {
+  const cached = sheetPropertiesCache.get(workbook);
+  if (cached && Date.now() - cached.createdAt < 5 * 60_000) {
+    return cached.values;
+  }
+
+  const token = await getAccessToken();
+  const spreadsheetId = sheetIdFor(workbook);
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      spreadsheetId
+    )}?fields=sheets.properties(sheetId,title)`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Google Sheets metadata read failed for ${workbook}: HTTP ${response.status}`
+    );
+  }
+  const payload = (await response.json()) as {
+    sheets?: Array<{ properties?: { sheetId?: number; title?: string } }>;
+  };
+  const values = (payload.sheets || []).flatMap((sheet) => {
+    const id = sheet.properties?.sheetId;
+    const title = sheet.properties?.title;
+    return typeof id === "number" && title ? [{ sheetId: id, title }] : [];
+  });
+  sheetPropertiesCache.set(workbook, { createdAt: Date.now(), values });
+  return values;
+}
+
+export async function batchUpdateSpreadsheet(
+  workbook: Workbook,
+  requests: SpreadsheetBatchRequest[]
+): Promise<void> {
+  if (requests.length === 0) return;
+  const token = await getAccessToken();
+  const spreadsheetId = sheetIdFor(workbook);
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      spreadsheetId
+    )}:batchUpdate`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ requests, includeSpreadsheetInResponse: false }),
+      cache: "no-store",
+    }
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Google Sheets batch update failed for ${workbook}: HTTP ${response.status}${
+        detail ? ` ${detail.slice(0, 300)}` : ""
+      }`
+    );
+  }
+}
