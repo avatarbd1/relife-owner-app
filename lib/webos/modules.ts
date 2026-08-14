@@ -63,7 +63,7 @@ export const WEB_OS_MODULES: readonly WebOsModule[] = [
     id: "appointments",
     label: "Appointments and today schedule",
     phase: "W2",
-    state: "not_migrated",
+    state: "partial",
     source: "Appointment/today schedule workflows",
     parityGate: "Collision-safe create/update and department-scoped schedule",
   },
