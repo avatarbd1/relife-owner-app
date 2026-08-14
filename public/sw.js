@@ -1,16 +1,18 @@
-// Minimal service worker for PWA installability.
-// This app is read-only and always wants fresh data, so we intentionally
-// do NOT cache API/data responses — just pass everything through to the
-// network. Having an active service worker with a fetch handler is what
-// lets Chrome/Android treat this as an installable app.
-self.addEventListener("install", () => {
-  self.skipWaiting();
+const CACHE_VERSION = "relife-owner-pwa-v1";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key)))
+    ).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
   event.respondWith(fetch(event.request));
 });
