@@ -62,6 +62,64 @@ function effectivePaidDate(row: { date: string; paidAt?: string }): string {
   return normalizedDate(row.paidAt || row.date);
 }
 
+type ClinicDepartment = "Physio" | "Dental";
+
+// Mirrors the confirmed production-bot finance contract. Matching paid expense
+// rows replace these commitments rather than being added again; if actual paid
+// for a fixed category exceeds its commitment, the higher actual amount wins.
+const FIXED_MONTHLY_OVERHEAD: Record<
+  ClinicDepartment,
+  Record<string, number>
+> = {
+  Physio: {
+    "চেম্বার ভাড়া": 13_000,
+  },
+  Dental: {
+    Receptionist: 6_000,
+    "চেম্বার ভাড়া": 10_000,
+    "ক্লিনার বেতন": 3_000,
+  },
+};
+
+function fixedCategoryCommitment(
+  department: Department,
+  category: string
+): number | undefined {
+  if (department !== "Physio" && department !== "Dental") return undefined;
+  return FIXED_MONTHLY_OVERHEAD[department][String(category || "").trim()];
+}
+
+function isFixedOverheadExpense(expense: Expense): boolean {
+  return fixedCategoryCommitment(expense.department, expense.category) !== undefined;
+}
+
+function fixedOverheadForDepartment(
+  department: ClinicDepartment,
+  expenses: Expense[],
+  now: Date
+): number {
+  const commitments = FIXED_MONTHLY_OVERHEAD[department];
+  let total = 0;
+
+  for (const [category, commitment] of Object.entries(commitments)) {
+    const actual = expenses
+      .filter(
+        (expense) =>
+          expense.department === department &&
+          expense.category.trim() === category &&
+          isSameMonth(expense.date, now) &&
+          isPaid(expense.status) &&
+          !expense.isHouseholdWithdrawal &&
+          String(expense.expenseType || "Clinic Expense").trim() ===
+            "Clinic Expense"
+      )
+      .reduce((sum, expense) => sum + expense.amount, 0);
+    total += Math.max(commitment, actual);
+  }
+
+  return total;
+}
+
 type Custodian = "Reception" | "HomeTreasury" | "Bank";
 
 function normalizeCustodian(value: string | undefined): Custodian | null {
@@ -219,12 +277,21 @@ export interface MonthBusinessPosition {
   surplusOrUncovered: number;
 }
 
-/**
- * Fixed overhead will be wired to its confirmed owner source separately.
- * Until then, return 0 rather than inventing a number.
- */
-async function getFixedOverhead(_scope: Scope): Promise<number> {
-  return 0;
+async function getFixedOverhead(
+  scope: Scope,
+  expenses: Expense[],
+  now: Date
+): Promise<number> {
+  if (scope === "physio") {
+    return fixedOverheadForDepartment("Physio", expenses, now);
+  }
+  if (scope === "dental") {
+    return fixedOverheadForDepartment("Dental", expenses, now);
+  }
+  return (
+    fixedOverheadForDepartment("Physio", expenses, now) +
+    fixedOverheadForDepartment("Dental", expenses, now)
+  );
 }
 
 export async function getMonthBusinessPosition(
@@ -247,7 +314,8 @@ export async function getMonthBusinessPosition(
         isSameMonth(e.date, now) &&
         isPaid(e.status) &&
         !e.isHouseholdWithdrawal &&
-        String(e.expenseType || "Clinic Expense").trim() === "Clinic Expense"
+        String(e.expenseType || "Clinic Expense").trim() === "Clinic Expense" &&
+        !isFixedOverheadExpense(e)
     )
     .reduce((sum, e) => sum + e.amount, 0);
 
@@ -255,7 +323,7 @@ export async function getMonthBusinessPosition(
     .filter((s) => s.status === "Active")
     .reduce((sum, s) => sum + s.salary, 0);
 
-  const fixedOverhead = await getFixedOverhead(scope);
+  const fixedOverhead = await getFixedOverhead(scope, expenses, now);
   const totalBusinessLiability =
     variableClinicExpense + fixedOverhead + fixedSalaryCommitment;
 
