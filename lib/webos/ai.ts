@@ -184,9 +184,14 @@ function safeRows(rows: string[][], sheetName: string): Record<string, string>[]
   if (rows.length < 2) return [];
   const headers = rows[0];
   const deptIdx = headerIndex(headers, "Department");
+  const primaryDeptIdx = headerIndex(headers, "Primary_Department");
   const fields = SAFE_FIELDS[sheetName] || [];
   return rows.slice(1).flatMap((row) => {
     if (deptIdx >= 0 && at(row, deptIdx) !== "Physio") return [];
+    if (sheetName === "08_Staff") {
+      const primary = at(row, primaryDeptIdx);
+      if (primary !== "Physio" && primary !== "All") return [];
+    }
     const item: Record<string, string> = {};
     for (const field of fields) {
       const index = headerIndex(headers, field);
@@ -208,7 +213,7 @@ export async function answerStaffAi(
   const records = safeRows(snapshot[source] || [], source);
   const system = [
     "You are a clinic operations analyst answering the Relife owner in Bangla.",
-    "Use only the supplied de-identified operational rows. Do not infer missing people or records.",
+    "Use only the supplied de-identified Physio operational rows. Do not infer missing people or records.",
     "Give exact arithmetic when possible and say when the available data is insufficient.",
     "Never request or expose patient/staff names, phone numbers, addresses, IDs or receipt numbers.",
   ].join("\n");
