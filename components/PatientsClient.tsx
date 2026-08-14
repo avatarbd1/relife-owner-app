@@ -1,13 +1,27 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { PatientRecord } from "@/lib/patients";
+
+type PatientView = {
+  patientId: string;
+  registrationDate: string;
+  fullName: string;
+  phone: string;
+  age: string;
+  gender: string;
+  address: string;
+  department: "Physio" | "Dental" | "All";
+  diagnosis: string;
+  therapist: string;
+  due: number;
+  status: string;
+};
 
 function bdt(value: number): string {
   return `৳${new Intl.NumberFormat("en-BD", { maximumFractionDigits: 0 }).format(value)}`;
 }
 
-export default function PatientsClient({ patients }: { patients: PatientRecord[] }) {
+export default function PatientsClient({ patients }: { patients: PatientView[] }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
 
