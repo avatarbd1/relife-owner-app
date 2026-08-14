@@ -4,8 +4,8 @@ import RegisterSW from "@/components/RegisterSW";
 
 export const metadata: Metadata = {
   title: "Relife Owner",
-  description: "Relife Clinic — Owner dashboard (Physio + Dental)",
-  manifest: "/manifest: "/manifest.json",
+  description: "Relife Clinic Owner dashboard (Physio + Dental)",
+  manifest: "/manifest.json",
   icons: {
     icon: [
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
