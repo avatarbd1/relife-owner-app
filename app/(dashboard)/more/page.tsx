@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 import OwnerControlsClient from "@/components/OwnerControlsClient";
 import { getOwnerControlSnapshot } from "@/lib/controls";
@@ -28,5 +29,19 @@ export default async function MorePage() {
           ),
         };
 
-  return <OwnerControlsClient snapshot={scopedSnapshot} />;
+  return (
+    <div className="space-y-4">
+      <Link
+        href="/security/passkeys"
+        className="flex min-h-14 items-center justify-between rounded-2xl bg-slate-900 px-4 py-3 text-white shadow-sm transition duration-150 active:scale-[0.99] motion-reduce:transition-none"
+      >
+        <div>
+          <p className="text-sm font-semibold">🔐 Fingerprint / Face ID</p>
+          <p className="mt-0.5 text-xs text-slate-400">Add or remove secure device passkeys</p>
+        </div>
+        <span aria-hidden="true" className="text-slate-400">›</span>
+      </Link>
+      <OwnerControlsClient snapshot={scopedSnapshot} />
+    </div>
+  );
 }
