@@ -115,7 +115,7 @@ async function driveAccessToken(): Promise<string> {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth-type:jwt-bearer".replace("oauth-type", "oauth"),
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion,
     }),
     cache: "no-store",
@@ -159,8 +159,7 @@ async function uploadToDrive(
     }
   );
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`DRIVE_UPLOAD_HTTP_${response.status}${detail ? `:${detail.slice(0, 160)}` : ""}`);
+    throw new Error(`DRIVE_UPLOAD_HTTP_${response.status}`);
   }
   const payload = (await response.json()) as { id?: string; webViewLink?: string };
   if (!payload.id) throw new Error("DRIVE_UPLOAD_NO_ID");
