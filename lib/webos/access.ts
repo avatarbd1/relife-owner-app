@@ -122,6 +122,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
   Therapist: new Set<WebAction>([
     "patient.read",
     "appointment.read",
+    "appointment.create",
     "attendance.self",
     "clinical.read",
     "clinical.write",
@@ -131,6 +132,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
   Dentist: new Set<WebAction>([
     "patient.read",
     "appointment.read",
+    "appointment.create",
     "attendance.self",
     "clinical.read",
     "clinical.write",
