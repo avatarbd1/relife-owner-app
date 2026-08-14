@@ -15,7 +15,10 @@ export default function ScopeSelector({ current }: { current: Scope }) {
   const [isPending, startTransition] = useTransition();
 
   async function select(scope: Scope) {
-    if (scope === current) return;
+    if (scope === current || isPending) return;
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate(8);
+    }
     await fetch("/api/scope", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -28,23 +31,25 @@ export default function ScopeSelector({ current }: { current: Scope }) {
 
   return (
     <div
-      className="flex w-full rounded-full bg-slate-800 p-1 text-sm font-medium"
+      className="flex w-full rounded-2xl bg-slate-800 p-1 text-sm font-semibold"
       role="tablist"
       aria-label="Department scope"
+      aria-busy={isPending}
     >
       {OPTIONS.map((opt) => {
         const active = opt.value === current;
         return (
           <button
             key={opt.value}
+            type="button"
             role="tab"
             aria-selected={active}
             onClick={() => select(opt.value)}
             disabled={isPending}
-            className={`flex-1 rounded-full py-2 transition-colors ${
+            className={`min-h-12 flex-1 select-none rounded-xl px-2 transition duration-100 active:scale-[0.97] disabled:opacity-70 ${
               active
-                ? "bg-white text-slate-900"
-                : "text-slate-300 active:text-white"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-300 active:bg-slate-700 active:text-white"
             }`}
           >
             {opt.label}
