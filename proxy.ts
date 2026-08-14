@@ -17,6 +17,7 @@ export function proxy(request: NextRequest) {
 
   const isPublic =
     PUBLIC_PATHS.some((p) => pathname === p) ||
+    pathname.startsWith("/api/auth/webauthn/authenticate/") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");
 
