@@ -1,0 +1,213 @@
+import type { Department } from "@/lib/types";
+
+export type WebRole =
+  | "Owner"
+  | "Manager"
+  | "Receptionist"
+  | "Therapist"
+  | "Dentist"
+  | "Dental_Assistant"
+  | "Auditor"
+  | "System Admin";
+
+export type WebAction =
+  | "patient.read"
+  | "patient.create"
+  | "patient.update"
+  | "appointment.read"
+  | "appointment.create"
+  | "appointment.update"
+  | "payment.read_amount"
+  | "payment.create"
+  | "payment.void"
+  | "report.read_operational"
+  | "report.read_financial"
+  | "expense.request"
+  | "expense.approve"
+  | "expense.pay"
+  | "cash.request"
+  | "cash.accept"
+  | "salary.read"
+  | "salary.pay"
+  | "attendance.self"
+  | "attendance.read_team"
+  | "clinical.read"
+  | "clinical.write"
+  | "clinical.clearance_read"
+  | "inventory.read"
+  | "inventory.write"
+  | "audit.read"
+  | "settings.manage";
+
+export interface AccessContext {
+  staffId: string;
+  roles: WebRole[];
+  primaryDepartment: Department;
+  /** Explicit authorization scope. Never infer All from a missing value. */
+  departmentAccess: Department[];
+}
+
+export interface AccessConditions {
+  /** Required for Therapist/Dentist clinical writes. */
+  assignedToCurrentStaff?: boolean;
+  /** Explicit, date-bound cross-cover can substitute for direct assignment. */
+  currentDayCrossCover?: boolean;
+}
+
+const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
+  Owner: new Set<WebAction>([
+    "patient.read",
+    "patient.create",
+    "patient.update",
+    "appointment.read",
+    "appointment.create",
+    "appointment.update",
+    "payment.read_amount",
+    "payment.create",
+    "payment.void",
+    "report.read_operational",
+    "report.read_financial",
+    "expense.request",
+    "expense.approve",
+    "expense.pay",
+    "cash.request",
+    "cash.accept",
+    "salary.read",
+    "salary.pay",
+    "attendance.self",
+    "attendance.read_team",
+    "clinical.read",
+    "clinical.write",
+    "clinical.clearance_read",
+    "inventory.read",
+    "inventory.write",
+    "audit.read",
+    "settings.manage",
+  ]),
+  Manager: new Set<WebAction>([
+    "patient.read",
+    "patient.create",
+    "patient.update",
+    "appointment.read",
+    "appointment.create",
+    "appointment.update",
+    "report.read_operational",
+    "expense.request",
+    "cash.accept",
+    "attendance.self",
+    "attendance.read_team",
+    "clinical.read",
+    "clinical.clearance_read",
+    "inventory.read",
+    "inventory.write",
+  ]),
+  Receptionist: new Set<WebAction>([
+    "patient.read",
+    "patient.create",
+    "patient.update",
+    "appointment.read",
+    "appointment.create",
+    "appointment.update",
+    "payment.read_amount",
+    "payment.create",
+    "report.read_operational",
+    "expense.request",
+    "expense.pay",
+    "cash.request",
+    "salary.read",
+    "attendance.self",
+    "inventory.read",
+    "inventory.write",
+  ]),
+  Therapist: new Set<WebAction>([
+    "patient.read",
+    "appointment.read",
+    "attendance.self",
+    "clinical.read",
+    "clinical.write",
+    "clinical.clearance_read",
+    "inventory.read",
+  ]),
+  Dentist: new Set<WebAction>([
+    "patient.read",
+    "appointment.read",
+    "attendance.self",
+    "clinical.read",
+    "clinical.write",
+    "clinical.clearance_read",
+    "inventory.read",
+  ]),
+  // Final production capabilities for this role remain deliberately empty
+  // until an explicit Dental Assistant allowlist is reviewed and tested.
+  Dental_Assistant: new Set<WebAction>([]),
+  Auditor: new Set<WebAction>([
+    "report.read_operational",
+    "report.read_financial",
+    "salary.read",
+    "attendance.read_team",
+    "audit.read",
+  ]),
+  // System Admin is not a clinical role and receives no implicit patient data.
+  "System Admin": new Set<WebAction>(["settings.manage"]),
+};
+
+function uniqueKnownDepartments(values: Department[]): Department[] {
+  return [...new Set(values.filter((value) => ["Physio", "Dental", "All"].includes(value)))];
+}
+
+export function canAccessDepartment(
+  context: AccessContext,
+  recordDepartment: Department
+): boolean {
+  if (!context.staffId.trim() || context.roles.length === 0) return false;
+  const access = uniqueKnownDepartments(context.departmentAccess);
+  if (access.length === 0) return false;
+  if (access.includes("All")) return true;
+  if (recordDepartment === "All") return false;
+  return access.includes(recordDepartment);
+}
+
+function roleAllows(roles: WebRole[], action: WebAction): boolean {
+  return roles.some((role) => ROLE_ACTIONS[role]?.has(action));
+}
+
+export function canPerform(
+  context: AccessContext,
+  action: WebAction,
+  recordDepartment: Department,
+  conditions: AccessConditions = {}
+): boolean {
+  if (!canAccessDepartment(context, recordDepartment)) return false;
+  if (!roleAllows(context.roles, action)) return false;
+
+  if (action === "clinical.write") {
+    if (context.roles.includes("Owner")) return true;
+    const isClinician =
+      context.roles.includes("Therapist") || context.roles.includes("Dentist");
+    if (!isClinician) return false;
+    return Boolean(
+      conditions.assignedToCurrentStaff || conditions.currentDayCrossCover
+    );
+  }
+
+  return true;
+}
+
+export function assertCanPerform(
+  context: AccessContext,
+  action: WebAction,
+  recordDepartment: Department,
+  conditions: AccessConditions = {}
+): void {
+  if (!canPerform(context, action, recordDepartment, conditions)) {
+    throw new Error("ACCESS_DENIED");
+  }
+}
+
+export function actionsForRoles(roles: WebRole[]): WebAction[] {
+  const actions = new Set<WebAction>();
+  for (const role of roles) {
+    for (const action of ROLE_ACTIONS[role] ?? []) actions.add(action);
+  }
+  return [...actions];
+}
