@@ -21,21 +21,24 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-10 bg-slate-900 px-4 pb-4 pt-[max(env(safe-area-inset-top),1rem)]">
-        <div className="flex items-center justify-between pb-3">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">
+      <header className="sticky top-0 z-20 bg-slate-900 px-4 pb-3 pt-[max(env(safe-area-inset-top),0.75rem)] shadow-sm">
+        <div className="flex min-h-12 items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
               Relife Clinic
             </p>
-            <h1 className="text-lg font-semibold text-white">Owner</h1>
+            <h1 className="truncate text-lg font-semibold leading-tight text-white">Owner</h1>
           </div>
-          {!IS_LIVE_DATA && (
-            <span className="rounded-full bg-amber-400/20 px-2.5 py-1 text-[11px] font-medium text-amber-300">
-              Sample data
-            </span>
-          )}
+
+          <div className="flex shrink-0 items-center gap-2">
+            {!IS_LIVE_DATA && (
+              <span className="rounded-full bg-amber-400/20 px-2.5 py-1 text-[10px] font-medium text-amber-300">
+                Sample
+              </span>
+            )}
+            <ScopeSelector current={scope} />
+          </div>
         </div>
-        <ScopeSelector current={scope} />
       </header>
 
       <main className="flex-1 bg-slate-100 px-4 py-4 pb-24">{children}</main>
