@@ -76,11 +76,23 @@ const ITEMS: NavItem[] = [
       ]),
   },
   {
-    href: "/more",
-    label: "More",
+    href: "/tools",
+    label: "Tools",
     icon: "☰",
-    matches: ["/more"],
-    visible: (roles) => roles.includes("Owner"),
+    matches: ["/tools", "/more"],
+    visible: (roles, actions) =>
+      roles.includes("Owner") ||
+      hasAny(actions, [
+        "inventory.read",
+        "inventory.write",
+        "clinical.read",
+        "clinical.write",
+        "salary.read",
+        "audit.read",
+        "settings.manage",
+        "attendance.self",
+        "attendance.read_team",
+      ]),
   },
 ];
 
@@ -93,15 +105,21 @@ function isActive(pathname: string, matches: string[]): boolean {
 export default function BottomNav({
   roles,
   actions,
+  hasPhysioAccess,
 }: {
   roles: WebRole[];
   actions: WebAction[];
+  hasPhysioAccess: boolean;
 }) {
   const pathname = usePathname();
   const visibleItems = useMemo(() => {
     const actionSet = new Set(actions);
-    return ITEMS.filter((item) => item.visible(roles, actionSet));
-  }, [actions, roles]);
+    return ITEMS.filter(
+      (item) =>
+        item.visible(roles, actionSet) &&
+        (item.href !== "/tools" || hasPhysioAccess)
+    );
+  }, [actions, roles, hasPhysioAccess]);
   const swipeRoutes = useMemo(
     () => visibleItems.map((item) => ({ href: item.href, matches: item.matches })),
     [visibleItems]

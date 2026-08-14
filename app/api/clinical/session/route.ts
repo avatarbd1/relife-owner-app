@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordTreatmentSession } from "@/lib/webos/clinical";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 
 function sameOrigin(request: NextRequest) {
   const origin = request.headers.get("origin");
@@ -30,6 +31,7 @@ export async function POST(request: NextRequest) {
       modification: body.modification,
       remarks: body.remarks,
     });
+    await consumePhysioInventorySystem(["Hand Gloves", "Tissue"], context.staffId, "Auto-Session");
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "SESSION_CREATE_FAILED";
