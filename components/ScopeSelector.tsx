@@ -31,23 +31,40 @@ function showOnPath(pathname: string): boolean {
   );
 }
 
-export default function ScopeSelector({ current }: { current: Scope }) {
+export default function ScopeSelector({
+  current,
+  allowed,
+}: {
+  current: Scope;
+  allowed: Scope[];
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allowedKey = allowed.join("|");
+  const options = OPTIONS.filter((option) => allowed.includes(option.value));
+  const initial = allowed.includes(current) ? current : allowed[0] ?? current;
   const [open, setOpen] = useState(false);
-  const [displayScope, setDisplayScope] = useState<Scope>(current);
+  const [displayScope, setDisplayScope] = useState<Scope>(initial);
   const [saving, setSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    setDisplayScope(current);
-  }, [current]);
+    const next = allowed.includes(current) ? current : allowed[0];
+    if (next) setDisplayScope(next);
+  }, [current, allowedKey]);
 
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -68,14 +85,14 @@ export default function ScopeSelector({ current }: { current: Scope }) {
     };
   }, [open]);
 
-  if (!showOnPath(pathname)) return null;
+  if (!showOnPath(pathname) || options.length <= 1) return null;
 
-  const label = OPTIONS.find((option) => option.value === displayScope)?.label ?? "Combined";
+  const label = options.find((option) => option.value === displayScope)?.label ?? options[0].label;
   const busy = saving || isPending;
 
-  function haptic() {
+  function haptic(ms = 8) {
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-      navigator.vibrate(8);
+      navigator.vibrate(ms);
     }
   }
 
@@ -86,13 +103,17 @@ export default function ScopeSelector({ current }: { current: Scope }) {
   }
 
   async function select(scope: Scope) {
-    setOpen(false);
-    if (scope === displayScope || busy) return;
+    if (!allowed.includes(scope) || scope === displayScope || busy) {
+      setOpen(false);
+      return;
+    }
 
     const previous = displayScope;
     setDisplayScope(scope);
     setSaving(true);
-    haptic();
+    haptic(10);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
 
     try {
       const response = await fetch("/api/scope", {
@@ -105,6 +126,7 @@ export default function ScopeSelector({ current }: { current: Scope }) {
     } catch (error) {
       console.error(error);
       setDisplayScope(previous);
+      setOpen(true);
     } finally {
       setSaving(false);
     }
@@ -144,12 +166,12 @@ export default function ScopeSelector({ current }: { current: Scope }) {
         aria-haspopup="listbox"
         aria-label={`Department scope: ${label}`}
         disabled={busy}
-        className="flex min-h-11 min-w-[116px] select-none items-center justify-between gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 text-sm font-semibold text-white shadow-sm backdrop-blur transition duration-150 active:scale-[0.97] active:bg-white/15 disabled:opacity-70"
+        className="flex min-h-11 min-w-[112px] select-none items-center justify-between gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 text-sm font-semibold text-white shadow-sm backdrop-blur transition duration-150 active:scale-[0.97] active:bg-white/15 disabled:opacity-70"
       >
         <span className="truncate">{label}</span>
         <span
           aria-hidden="true"
-          className={`text-xs text-slate-300 transition-transform duration-200 ${
+          className={`text-xs text-slate-300 transition-transform duration-300 ${
             open ? "rotate-180" : "rotate-0"
           }`}
         >
@@ -160,14 +182,14 @@ export default function ScopeSelector({ current }: { current: Scope }) {
       <div
         role="listbox"
         aria-label="Choose department scope"
-        className={`absolute right-0 top-[calc(100%+0.55rem)] z-30 w-56 origin-top overflow-hidden rounded-2xl bg-white p-2 shadow-2xl ring-1 ring-slate-200 transition-[opacity,transform] duration-200 ease-out ${
+        className={`absolute right-0 top-[calc(100%+0.55rem)] z-30 w-56 origin-top overflow-hidden rounded-2xl bg-white p-2 shadow-2xl ring-1 ring-slate-200 transition-[opacity,transform] duration-300 ease-out ${
           open
             ? "pointer-events-auto translate-y-0 scale-y-100 opacity-100"
             : "pointer-events-none -translate-y-2 scale-y-95 opacity-0"
         }`}
       >
         <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-200" aria-hidden="true" />
-        {OPTIONS.map((option) => {
+        {options.map((option) => {
           const active = option.value === displayScope;
           return (
             <button
@@ -177,7 +199,7 @@ export default function ScopeSelector({ current }: { current: Scope }) {
               aria-selected={active}
               onClick={() => select(option.value)}
               disabled={busy}
-              className={`mb-1 flex min-h-14 w-full select-none items-center justify-between rounded-xl px-3 text-left transition duration-150 last:mb-0 active:scale-[0.98] disabled:opacity-60 ${
+              className={`mb-1 flex min-h-14 w-full select-none items-center justify-between rounded-xl px-3 text-left transition duration-100 last:mb-0 active:scale-[0.98] disabled:opacity-60 ${
                 active
                   ? "bg-emerald-50 text-emerald-900"
                   : "text-slate-700 active:bg-slate-100"
@@ -189,7 +211,7 @@ export default function ScopeSelector({ current }: { current: Scope }) {
               </span>
               <span
                 aria-hidden="true"
-                className={`grid h-6 w-6 place-items-center rounded-full text-xs transition duration-150 ${
+                className={`grid h-6 w-6 place-items-center rounded-full text-xs transition duration-100 ${
                   active
                     ? "bg-emerald-600 text-white"
                     : "bg-slate-100 text-transparent"
