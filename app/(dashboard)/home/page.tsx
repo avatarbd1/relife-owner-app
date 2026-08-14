@@ -3,11 +3,11 @@ import { cookies } from "next/headers";
 import { Card, Row } from "@/components/Card";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import {
-  getCashPosition,
   getTodaysCollection,
   getMonthBusinessPosition,
   getSalaryStatus,
 } from "@/lib/calculations";
+import { getScopedCashPosition } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
 import {
   getAppointmentsForContext,
@@ -73,7 +73,7 @@ export default async function HomePage() {
   const today = todayDhaka();
 
   const [cash, todays, month, salary, appointments, controls] = await Promise.all([
-    getCashPosition(now),
+    getScopedCashPosition(scope, now),
     getTodaysCollection(now),
     getMonthBusinessPosition(scope, now),
     getSalaryStatus(scope, now),
@@ -216,7 +216,7 @@ export default async function HomePage() {
         </div>
       </Card>
 
-      <Card title="Current Cash Position" subtitle="Current month custody balance">
+      <Card title="Current Cash Position" subtitle={`Current month custody balance · ${SCOPE_LABEL[scope]}`}>
         <Row label="Reception" value={formatBDT(cash.reception)} />
         <Row label="Home Treasury" value={formatBDT(cash.homeTreasury)} />
         <Row label="Digital / Bank" value={formatBDT(cash.bank)} />
