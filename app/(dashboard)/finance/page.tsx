@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 import { Card, Row } from "@/components/Card";
 import { formatBDT, formatDateBn } from "@/lib/format";
@@ -50,9 +51,17 @@ export default async function FinancePage() {
 
   return (
     <div>
-      <p className="mb-4 text-xs text-slate-500">
-        {formatDateBn(now)} &middot; Scope: {SCOPE_LABEL[scope]}
-      </p>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          {formatDateBn(now)} &middot; Scope: {SCOPE_LABEL[scope]}
+        </p>
+        <Link
+          href="/operations"
+          className="shrink-0 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
+        >
+          Operations →
+        </Link>
+      </div>
 
       <Card title="Current Cash Position" subtitle="Current month custody balance">
         <Row label="Reception" value={formatBDT(cash.reception)} />
@@ -90,11 +99,6 @@ export default async function FinancePage() {
             tone={month.surplusOrUncovered >= 0 ? "positive" : "negative"}
           />
         </div>
-        {month.fixedOverhead === 0 && (
-          <p className="mt-2 text-[11px] text-amber-600">
-            Fixed overhead source এখনও confirm হয়নি; তাই এই অংশে আপাতত ৳0 ধরা হয়েছে।
-          </p>
-        )}
       </Card>
 
       <Card title="Salary Status" subtitle={`Scope: ${SCOPE_LABEL[scope]}`}>
