@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 type PatientView = {
@@ -21,7 +22,13 @@ function bdt(value: number): string {
   return `৳${new Intl.NumberFormat("en-BD", { maximumFractionDigits: 0 }).format(value)}`;
 }
 
-export default function PatientsClient({ patients }: { patients: PatientView[] }) {
+export default function PatientsClient({
+  patients,
+  showMoney = true,
+}: {
+  patients: PatientView[];
+  showMoney?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
 
@@ -62,9 +69,10 @@ export default function PatientsClient({ patients }: { patients: PatientView[] }
 
       <div className="space-y-2">
         {filtered.slice(0, 60).map((patient) => (
-          <article
+          <Link
             key={`${patient.department}-${patient.patientId}`}
-            className="rounded-xl border border-slate-100 bg-slate-50 p-3"
+            href={`/patients/${encodeURIComponent(patient.patientId)}`}
+            className="block rounded-xl border border-slate-100 bg-slate-50 p-3 active:bg-slate-100"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -101,11 +109,15 @@ export default function PatientsClient({ patients }: { patients: PatientView[] }
               <span className="text-slate-400">
                 Reg: {patient.registrationDate || "-"}
               </span>
-              <span className={patient.due > 0 ? "font-semibold text-red-600" : "text-slate-500"}>
-                Due {bdt(patient.due)}
-              </span>
+              {showMoney ? (
+                <span className={patient.due > 0 ? "font-semibold text-red-600" : "text-slate-500"}>
+                  Due {bdt(patient.due)}
+                </span>
+              ) : (
+                <span className="font-medium text-slate-500">Open file →</span>
+              )}
             </div>
-          </article>
+          </Link>
         ))}
 
         {filtered.length === 0 && (
