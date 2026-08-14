@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 import { registerPatient } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
@@ -58,6 +59,9 @@ export async function POST(request: NextRequest) {
       referral: body.referral,
       remarks: body.remarks,
     });
+    if (body.department === "Physio") {
+      await consumePhysioInventorySystem(["Patient Card"], context.staffId, "Auto-Registration");
+    }
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);

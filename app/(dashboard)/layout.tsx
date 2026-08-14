@@ -29,6 +29,9 @@ export default async function DashboardLayout({
   );
   const roleLabel = context.roles.map(displayRole).join(" · ");
   const actions = actionsForRoles(context.roles);
+  const hasPhysioAccess =
+    context.departmentAccess.includes("Physio") ||
+    context.departmentAccess.includes("All");
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -56,7 +59,11 @@ export default async function DashboardLayout({
 
       <main className="flex-1 bg-slate-100 px-4 py-4 pb-24">{children}</main>
 
-      <BottomNav roles={context.roles} actions={actions} />
+      <BottomNav
+        roles={context.roles}
+        actions={actions}
+        hasPhysioAccess={hasPhysioAccess}
+      />
     </div>
   );
 }
