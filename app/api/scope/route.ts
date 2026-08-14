@@ -17,8 +17,9 @@ export async function POST(request: NextRequest) {
 
     const response = NextResponse.json({ ok: true, scope });
     response.cookies.set("relife_scope", scope, {
-      httpOnly: false,
+      httpOnly: true,
       sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: 60 * 60 * 24 * 365,
     });
