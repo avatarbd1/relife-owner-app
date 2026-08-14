@@ -74,7 +74,7 @@ async function getAccessToken(): Promise<string> {
   const header = base64UrlJson({ alg: "RS256", typ: "JWT" });
   const claims = base64UrlJson({
     iss: credentials.client_email,
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+    scope: "https://www.googleapis.com/auth/spreadsheets",
     aud: tokenUri,
     iat: now,
     exp: now + 3600,
@@ -156,4 +156,62 @@ export async function fetchSheetRanges(
     result[name] = values.map((row) => row.map((cell) => String(cell ?? "")));
   });
   return result;
+}
+
+export async function updateSheetValues(
+  workbook: Workbook,
+  range: string,
+  values: Array<Array<string | number | boolean>>
+): Promise<void> {
+  const token = await getAccessToken();
+  const sheetId = sheetIdFor(workbook);
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      sheetId
+    )}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ values }),
+      cache: "no-store",
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Google Sheets update failed for ${workbook}: HTTP ${response.status}`
+    );
+  }
+}
+
+export async function appendSheetValues(
+  workbook: Workbook,
+  range: string,
+  values: Array<Array<string | number | boolean>>
+): Promise<void> {
+  const token = await getAccessToken();
+  const sheetId = sheetIdFor(workbook);
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      sheetId
+    )}/values/${encodeURIComponent(
+      range
+    )}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ values }),
+      cache: "no-store",
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Google Sheets append failed for ${workbook}: HTTP ${response.status}`
+    );
+  }
 }
