@@ -1,10 +1,10 @@
 # Clean PWA rebuild
 
-This branch rebuilds the Owner App PWA layer without changing dashboard/data logic.
+This branch rebuilds the Owner App PWA layer without changing dashboard or data logic.
 
-- Explicit static `/manifest.webmanifest`
+- Single Next.js `app/manifest.ts` source
 - Explicit app id and root scope
-- Root-scoped service worker with cache cleanup
-- Service worker update bypasses HTTP cache
+- Root-scoped service worker with stale-cache cleanup
+- Service worker registration bypasses HTTP cache
 - `/pwa-check` diagnostics page
-- Existing 192/512 icons retained
+- Existing 192px, 512px and Apple touch icons retained
