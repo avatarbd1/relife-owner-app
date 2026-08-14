@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const ITEMS = [
-  { href: "/home", label: "Home", icon: "🏠", matches: ["/home"] },
+  { href: "/home", label: "Home", icon: "🏠", matches: ["/home", "/daily"] },
   {
     href: "/finance",
     label: "Finance",
