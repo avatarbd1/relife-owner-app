@@ -117,10 +117,10 @@ export default async function HomePage() {
             <h2 className="mt-1 text-lg font-semibold">আজকের clinic snapshot</h2>
           </div>
           <Link
-            href="/appointments"
+            href="/daily"
             className="min-h-12 shrink-0 select-none rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition duration-100 active:scale-[0.97] active:bg-slate-100"
           >
-            Schedule
+            Daily Ops
           </Link>
         </div>
 
