@@ -1,0 +1,13 @@
+[
+  { "id": "CM-001", "date": "2026-07-01", "bucket": "Reception", "amount": 20000, "remarks": "Opening balance (seed)" },
+  { "id": "CM-002", "date": "2026-07-01", "bucket": "HomeTreasury", "amount": 10000, "remarks": "Opening balance (seed)" },
+  { "id": "CM-003", "date": "2026-07-01", "bucket": "Bank", "amount": 25000, "remarks": "Opening balance (seed)" },
+
+  { "id": "CM-004", "date": "2026-08-01", "bucket": "Reception", "amount": 29900, "remarks": "Cash collections, Aug" },
+  { "id": "CM-005", "date": "2026-08-06", "bucket": "Reception", "amount": -15000, "remarks": "Transfer: Reception -> Bank" },
+  { "id": "CM-006", "date": "2026-08-06", "bucket": "Bank", "amount": 15000, "remarks": "Transfer: Reception -> Bank" },
+  { "id": "CM-007", "date": "2026-08-08", "bucket": "Reception", "amount": -5000, "remarks": "Transfer: Reception -> Home Treasury" },
+  { "id": "CM-008", "date": "2026-08-08", "bucket": "HomeTreasury", "amount": 5000, "remarks": "Transfer: Reception -> Home Treasury" },
+  { "id": "CM-009", "date": "2026-08-10", "bucket": "Bank", "amount": 5500, "remarks": "bKash/Digital collections, Aug" },
+  { "id": "CM-010", "date": "2026-08-12", "bucket": "HomeTreasury", "amount": -3000, "remarks": "Household withdrawal" }
+]

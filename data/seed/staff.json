@@ -1,0 +1,8 @@
+[
+  { "staffId": "STF-DT-01", "fullName": "Avatar", "role": "Dental Assistant", "department": "Dental", "salary": 6000, "status": "Active" },
+  { "staffId": "STF-DT-02", "fullName": "Rakib", "role": "Dental Assistant", "department": "Dental", "salary": 23000, "status": "Active" },
+  { "staffId": "STF-DT-03", "fullName": "Hasibur (BDS)", "role": "Dentist", "department": "Dental", "salary": 40000, "status": "Active" },
+
+  { "staffId": "STF-PH-01", "fullName": "Nipa", "role": "Physiotherapist", "department": "Physio", "salary": 20000, "status": "Active" },
+  { "staffId": "STF-PH-02", "fullName": "Unknown Therapist", "role": "Physio Assistant", "department": "Physio", "salary": 12000, "status": "Active" }
+]
