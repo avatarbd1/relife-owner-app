@@ -1,0 +1,159 @@
+import "server-only";
+import { createSign } from "node:crypto";
+
+export type Workbook = "physio" | "dental";
+
+const PHYSIO_SHEET_ID =
+  process.env.PHYSIO_GOOGLE_SHEET_ID ||
+  process.env.GOOGLE_SHEET_ID ||
+  "1mDxBpOpmm0elLaYRNCCSZY9UEuNeuFQerLaJRfGuGs0";
+
+const DENTAL_SHEET_ID =
+  process.env.DENTAL_GOOGLE_SHEET_ID ||
+  "1Iq6TbeegQlOR7Z6-ojn4sSPdG379Owc1OiXhS0hXKso";
+
+interface ServiceAccountCredentials {
+  client_email: string;
+  private_key: string;
+  token_uri?: string;
+}
+
+let tokenCache: { token: string; expiresAt: number } | null = null;
+
+function loadCredentials(): ServiceAccountCredentials | null {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<ServiceAccountCredentials>;
+      if (parsed.client_email && parsed.private_key) {
+        return {
+          client_email: parsed.client_email,
+          private_key: parsed.private_key.replace(/\\n/g, "\n"),
+          token_uri: parsed.token_uri,
+        };
+      }
+    } catch {
+      throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON");
+    }
+  }
+
+  const clientEmail =
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
+  const privateKey =
+    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+
+  if (!clientEmail || !privateKey) return null;
+  return {
+    client_email: clientEmail,
+    private_key: privateKey.replace(/\\n/g, "\n"),
+  };
+}
+
+export function hasPrivateSheetsCredentials(): boolean {
+  return loadCredentials() !== null;
+}
+
+function base64UrlJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+async function getAccessToken(): Promise<string> {
+  if (tokenCache && Date.now() < tokenCache.expiresAt) {
+    return tokenCache.token;
+  }
+
+  const credentials = loadCredentials();
+  if (!credentials) {
+    throw new Error(
+      "Google service-account credentials are not configured for private Sheets access"
+    );
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const tokenUri = credentials.token_uri || "https://oauth2.googleapis.com/token";
+  const header = base64UrlJson({ alg: "RS256", typ: "JWT" });
+  const claims = base64UrlJson({
+    iss: credentials.client_email,
+    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+    aud: tokenUri,
+    iat: now,
+    exp: now + 3600,
+  });
+  const unsigned = `${header}.${claims}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(unsigned);
+  signer.end();
+  const signature = signer.sign(credentials.private_key).toString("base64url");
+  const assertion = `${unsigned}.${signature}`;
+
+  const response = await fetch(tokenUri, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google OAuth token request failed: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    access_token?: string;
+    expires_in?: number;
+  };
+  if (!payload.access_token) {
+    throw new Error("Google OAuth token response did not contain access_token");
+  }
+
+  const expiresIn = Math.max(120, payload.expires_in || 3600);
+  tokenCache = {
+    token: payload.access_token,
+    expiresAt: Date.now() + (expiresIn - 60) * 1000,
+  };
+  return payload.access_token;
+}
+
+function sheetIdFor(workbook: Workbook): string {
+  return workbook === "dental" ? DENTAL_SHEET_ID : PHYSIO_SHEET_ID;
+}
+
+export async function fetchSheetRanges(
+  workbook: Workbook,
+  ranges: string[]
+): Promise<Record<string, string[][]>> {
+  const token = await getAccessToken();
+  const sheetId = sheetIdFor(workbook);
+  const params = new URLSearchParams();
+  for (const range of ranges) params.append("ranges", `'${range}'`);
+  params.set("majorDimension", "ROWS");
+  params.set("valueRenderOption", "FORMATTED_VALUE");
+
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+      sheetId
+    )}/values:batchGet?${params.toString()}`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Google Sheets batch read failed for ${workbook}: HTTP ${response.status}`
+    );
+  }
+
+  const payload = (await response.json()) as {
+    valueRanges?: Array<{ range?: string; values?: unknown[][] }>;
+  };
+  const result: Record<string, string[][]> = {};
+  ranges.forEach((name, index) => {
+    const values = payload.valueRanges?.[index]?.values || [];
+    result[name] = values.map((row) => row.map((cell) => String(cell ?? "")));
+  });
+  return result;
+}

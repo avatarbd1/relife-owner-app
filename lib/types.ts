@@ -1,12 +1,7 @@
 // Core domain types for the Relife Owner Web App.
-// These mirror the data contract described in the project spec:
-//   06_Payments -> Payment
-//   07_Expenses -> Expense
-//   08_Staff    -> Staff
-//   13_Salary   -> SalaryPayment
-//   21_Cash_Movement -> CashMovement
+// These mirror the live Google Sheets finance contract.
 
-export type Department = "Physio" | "Dental";
+export type Department = "Physio" | "Dental" | "All";
 export type Scope = "combined" | "physio" | "dental";
 
 export interface Payment {
@@ -32,10 +27,12 @@ export interface Expense {
   paymentMethod: string;
   paidBy: string;
   department: Department;
-  /**
-   * Household withdrawals are tracked in 07_Expenses but must NOT be counted
-   * as a clinic business expense in cost-recovery / liability calculations.
-   */
+  /** Clinic Expense vs Household Withdrawal from 07_Expenses.Type. */
+  expenseType?: string;
+  /** Cash custodian used for the payment (Reception/Home Treasury/Bank). */
+  paidFrom?: string;
+  status?: string;
+  paidAt?: string;
   isHouseholdWithdrawal: boolean;
 }
 
@@ -58,15 +55,20 @@ export interface SalaryPayment {
   department: Department;
   amount: number;
   type: "Salary" | "Advance";
+  paidFrom?: string;
+  status?: string;
+  paidAt?: string;
 }
-
-export type CashBucket = "Reception" | "HomeTreasury" | "Bank";
 
 export interface CashMovement {
   id: string;
   date: string; // YYYY-MM-DD
-  bucket: CashBucket;
-  /** Positive = inflow to this bucket, Negative = outflow from this bucket */
+  fromCustodian: string;
+  toCustodian: string;
   amount: number;
+  /** If receiving side confirms a different amount, this is the cash effect. */
+  receivedAmount?: number;
+  status: string;
+  department: Department;
   remarks?: string;
 }
