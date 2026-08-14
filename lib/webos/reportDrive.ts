@@ -140,10 +140,12 @@ async function uploadToDrive(
   const folderId = process.env.REPORTS_DRIVE_FOLDER_ID || BOT_REPORT_FOLDER_ID;
   const boundary = `relife_${randomUUID().replace(/-/g, "")}`;
   const metadata = JSON.stringify({ name: fileName, parents: [folderId] });
+  const fileBuffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(fileBuffer).set(bytes);
   const body = new Blob([
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
     `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
-    bytes,
+    fileBuffer,
     `\r\n--${boundary}--`,
   ]);
   const response = await fetch(
