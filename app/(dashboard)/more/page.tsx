@@ -13,6 +13,20 @@ function readScope(value: string | undefined): Scope {
 export default async function MorePage() {
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
-  const snapshot = await getOwnerControlSnapshot(scope);
-  return <OwnerControlsClient snapshot={snapshot} />;
+  const snapshot = await getOwnerControlSnapshot();
+
+  const scopedSnapshot =
+    scope === "combined"
+      ? snapshot
+      : {
+          ...snapshot,
+          pendingExpenses: snapshot.pendingExpenses.filter(
+            (item) => item.workbook === scope
+          ),
+          pendingCashMovements: snapshot.pendingCashMovements.filter(
+            (item) => item.workbook === scope
+          ),
+        };
+
+  return <OwnerControlsClient snapshot={scopedSnapshot} />;
 }
