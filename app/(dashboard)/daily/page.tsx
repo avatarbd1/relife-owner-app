@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import DailyOperationsClient from "@/components/DailyOperationsClient";
+import { PageHeading } from "@/components/WorkspaceUI";
 import { getPayments } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
@@ -83,26 +84,19 @@ export default async function DailyPage() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-            Web OS · W4
-          </p>
-          <h1 className="text-lg font-semibold text-slate-900">
-            Daily Operations
-          </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            {safeSnapshot.date} · {LABEL[scope]}
-          </p>
-        </div>
-        <Link
-          href="/home"
-          className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 active:bg-slate-50"
-        >
-          Home
-        </Link>
-      </div>
+    <div>
+      <PageHeading
+        title="Daily Operations"
+        subtitle={`${safeSnapshot.date} · ${LABEL[scope]} · attendance & patient flow`}
+        action={
+          <Link
+            href="/appointments"
+            className="shrink-0 rounded-xl bg-blue-800 px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm active:scale-[0.98]"
+          >
+            Schedule
+          </Link>
+        }
+      />
       <DailyOperationsClient
         snapshot={safeSnapshot}
         activityCounts={activityCounts}
