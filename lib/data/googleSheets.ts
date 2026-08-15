@@ -121,7 +121,7 @@ async function getAccessToken(): Promise<string> {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth-type:jwt-bearer".replace("oauth-type", "oauth-grant-type"),
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion,
     }),
     cache: "no-store",
@@ -381,9 +381,7 @@ export async function batchUpdateSpreadsheet(
     {
       method: "POST",
       headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
+        authorization: `Bearer ${token}` },
       body: JSON.stringify({ requests, includeSpreadsheetInResponse: false }),
       cache: "no-store",
     }
