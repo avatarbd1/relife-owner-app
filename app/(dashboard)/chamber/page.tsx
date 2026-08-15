@@ -1,11 +1,16 @@
+import ChamberPatientEditPanel from "@/components/ChamberPatientEditPanel";
 import LiveChamberBoard from "@/components/LiveChamberBoard";
 import { ProgressBar, StatusBadge } from "@/components/FeedbackUI";
+import { canPerform } from "@/lib/webos/access";
 import { getChamberSnapshot } from "@/lib/webos/chamber";
+import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 export default async function ChamberPage() {
   const context = await requireCurrentAccessContext();
-  const snapshot = await getChamberSnapshot(context);
+  const rawSnapshot = await getChamberSnapshot(context);
+  const snapshot = await enrichChamberSnapshotWithPatientProfiles(context, rawSnapshot);
+  const canEditPatient = canPerform(context, "patient.update", "Physio");
   const occupiedStations = snapshot.stations.filter((item) => Boolean(item.session)).length;
   const totalStations = snapshot.stations.length;
   const stationUtilization = totalStations > 0 ? (occupiedStations / totalStations) * 100 : 0;
@@ -13,6 +18,42 @@ export default async function ChamberPage() {
   const warnings = snapshot.queue.filter((item) => Boolean(item.allocationWarning));
   const mixedRooms = snapshot.stations.filter((item) => item.roomGender === "Mixed");
   const conflictCount = warnings.length + mixedRooms.length;
+
+  const correctionItems = [
+    ...snapshot.queue.map((item) => {
+      const raw = rawSnapshot.queue.find((row) => row.appointmentId === item.appointmentId);
+      return {
+        patientId: item.patientId,
+        patientName: item.patientName,
+        gender: item.gender,
+        chamberGender: raw?.gender || "" as const,
+        state: "Waiting" as const,
+        station: item.recommendedStationId,
+        warning: item.allocationWarning,
+      };
+    }),
+    ...snapshot.stations.flatMap((station) => {
+      if (!station.session) return [];
+      const raw = rawSnapshot.stations.find(
+        (row) => row.resource.resourceId === station.resource.resourceId
+      )?.session;
+      return [{
+        patientId: station.session.patientId,
+        patientName: station.session.patientName,
+        gender: station.session.gender,
+        chamberGender: raw?.gender || "" as const,
+        state: "In Treatment" as const,
+        station: station.resource.resourceName,
+        warning: raw?.gender && raw.gender !== station.session.gender
+          ? "Patient master gender differs from the active chamber session."
+          : "",
+      }];
+    }),
+  ];
+
+  const uniqueCorrectionItems = [...new Map(
+    correctionItems.map((item) => [item.patientId, item])
+  ).values()];
 
   return (
     <div className="space-y-4">
@@ -34,6 +75,11 @@ export default async function ChamberPage() {
           <div className={`rounded-lg p-2 ${conflictCount ? "bg-red-400/10" : "bg-emerald-400/10"}`}><p className={`text-[10px] ${conflictCount ? "text-red-200" : "text-emerald-200"}`}>Conflicts</p><p className={`mt-1 text-lg font-bold ${conflictCount ? "text-red-100" : "text-emerald-100"}`}>{conflictCount}</p></div>
         </div>
       </section>
+
+      <ChamberPatientEditPanel
+        initialItems={uniqueCorrectionItems}
+        canEdit={canEditPatient}
+      />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
