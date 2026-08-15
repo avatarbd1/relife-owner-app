@@ -51,6 +51,7 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [pin, setPin] = useState("");
   const [receivedAmount, setReceivedAmount] = useState("");
+  const [decisionReason, setDecisionReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; good: boolean } | null>(null);
   const [isOnline, setIsOnline] = useState(true);
@@ -75,10 +76,13 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
     Number.isFinite(receivedNumber)
       ? receivedNumber - actionAmount
       : 0;
+  const rejectionNeedsReason =
+    pendingAction?.kind === "expense" && pendingAction.decision === "reject";
 
   function openAction(action: PendingAction) {
     setMessage(null);
     setPin("");
+    setDecisionReason("");
     setReceivedAmount(action.kind === "cash" && action.decision === "accept" ? String(action.item.amount) : "");
     setPendingAction(action);
     haptic("tap");
@@ -86,6 +90,11 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
 
   async function submitAction() {
     if (!pendingAction || !pin || busy) return;
+    if (rejectionNeedsReason && decisionReason.trim().length < 3) {
+      setMessage({ text: "Rejection reason is required.", good: false });
+      haptic("error");
+      return;
+    }
     if (!isOnline) {
       setMessage({ text: "Internet connection required for owner financial actions.", good: false });
       haptic("error");
@@ -101,6 +110,9 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
       decision: pendingAction.decision,
       pin,
     };
+    if (isExpense && pendingAction.decision === "reject") {
+      payload.reason = decisionReason.trim();
+    }
     if (!isExpense && pendingAction.decision === "accept") {
       payload.receivedAmount = Number(receivedAmount || pendingAction.item.amount);
     }
@@ -116,6 +128,7 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
       setMessage({ text: "Saved successfully.", good: true });
       setPendingAction(null);
       setPin("");
+      setDecisionReason("");
       haptic("success");
       router.refresh();
     } catch (error) {
@@ -182,7 +195,7 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
       {pendingAction && (
         <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-[1px] sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-label="Confirm owner action">
           <div className="relife-page-enter w-full max-w-md rounded-2xl bg-white p-4 shadow-xl">
-            <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-900">Confirm {pendingAction.decision}</h3><p className="mt-1 text-xs text-slate-500">{pendingAction.item.id} · {bdt(actionAmount)}</p></div><StatusBadge tone={["reject"].includes(pendingAction.decision) ? "error" : pendingAction.kind === "cash" ? "success" : "info"}>{pendingAction.kind}</StatusBadge></div>
+            <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-900">Confirm {pendingAction.decision}</h3><p className="mt-1 text-xs text-slate-500">{pendingAction.item.id} · {bdt(actionAmount)}</p></div><StatusBadge tone={pendingAction.decision === "reject" ? "error" : pendingAction.kind === "cash" ? "success" : "info"}>{pendingAction.kind}</StatusBadge></div>
 
             {pendingAction.kind === "cash" && pendingAction.decision === "accept" && (
               <div className="mt-4">
@@ -191,11 +204,15 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
               </div>
             )}
 
-            <label className="mt-4 block text-xs font-semibold text-slate-700">Owner PIN<input autoFocus type="password" inputMode="numeric" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(event) => { if (event.key === "Enter" && pin && !busy) void submitAction(); }} className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-100" placeholder="Enter PIN" /></label>
+            {rejectionNeedsReason && (
+              <label className="mt-4 block text-xs font-semibold text-slate-700">Rejection reason<textarea value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} rows={2} minLength={3} className="mt-1.5 w-full rounded-lg border border-red-200 px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100" placeholder="Why is this expense being rejected?" /></label>
+            )}
+
+            <label className="mt-4 block text-xs font-semibold text-slate-700">Owner PIN<input autoFocus type="password" inputMode="numeric" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(event) => { if (event.key === "Enter" && pin && !busy && (!rejectionNeedsReason || decisionReason.trim().length >= 3)) void submitAction(); }} className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-100" placeholder="Enter PIN" /></label>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button disabled={busy} onClick={() => setPendingAction(null)} className="min-h-11 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button disabled={busy || !pin || !isOnline} onClick={() => void submitAction()} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold text-white shadow-sm ${pendingAction.decision === "reject" ? "bg-red-600 hover:bg-red-700" : pendingAction.kind === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-800 hover:bg-blue-900"}`}>
+              <button disabled={busy || !pin || !isOnline || (rejectionNeedsReason && decisionReason.trim().length < 3)} onClick={() => void submitAction()} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold text-white shadow-sm ${pendingAction.decision === "reject" ? "bg-red-600 hover:bg-red-700" : pendingAction.kind === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-800 hover:bg-blue-900"}`}>
                 {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving owner action" />}
                 {busy ? "Saving…" : "Confirm"}
               </button>
