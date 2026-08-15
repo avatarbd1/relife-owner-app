@@ -49,10 +49,11 @@ export async function POST(request: NextRequest) {
 
   try {
     await decideExpense(workbook as Workbook, id, decision);
-    if (decision === "reject") {
-      await recordExpenseRejectionReason(workbook as Workbook, id, reason);
-    }
-    return NextResponse.json({ ok: true });
+    const reasonRecorded =
+      decision === "reject"
+        ? await recordExpenseRejectionReason(workbook as Workbook, id, reason)
+        : true;
+    return NextResponse.json({ ok: true, reasonRecorded });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CONTROL_FAILED";
     console.error("Owner expense control failed:", message);
