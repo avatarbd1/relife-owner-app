@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 import { createAppointment } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
@@ -40,13 +41,17 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await createAppointment(context, {
-      patientId: body.patientId,
-      date: body.date,
-      time: body.time,
-      therapist: body.therapist,
-      remarks: body.remarks,
-    });
+
+    const lockKey = `appointment-create:${String(body.date || "")}:${String(body.time || "")}`;
+    const result = await withMutationLock(lockKey, () =>
+      createAppointment(context, {
+        patientId: body.patientId,
+        date: body.date,
+        time: body.time,
+        therapist: body.therapist,
+        remarks: body.remarks,
+      })
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
