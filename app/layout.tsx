@@ -1,6 +1,13 @@
 import type { Metadata, Viewport } from "next";
+import { Geist } from "next/font/google";
 import "./globals.css";
 import RegisterSW from "@/components/RegisterSW";
+
+const geist = Geist({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-geist-sans",
+});
 
 export const metadata: Metadata = {
   title: "Relife Owner",
@@ -28,8 +35,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-slate-100 text-slate-900">
+    <html lang="en" className={`${geist.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col bg-slate-50 text-slate-900">
         <RegisterSW />
         {children}
       </body>

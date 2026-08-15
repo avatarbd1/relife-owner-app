@@ -135,7 +135,7 @@ export default function BottomNav({
     <>
       <div
         aria-hidden="true"
-        className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 origin-left bg-emerald-500 transition-[opacity,transform] duration-300 ${
+        className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 origin-left bg-blue-700 transition-[opacity,transform] duration-300 ${
           isNavigating ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
         }`}
       />
@@ -157,8 +157,8 @@ export default function BottomNav({
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200/90 bg-white/94 pb-[env(safe-area-inset-bottom)] shadow-[0_-5px_18px_rgba(15,23,42,0.045)] backdrop-blur-xl supports-[backdrop-filter]:bg-white/88">
-        <ul className="flex">
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-5px_18px_rgba(15,23,42,0.045)] backdrop-blur-xl supports-[backdrop-filter]:bg-white/90">
+        <ul className="mx-auto flex w-full max-w-3xl">
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.matches);
             return (
@@ -169,15 +169,15 @@ export default function BottomNav({
                   onClick={() => {
                     if (!active) setIsNavigating(true);
                   }}
-                  className={`relative flex min-h-[58px] select-none flex-col items-center justify-center gap-0.5 px-1 text-[10.5px] transition-[color,transform] duration-150 active:scale-[0.96] ${
+                  className={`relative flex min-h-[60px] select-none flex-col items-center justify-center gap-0.5 px-1 text-[10.5px] transition-[color,transform] duration-150 active:scale-[0.96] ${
                     active
-                      ? "text-emerald-700"
+                      ? "text-blue-800"
                       : "text-slate-500 active:text-slate-800"
                   }`}
                 >
                   <span
                     aria-hidden="true"
-                    className={`absolute top-0 h-0.5 rounded-full bg-emerald-500 transition-[width,opacity] duration-220 ${
+                    className={`absolute top-0 h-0.5 rounded-full bg-blue-700 transition-[width,opacity] duration-220 ${
                       active ? "w-9 opacity-100" : "w-2 opacity-0"
                     }`}
                   />
