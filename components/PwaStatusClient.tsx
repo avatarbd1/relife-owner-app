@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { InlineNotice, ProgressBar, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
 
@@ -124,8 +124,9 @@ export default function PwaStatusClient() {
   }, [check]);
 
   const storagePct = data.storageQuota > 0 ? (data.storageUsed / data.storageQuota) * 100 : 0;
-  const isIOS = useMemo(() => /iphone|ipad|ipod/i.test(navigator.userAgent), []);
-  const isAndroid = useMemo(() => /android/i.test(navigator.userAgent), []);
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const isIOS = /iphone|ipad|ipod/i.test(userAgent);
+  const isAndroid = /android/i.test(userAgent);
 
   async function install() {
     if (!installPrompt) return;
@@ -159,22 +160,11 @@ export default function PwaStatusClient() {
 
   return (
     <div className="space-y-4">
-      {!data.online && (
-        <InlineNotice tone="error" title="Offline mode">
-          Clinic data is not trusted offline. Financial and clinical writes remain disabled until internet returns.
-        </InlineNotice>
-      )}
-      {message && (
-        <div className={message.startsWith("✓") ? "relife-success-flash" : message.startsWith("✕") ? "relife-error-shake" : ""}>
-          <InlineNotice tone={message.startsWith("✓") ? "success" : message.startsWith("✕") ? "error" : "info"}>{message}</InlineNotice>
-        </div>
-      )}
+      {!data.online && <InlineNotice tone="error" title="Offline mode">Clinic data is not trusted offline. Financial and clinical writes remain disabled until internet returns.</InlineNotice>}
+      {message && <div className={message.startsWith("✓") ? "relife-success-flash" : message.startsWith("✕") ? "relife-error-shake" : ""}><InlineNotice tone={message.startsWith("✓") ? "success" : message.startsWith("✕") ? "error" : "info"}>{message}</InlineNotice></div>}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div><h2 className="text-base font-semibold text-slate-950">Install & runtime status</h2><p className="mt-0.5 text-xs text-slate-500">Real browser capabilities — no simulated health states.</p></div>
-          {checking ? <Spinner label="Checking PWA" /> : <StatusBadge tone={data.online && data.https && data.swRegistered && data.manifestOk ? "success" : "warning"}>{data.standalone ? "Installed" : "Browser"}</StatusBadge>}
-        </div>
+        <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-950">Install & runtime status</h2><p className="mt-0.5 text-xs text-slate-500">Real browser capabilities — no simulated health states.</p></div>{checking ? <Spinner label="Checking PWA" /> : <StatusBadge tone={data.online && data.https && data.swRegistered && data.manifestOk ? "success" : "warning"}>{data.standalone ? "Installed" : "Browser"}</StatusBadge>}</div>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Metric label="Internet" value={data.online ? "Online" : "Offline"} tone={data.online ? "success" : "error"} />
           <Metric label="HTTPS" value={data.https ? "Secure" : "Missing"} tone={data.https ? "success" : "error"} />
@@ -185,33 +175,16 @@ export default function PwaStatusClient() {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-950">Install Relife</h2>
-        <p className="mt-0.5 text-xs text-slate-500">Use the browser-supported install path for this device.</p>
+        <h2 className="text-base font-semibold text-slate-950">Install Relife</h2><p className="mt-0.5 text-xs text-slate-500">Use the browser-supported install path for this device.</p>
         <div className="mt-4 space-y-3">
-          {data.standalone ? (
-            <InlineNotice tone="success">Relife is running in standalone/app mode.</InlineNotice>
-          ) : installPrompt ? (
-            <button type="button" onClick={install} className="min-h-11 w-full rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow-md hover:bg-blue-900">Install app</button>
-          ) : isIOS ? (
-            <InlineNotice tone="info" title="iPhone / iPad">Safari → Share → Add to Home Screen → Add. Then open Relife from the Home Screen.</InlineNotice>
-          ) : isAndroid ? (
-            <InlineNotice tone="info" title="Android">Browser menu → Install app / Add to Home screen. If the install item is not offered, use the diagnostics below to confirm HTTPS, manifest and service worker status.</InlineNotice>
-          ) : (
-            <InlineNotice tone="info">Use the browser address-bar install icon or menu → Install app when available.</InlineNotice>
-          )}
+          {data.standalone ? <InlineNotice tone="success">Relife is running in standalone/app mode.</InlineNotice> : installPrompt ? <button type="button" onClick={install} className="min-h-11 w-full rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow-md hover:bg-blue-900">Install app</button> : isIOS ? <InlineNotice tone="info" title="iPhone / iPad">Safari → Share → Add to Home Screen → Add. Then open Relife from the Home Screen.</InlineNotice> : isAndroid ? <InlineNotice tone="info" title="Android">Browser menu → Install app / Add to Home screen. If the install item is not offered, use the diagnostics below to confirm HTTPS, manifest and service worker status.</InlineNotice> : <InlineNotice tone="info">Use the browser address-bar install icon or menu → Install app when available.</InlineNotice>}
         </div>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-950">Cache & update</h2><p className="mt-0.5 text-xs text-slate-500">Only static install assets are cached; authenticated clinic data stays network-only.</p></div><StatusBadge tone="info">Safe cache</StatusBadge></div>
-        <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-          <p><strong>Cache sets:</strong> {data.cacheNames.length ? data.cacheNames.join(", ") : "None reported"}</p>
-          <p className="mt-1"><strong>Data policy:</strong> API/navigation and financial/clinical data are fetched from the network.</p>
-        </div>
-        <button type="button" disabled={updating || !data.online || !data.swRegistered} onClick={updateServiceWorker} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-50">
-          {updating && <Spinner size="sm" label="Checking app update" />}
-          {updating ? "Checking…" : "Check app update"}
-        </button>
+        <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><p><strong>Cache sets:</strong> {data.cacheNames.length ? data.cacheNames.join(", ") : "None reported"}</p><p className="mt-1"><strong>Data policy:</strong> API/navigation and financial/clinical data are fetched from the network.</p></div>
+        <button type="button" disabled={updating || !data.online || !data.swRegistered} onClick={updateServiceWorker} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-50">{updating && <Spinner size="sm" label="Checking app update" />}{updating ? "Checking…" : "Check app update"}</button>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -230,12 +203,6 @@ export default function PwaStatusClient() {
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone: "success" | "warning" | "error" | "info" | "neutral" }) {
-  const classes = {
-    success: "bg-emerald-50 text-emerald-900",
-    warning: "bg-amber-50 text-amber-900",
-    error: "bg-red-50 text-red-900",
-    info: "bg-blue-50 text-blue-900",
-    neutral: "bg-slate-50 text-slate-900",
-  }[tone];
+  const classes = { success: "bg-emerald-50 text-emerald-900", warning: "bg-amber-50 text-amber-900", error: "bg-red-50 text-red-900", info: "bg-blue-50 text-blue-900", neutral: "bg-slate-50 text-slate-900" }[tone];
   return <div className={`rounded-lg p-3 ${classes}`}><p className="text-[10px] font-medium opacity-70">{label}</p><p className="mt-1 text-xs font-bold">{value}</p></div>;
 }
