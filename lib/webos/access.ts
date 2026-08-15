@@ -20,6 +20,7 @@ export type WebAction =
   | "payment.read_amount"
   | "payment.create"
   | "payment.void"
+  | "payment.correct_own_today"
   | "report.read_operational"
   | "report.read_financial"
   | "expense.read"
@@ -70,6 +71,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "payment.read_amount",
     "payment.create",
     "payment.void",
+    "payment.correct_own_today",
     "report.read_operational",
     "report.read_financial",
     "expense.read",
@@ -98,6 +100,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.read",
     "appointment.create",
     "appointment.update",
+    "payment.correct_own_today",
     "report.read_operational",
     "expense.read",
     "expense.request",
@@ -119,6 +122,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.update",
     "payment.read_amount",
     "payment.create",
+    "payment.correct_own_today",
     "report.read_operational",
     "expense.read",
     "expense.request",
