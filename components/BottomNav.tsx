@@ -135,7 +135,7 @@ export default function BottomNav({
     <>
       <div
         aria-hidden="true"
-        className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 origin-left bg-blue-700 transition-[opacity,transform] duration-300 ${
+        className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 origin-left bg-blue-700 transition-[opacity,transform] duration-200 ease-out ${
           isNavigating ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
         }`}
       />
@@ -169,7 +169,7 @@ export default function BottomNav({
                   onClick={() => {
                     if (!active) setIsNavigating(true);
                   }}
-                  className={`relative flex min-h-[60px] select-none flex-col items-center justify-center gap-0.5 px-1 text-[10.5px] transition-[color,transform] duration-150 active:scale-[0.96] ${
+                  className={`relative flex min-h-[60px] select-none flex-col items-center justify-center gap-0.5 px-1 text-[10.5px] transition-[color,transform] duration-100 ease-out ${
                     active
                       ? "text-blue-800"
                       : "text-slate-500 active:text-slate-800"
@@ -177,12 +177,12 @@ export default function BottomNav({
                 >
                   <span
                     aria-hidden="true"
-                    className={`absolute top-0 h-0.5 rounded-full bg-blue-700 transition-[width,opacity] duration-220 ${
-                      active ? "w-9 opacity-100" : "w-2 opacity-0"
+                    className={`absolute top-0 h-0.5 w-9 origin-center rounded-full bg-blue-700 transition-[opacity,transform] duration-100 ease-out ${
+                      active ? "scale-x-100 opacity-100" : "scale-x-[0.22] opacity-0"
                     }`}
                   />
                   <span
-                    className={`transition-transform duration-180 ease-out ${
+                    className={`transition-transform duration-100 ease-out ${
                       active ? "-translate-y-0.5 scale-[1.07]" : "translate-y-0 scale-100"
                     }`}
                   >

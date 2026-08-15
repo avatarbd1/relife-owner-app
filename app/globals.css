@@ -14,12 +14,31 @@
   --relife-error: #ef4444;
   --relife-neutral: #6b7280;
 
+  --relife-success-bg: #d1fae5;
+  --relife-success-text: #059669;
+  --relife-warning-bg: #fef3c7;
+  --relife-warning-text: #d97706;
+  --relife-error-bg: #fee2e2;
+  --relife-error-text: #dc2626;
+  --relife-info-bg: #dbeafe;
+  --relife-info-text: #1e40af;
+  --relife-disabled-bg: #f3f4f6;
+  --relife-disabled-text: #9ca3af;
+
   --relife-radius-card: 12px;
   --relife-radius-modal: 16px;
   --relife-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --relife-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   --relife-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
   --relife-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+
+  --relife-motion-press: 50ms;
+  --relife-motion-fast: 100ms;
+  --relife-motion-normal: 150ms;
+  --relife-motion-page: 180ms;
+  --relife-motion-slow: 200ms;
+  --relife-ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --relife-ease-out: ease-out;
 }
 
 @theme inline {
@@ -40,6 +59,7 @@ body {
   font-family: var(--font-geist-sans), "Geist", -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   text-rendering: optimizeLegibility;
+  overscroll-behavior-y: contain;
 }
 
 button,
@@ -62,6 +82,26 @@ textarea {
   font: inherit;
 }
 
+button:not(:disabled),
+a[href] {
+  transition-property: background-color, border-color, color, opacity, transform;
+  transition-duration: var(--relife-motion-fast);
+  transition-timing-function: var(--relife-ease-out);
+}
+
+button:not(:disabled):not([data-press="off"]):active,
+a[href]:not([data-press="off"]):active {
+  transform: scale(0.98);
+  transition-duration: var(--relife-motion-press);
+  transition-timing-function: ease-in;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 :focus-visible {
   outline: 2px solid var(--relife-primary);
   outline-offset: 2px;
@@ -70,7 +110,76 @@ textarea {
 @keyframes relife-page-enter {
   from {
     opacity: 0;
-    transform: translate3d(0, 5px, 0);
+    transform: translate3d(0, 20px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes relife-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes relife-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes relife-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes relife-success-flash {
+  from {
+    background-color: var(--relife-success-bg);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes relife-icon-scale {
+  from {
+    opacity: 0;
+    transform: scale(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes relife-error-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-8px);
+  }
+  75% {
+    transform: translateX(8px);
+  }
+}
+
+@keyframes relife-slide-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 80px, 0);
   }
   to {
     opacity: 1;
@@ -79,11 +188,88 @@ textarea {
 }
 
 .relife-page-enter {
-  animation: relife-page-enter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: relife-page-enter var(--relife-motion-page) var(--relife-ease-enter) both;
   will-change: opacity, transform;
 }
 
+.relife-fade-in {
+  animation: relife-fade-in var(--relife-motion-normal) var(--relife-ease-out) both;
+}
+
+.relife-spinner {
+  border: 2px solid #e2e8f0;
+  border-top-color: var(--relife-primary);
+  animation: relife-spin 1s linear infinite;
+}
+
+.relife-skeleton {
+  border-radius: 6px;
+  background: #e2e8f0;
+  animation: relife-skeleton-pulse 2s ease-in-out infinite;
+}
+
+.relife-success-flash {
+  animation: relife-success-flash 300ms ease-out both;
+}
+
+.relife-success-icon {
+  animation: relife-icon-scale 200ms var(--relife-ease-enter) both;
+  color: var(--relife-success);
+}
+
+.relife-error-shake {
+  animation: relife-error-shake 200ms ease-in-out both;
+}
+
+.relife-network-banner {
+  bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  animation: relife-slide-up 200ms var(--relife-ease-enter) both;
+}
+
+.relife-scroll-top {
+  bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.relife-refresh-pill {
+  animation: relife-fade-in var(--relife-motion-fast) var(--relife-ease-out) both;
+}
+
+.relife-app-header {
+  transition:
+    background-color var(--relife-motion-normal) var(--relife-ease-out),
+    box-shadow var(--relife-motion-normal) var(--relife-ease-out),
+    opacity var(--relife-motion-normal) var(--relife-ease-out);
+}
+
+html[data-scrolled="true"] .relife-app-header {
+  background-color: rgb(2 6 23 / 0.96);
+  box-shadow: var(--relife-shadow-md);
+}
+
+html[data-scrolled="true"] .relife-app-brand {
+  opacity: 0.78;
+}
+
+.relife-app-brand {
+  transition: opacity var(--relife-motion-fast) var(--relife-ease-out);
+}
+
+.relife-dashboard-content {
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled),
+  a[href] {
+    cursor: pointer;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
   *,
   *::before,
   *::after {
@@ -93,7 +279,10 @@ textarea {
     animation-iteration-count: 1 !important;
   }
 
-  .relife-page-enter {
+  .relife-page-enter,
+  .relife-error-shake,
+  .relife-network-banner,
+  .relife-refresh-pill {
     transform: none !important;
   }
 }
