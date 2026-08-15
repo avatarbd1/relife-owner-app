@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { haptic } from "@/lib/interactions";
 
 export type SwipeRoute = {
   href: string;
@@ -150,7 +151,9 @@ export function useSwipeNavigation({
         setSwipeDirection(null);
         return;
       }
-      if (Date.now() - start.at > maxDurationMs) {
+
+      const duration = Math.max(1, Date.now() - start.at);
+      if (duration > maxDurationMs) {
         setSwipeProgress(0);
         setSwipeDirection(null);
         return;
@@ -163,8 +166,10 @@ export function useSwipeNavigation({
       const deltaY = touch.clientY - start.y;
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
+      const velocity = absX / duration;
+      const validDistance = absX >= threshold || (absX >= 32 && velocity >= 0.55);
 
-      if (absX < threshold || absX <= absY * 1.2) {
+      if (!validDistance || absX <= absY * 1.2) {
         setSwipeProgress(0);
         setSwipeDirection(null);
         return;
@@ -178,10 +183,7 @@ export function useSwipeNavigation({
         return;
       }
 
-      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-        navigator.vibrate(8);
-      }
-
+      haptic("tap");
       setSwipeProgress(1);
       setSwipeDirection(deltaX < 0 ? "next" : "previous");
       setIsNavigating(true);
