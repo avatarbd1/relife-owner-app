@@ -20,6 +20,10 @@ export default async function ClinicalPage({
 
   if (patient.department === "Dental") {
     const workspace = await getDentalClinicalWorkspace(context, patient.patientId);
+    const dentalWorkspace = {
+      ...workspace,
+      patient: { ...workspace.patient, department: "Dental" as const },
+    };
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
@@ -35,7 +39,7 @@ export default async function ClinicalPage({
             Patient file
           </Link>
         </div>
-        <DentalClinicalWorkspaceClient workspace={workspace} />
+        <DentalClinicalWorkspaceClient workspace={dentalWorkspace} />
       </div>
     );
   }
