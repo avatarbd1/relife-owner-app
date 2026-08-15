@@ -220,5 +220,7 @@ export function toAccessContext(identity: WebStaffIdentity): AccessContext | nul
     roles: identity.roles,
     primaryDepartment: identity.primaryDepartment,
     departmentAccess: identity.departmentAccess,
+    clinicalWriteScope: identity.clinicalWriteScope,
+    financialAccess: identity.financialAccess,
   };
 }
