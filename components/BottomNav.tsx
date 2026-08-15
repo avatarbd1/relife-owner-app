@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
+import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import type { WebAction, WebRole } from "@/lib/webos/access";
 
 type NavItem = {
   href: string;
   label: string;
-  icon: string;
+  icon: AppIconName;
   matches: string[];
   visible: (roles: WebRole[], actions: Set<WebAction>) => boolean;
 };
@@ -22,14 +23,14 @@ const ITEMS: NavItem[] = [
   {
     href: "/home",
     label: "Home",
-    icon: "🏠",
+    icon: "home",
     matches: ["/home", "/daily"],
     visible: () => true,
   },
   {
     href: "/finance",
     label: "Finance",
-    icon: "💰",
+    icon: "finance",
     matches: ["/finance", "/operations"],
     visible: (_roles, actions) =>
       hasAny(actions, [
@@ -49,8 +50,8 @@ const ITEMS: NavItem[] = [
   {
     href: "/patients",
     label: "Patients",
-    icon: "🩺",
-    matches: ["/patients", "/appointments"],
+    icon: "patients",
+    matches: ["/patients", "/appointments", "/register"],
     visible: (_roles, actions) =>
       hasAny(actions, [
         "patient.read",
@@ -66,7 +67,7 @@ const ITEMS: NavItem[] = [
   {
     href: "/reports",
     label: "Reports",
-    icon: "📊",
+    icon: "reports",
     matches: ["/reports"],
     visible: (_roles, actions) =>
       hasAny(actions, [
@@ -76,10 +77,10 @@ const ITEMS: NavItem[] = [
       ]),
   },
   {
-    href: "/menu",
-    label: "Menu",
-    icon: "☰",
-    matches: ["/menu", "/tools", "/more"],
+    href: "/more",
+    label: "More",
+    icon: "more",
+    matches: ["/more", "/menu", "/tools", "/security", "/corrections"],
     visible: () => true,
   },
 ];
@@ -128,7 +129,7 @@ export default function BottomNav({
         }`}
       />
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(15,23,42,0.05)] backdrop-blur">
         <ul className="flex">
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.matches);
@@ -140,9 +141,9 @@ export default function BottomNav({
                   onClick={() => {
                     if (!active) setIsNavigating(true);
                   }}
-                  className={`relative flex min-h-[60px] select-none flex-col items-center justify-center gap-1 px-1 text-xs transition duration-100 active:scale-[0.96] ${
+                  className={`relative flex min-h-[62px] select-none flex-col items-center justify-center gap-1 px-1 text-[11px] transition duration-100 active:scale-[0.97] ${
                     active
-                      ? "text-emerald-600"
+                      ? "text-emerald-700"
                       : "text-slate-500 active:text-slate-800"
                   }`}
                 >
@@ -152,9 +153,10 @@ export default function BottomNav({
                       active ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
                     }`}
                   />
-                  <span className="text-xl leading-none" aria-hidden="true">
-                    {item.icon}
-                  </span>
+                  <AppIcon
+                    name={item.icon}
+                    className={`h-[21px] w-[21px] ${active ? "stroke-[2]" : ""}`}
+                  />
                   <span className={active ? "font-semibold" : "font-medium"}>
                     {item.label}
                   </span>

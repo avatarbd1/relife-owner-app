@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Card, Row } from "@/components/Card";
 import PatientsClient from "@/components/PatientsClient";
 import { formatBDT } from "@/lib/format";
 import type { Scope } from "@/lib/types";
@@ -13,17 +12,17 @@ import {
   getVisiblePatients,
   todayDhaka,
 } from "@/lib/webos/reception";
+import {
+  PageHeading,
+  MetricGrid,
+  Section,
+  ActionRow,
+} from "@/components/WorkspaceUI";
 
 function readScope(value: string | undefined): Scope {
   if (value === "physio" || value === "dental" || value === "combined") return value;
   return "combined";
 }
-
-const SCOPE_LABEL: Record<Scope, string> = {
-  combined: "Combined",
-  physio: "Physio",
-  dental: "Dental",
-};
 
 function bdMonthKey(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -52,7 +51,9 @@ export default async function PatientsPage({
   const context = await requireCurrentAccessContext();
   const cookieStore = await cookies();
   const params = searchParams ? await searchParams : {};
-  const scope = readScope(cookieStore.get("relife_scope")?.value);
+  const scope = context.roles.includes("Owner")
+    ? "combined"
+    : readScope(cookieStore.get("relife_scope")?.value);
   const clinician = context.roles.includes("Therapist") || context.roles.includes("Dentist");
   const todayView = clinician && params.view === "today";
 
@@ -91,54 +92,91 @@ export default async function PatientsPage({
   );
 
   return (
-    <div className="space-y-4">
+    <div>
+      <PageHeading
+        title={todayView ? "My patients today" : "Patients"}
+        subtitle={
+          context.roles.includes("Owner")
+            ? "Combined patient workspace"
+            : "Only patients allowed by your role and department"
+        }
+        action={
+          createDepartments.length > 0 ? (
+            <Link
+              href="/patients/new"
+              className="shrink-0 rounded-xl bg-slate-900 px-3.5 py-2.5 text-xs font-semibold text-white active:scale-[0.98]"
+            >
+              + Patient
+            </Link>
+          ) : undefined
+        }
+      />
+
       {clinician && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="mb-4 inline-flex w-full rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
           <Link
             href="/patients?view=today"
-            className={`rounded-xl px-3 py-3 text-center text-xs font-semibold ${todayView ? "bg-emerald-600 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+            className={`min-h-10 flex-1 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${
+              todayView ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500"
+            }`}
           >
-            🩺 My Today ({todayPatientCount})
+            My Today ({todayPatientCount})
           </Link>
           <Link
             href="/patients"
-            className={`rounded-xl px-3 py-3 text-center text-xs font-semibold ${!todayView ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+            className={`min-h-10 flex-1 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${
+              !todayView ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500"
+            }`}
           >
             All permitted
           </Link>
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
-        {createDepartments.length > 0 && (
-          <Link href="/patients/new" className="rounded-xl bg-slate-900 px-3 py-3 text-center text-xs font-semibold text-white">
-            + নতুন রোগী
-          </Link>
-        )}
-        {canReadSchedule && (
-          <Link href="/appointments" className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-xs font-semibold text-slate-700">
-            আজকের শিডিউল
-          </Link>
-        )}
-      </div>
-
-      <Card
-        title={todayView ? "আজকের আমার রোগী" : "Patients"}
-        subtitle={`${todayView ? "Telegram My Patients parity" : `Scope: ${SCOPE_LABEL[scope]}`} · Live 02_Patients`}
-      >
-        <Row label="Total patients" value={String(patients.length)} emphasis />
-        <Row label="Active" value={String(active)} />
-        {!todayView && <Row label="New this month" value={String(newThisMonth)} />}
-        {canSeeAnyMoney && (
-          <Row
-            label="Patient master due"
-            value={formatBDT(totalDue)}
-            tone={totalDue > 0 ? "negative" : "neutral"}
+      <Section title="Patient snapshot">
+        <div className="px-4 pb-4">
+          <MetricGrid
+            items={[
+              { label: "Patients", value: String(patients.length) },
+              { label: "Active", value: String(active), tone: "positive" },
+              { label: "New this month", value: String(newThisMonth) },
+            ]}
           />
-        )}
-      </Card>
+          {canSeeAnyMoney && totalDue > 0 && (
+            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+              <span className="text-xs text-slate-500">Patient master due</span>
+              <span className="text-sm font-semibold tabular-nums text-red-600">{formatBDT(totalDue)}</span>
+            </div>
+          )}
+        </div>
+      </Section>
 
-      <PatientsClient patients={patients} showMoney={canSeeAnyMoney} />
+      {(canReadSchedule || createDepartments.length > 0) && (
+        <Section title="Patient workflows">
+          {canReadSchedule && (
+            <ActionRow
+              href="/appointments"
+              icon="calendar"
+              title="Today’s schedule"
+              subtitle="Appointments, status and patient flow"
+            />
+          )}
+          <ActionRow
+            href="/register"
+            icon="register"
+            title="Daily register"
+            subtitle="Department-safe daily patient register"
+          />
+        </Section>
+      )}
+
+      <section className="mb-4">
+        <div className="mb-2">
+          <h2 className="text-sm font-semibold text-slate-900">Patient list</h2>
+          <p className="mt-0.5 text-[11px] text-slate-500">Search, open file and continue clinical workflow</p>
+        </div>
+        <PatientsClient patients={patients} showMoney={canSeeAnyMoney} />
+      </section>
     </div>
   );
 }

@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { Card, Row } from "@/components/Card";
+import ScopeSelector from "@/components/ScopeSelector";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import {
   getTodaysCollection,
@@ -9,116 +8,163 @@ import {
   getSalaryStatus,
 } from "@/lib/calculations";
 import { getScopedCashPosition } from "@/lib/scopedCash";
-import type { Scope } from "@/lib/types";
+import { getOwnerControlSnapshot } from "@/lib/controls";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-
-function readScope(value: string | undefined): Scope {
-  if (value === "physio" || value === "dental" || value === "combined") {
-    return value;
-  }
-  return "combined";
-}
-
-const SCOPE_LABEL: Record<Scope, string> = {
-  combined: "Combined",
-  physio: "Physio",
-  dental: "Dental",
-};
+import {
+  allowedScopesForContext,
+  resolveAuthorizedScope,
+} from "@/lib/webos/scope";
+import {
+  PageHeading,
+  MetricGrid,
+  Section,
+  ActionRow,
+} from "@/components/WorkspaceUI";
 
 function percent(value: number): string {
   if (!Number.isFinite(value)) return "0%";
-  return `${Math.max(0, value).toFixed(1)}%`;
+  return `${Math.max(0, value).toFixed(0)}%`;
 }
 
 export default async function FinancePage() {
   const context = await requireCurrentAccessContext();
-  if (!context.roles.includes("Owner")) redirect("/home");
+  if (!context.roles.includes("Owner")) redirect("/operations");
 
   const cookieStore = await cookies();
-  const scope = readScope(cookieStore.get("relife_scope")?.value);
+  const allowedScopes = allowedScopesForContext(context);
+  const scope = resolveAuthorizedScope(
+    context,
+    cookieStore.get("relife_scope")?.value
+  );
   const now = new Date();
 
-  const [cash, todays, month, salary] = await Promise.all([
+  const [cash, todays, month, salary, controls] = await Promise.all([
     getScopedCashPosition(scope, now),
     getTodaysCollection(now),
     getMonthBusinessPosition(scope, now),
     getSalaryStatus(scope, now),
+    getOwnerControlSnapshot(),
   ]);
 
+  const scopeCollection =
+    scope === "physio"
+      ? todays.physio
+      : scope === "dental"
+        ? todays.dental
+        : todays.combined;
   const costRecovery =
     month.totalBusinessLiability > 0
       ? (month.monthCollection / month.totalBusinessLiability) * 100
       : 0;
-  const salaryPaidRate =
-    salary.fixedCommitment > 0
-      ? (salary.paidOrAdvance / salary.fixedCommitment) * 100
-      : 0;
+  const pendingExpenses = controls.pendingExpenses.filter(
+    (item) => scope === "combined" || item.workbook === scope
+  ).length;
+  const pendingCash = controls.pendingCashMovements.filter(
+    (item) => scope === "combined" || item.workbook === scope
+  ).length;
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">
-          {formatDateBn(now)} &middot; Scope: {SCOPE_LABEL[scope]}
-        </p>
-        <Link
-          href="/operations"
-          className="shrink-0 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
-        >
-          Operations →
-        </Link>
+      <PageHeading
+        title="Finance"
+        subtitle={`${formatDateBn(now)} · Cash, expenses, salary and business position`}
+      />
+
+      <div className="mb-4">
+        <ScopeSelector current={scope} allowed={allowedScopes} />
       </div>
 
-      <Card title="Current Cash Position" subtitle={`Current month custody balance · ${SCOPE_LABEL[scope]}`}>
-        <Row label="Reception" value={formatBDT(cash.reception)} />
-        <Row label="Home Treasury" value={formatBDT(cash.homeTreasury)} />
-        <Row label="Digital / Bank" value={formatBDT(cash.bank)} />
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <Row label="Total cash position" value={formatBDT(cash.total)} emphasis />
-        </div>
-      </Card>
-
-      <Card title="Collection" subtitle="Source: 06_Payments">
-        <Row label="Today · Physio" value={formatBDT(todays.physio)} />
-        <Row label="Today · Dental" value={formatBDT(todays.dental)} />
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <Row label="Today · Combined" value={formatBDT(todays.combined)} emphasis />
-        </div>
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <Row label={`Month · ${SCOPE_LABEL[scope]}`} value={formatBDT(month.monthCollection)} emphasis />
-        </div>
-      </Card>
-
-      <Card title="Business Cost & Recovery" subtitle={`Scope: ${SCOPE_LABEL[scope]}`}>
-        <Row label="Variable clinic expense" value={formatBDT(month.variableClinicExpense)} />
-        <Row label="Fixed overhead" value={formatBDT(month.fixedOverhead)} />
-        <Row label="Fixed salary commitment" value={formatBDT(month.fixedSalaryCommitment)} />
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <Row label="Total business liability" value={formatBDT(month.totalBusinessLiability)} />
-          <Row label="Cost recovery" value={percent(costRecovery)} emphasis />
-        </div>
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <Row
-            label={month.surplusOrUncovered >= 0 ? "Surplus" : "Still uncovered"}
-            value={formatBDT(Math.abs(month.surplusOrUncovered))}
-            emphasis
-            tone={month.surplusOrUncovered >= 0 ? "positive" : "negative"}
+      <Section title="Current position" subtitle="Current month custody balance">
+        <div className="px-4 pb-4">
+          <MetricGrid
+            items={[
+              { label: "Reception", value: formatBDT(cash.reception) },
+              { label: "Home Treasury", value: formatBDT(cash.homeTreasury) },
+              { label: "Bank", value: formatBDT(cash.bank) },
+            ]}
           />
+          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+            <span className="text-xs font-medium text-slate-500">Total cash position</span>
+            <span className="text-base font-semibold tabular-nums text-slate-950">
+              {formatBDT(cash.total)}
+            </span>
+          </div>
         </div>
-      </Card>
+      </Section>
 
-      <Card title="Salary Status" subtitle={`Scope: ${SCOPE_LABEL[scope]}`}>
-        <Row label="Fixed commitment" value={formatBDT(salary.fixedCommitment)} />
-        <Row label="Paid / advance" value={formatBDT(salary.paidOrAdvance)} />
-        <Row label="Paid rate" value={percent(salaryPaidRate)} />
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <Row
-            label="Remaining due"
-            value={formatBDT(salary.remainingDue)}
-            emphasis
-            tone={salary.remainingDue > 0 ? "negative" : "positive"}
-          />
+      <Section title="This month" subtitle="Business performance and commitments">
+        <div className="grid grid-cols-2 gap-px bg-slate-100 border-y border-slate-100">
+          {[
+            ["Today collected", formatBDT(scopeCollection)],
+            ["Month collected", formatBDT(month.monthCollection)],
+            ["Business liability", formatBDT(month.totalBusinessLiability)],
+            ["Cost recovery", percent(costRecovery)],
+            ["Salary paid", formatBDT(salary.paidOrAdvance)],
+            ["Salary remaining", formatBDT(salary.remainingDue)],
+          ].map(([label, value]) => (
+            <div key={label} className="bg-white px-4 py-3">
+              <p className="text-sm font-semibold tabular-nums text-slate-950">{value}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{label}</p>
+            </div>
+          ))}
         </div>
-      </Card>
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-500">
+              {month.surplusOrUncovered >= 0 ? "Surplus" : "Still uncovered"}
+            </span>
+            <span
+              className={`text-sm font-semibold tabular-nums ${
+                month.surplusOrUncovered >= 0 ? "text-emerald-700" : "text-red-600"
+              }`}
+            >
+              {formatBDT(Math.abs(month.surplusOrUncovered))}
+            </span>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Finance workflows" subtitle="All money actions in one place">
+        <ActionRow
+          href="/operations"
+          icon="payment"
+          title="Payments"
+          subtitle="Collect and review patient payments"
+        />
+        <ActionRow
+          href="/operations"
+          icon="expense"
+          title="Expenses"
+          subtitle="Request, approve and pay clinic expenses"
+          meta={pendingExpenses || undefined}
+        />
+        <ActionRow
+          href="/more"
+          icon="approval"
+          title="Pending approvals"
+          subtitle="Owner decisions for expense and cash requests"
+          meta={pendingExpenses + pendingCash || undefined}
+        />
+        <ActionRow
+          href="/operations"
+          icon="cash"
+          title="Cash handover"
+          subtitle="Reception, Home Treasury and Bank movement"
+          meta={pendingCash || undefined}
+        />
+        <ActionRow
+          href="/operations"
+          icon="salary"
+          title="Salary"
+          subtitle="Salary and advance workflow"
+        />
+        <ActionRow
+          href="/finance/history"
+          icon="history"
+          title="Transaction history"
+          subtitle="Expenses, salary and cash movement evidence"
+        />
+      </Section>
     </div>
   );
 }
