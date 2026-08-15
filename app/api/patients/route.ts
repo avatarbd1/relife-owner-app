@@ -63,7 +63,11 @@ export async function POST(request: NextRequest) {
       })
     );
     if (body.department === "Physio") {
-      await consumePhysioInventorySystem(["Patient Card"], context.staffId, "Auto-Registration");
+      try {
+        await consumePhysioInventorySystem(["Patient Card"], context.staffId, "Auto-Registration");
+      } catch (error) {
+        console.error("Patient saved but automatic inventory consumption failed", error);
+      }
     }
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
