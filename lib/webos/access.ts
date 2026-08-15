@@ -19,6 +19,7 @@ export type WebAction =
   | "appointment.read"
   | "appointment.create"
   | "appointment.update"
+  | "register.read"
   | "payment.read_amount"
   | "payment.create"
   | "payment.void"
@@ -75,6 +76,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.read",
     "appointment.create",
     "appointment.update",
+    "register.read",
     "payment.read_amount",
     "payment.create",
     "payment.void",
@@ -111,6 +113,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.read",
     "appointment.create",
     "appointment.update",
+    "register.read",
     "payment.correct_own_today",
     "report.read_operational",
     "expense.read",
@@ -136,6 +139,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.read",
     "appointment.create",
     "appointment.update",
+    "register.read",
     "payment.read_amount",
     "payment.create",
     "payment.correct_own_today",
@@ -156,6 +160,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "patient.report.upload",
     "appointment.read",
     "appointment.create",
+    "register.read",
     "attendance.self",
     "clinical.read",
     "clinical.write",
@@ -170,6 +175,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "patient.report.upload",
     "appointment.read",
     "appointment.create",
+    "register.read",
     "attendance.self",
     "clinical.read",
     "clinical.write",
@@ -180,6 +186,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
   // until an explicit Dental Assistant allowlist is reviewed and tested.
   Dental_Assistant: new Set<WebAction>([]),
   Auditor: new Set<WebAction>([
+    "register.read",
     "report.read_operational",
     "report.read_financial",
     "expense.read",

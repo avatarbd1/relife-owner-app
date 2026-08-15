@@ -20,6 +20,37 @@ interface ServiceAccountCredentials {
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
+const SHEET_READ_CACHE_TTL_MS = 4_000;
+const SHEET_READ_MAX_RETRIES = 3;
+const RETRYABLE_READ_STATUS = new Set([429, 500, 502, 503, 504]);
+
+type RangeCacheEntry = { expiresAt: number; rows: string[][] };
+const rangeReadCache = new Map<string, RangeCacheEntry>();
+const rangeReadInFlight = new Map<string, Promise<string[][]>>();
+
+function rangeCacheKey(workbook: Workbook, range: string): string {
+  return `${workbook}:${range}`;
+}
+
+function invalidateWorkbookReadCache(workbook: Workbook): void {
+  const prefix = `${workbook}:`;
+  for (const key of rangeReadCache.keys()) {
+    if (key.startsWith(prefix)) rangeReadCache.delete(key);
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(response: Response, attempt: number): number {
+  const retryAfter = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return Math.min(5_000, retryAfter * 1_000);
+  }
+  return Math.min(2_000, 250 * 2 ** attempt);
+}
+
 function loadCredentials(): ServiceAccountCredentials | null {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
   if (raw) {
@@ -120,7 +151,7 @@ function sheetIdFor(workbook: Workbook): string {
   return workbook === "dental" ? DENTAL_SHEET_ID : PHYSIO_SHEET_ID;
 }
 
-export async function fetchSheetRanges(
+async function fetchUncachedSheetRanges(
   workbook: Workbook,
   ranges: string[]
 ): Promise<Record<string, string[][]>> {
@@ -131,30 +162,103 @@ export async function fetchSheetRanges(
   params.set("majorDimension", "ROWS");
   params.set("valueRenderOption", "FORMATTED_VALUE");
 
-  const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
-      sheetId
-    )}/values:batchGet?${params.toString()}`,
-    {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+    sheetId
+  )}/values:batchGet?${params.toString()}`;
+
+  for (let attempt = 0; attempt <= SHEET_READ_MAX_RETRIES; attempt += 1) {
+    const response = await fetch(url, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
-    }
-  );
+    });
 
-  if (!response.ok) {
-    throw new Error(
-      `Google Sheets batch read failed for ${workbook}: HTTP ${response.status}`
-    );
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        valueRanges?: Array<{ range?: string; values?: unknown[][] }>;
+      };
+      const result: Record<string, string[][]> = {};
+      ranges.forEach((name, index) => {
+        const values = payload.valueRanges?.[index]?.values || [];
+        result[name] = values.map((row) =>
+          row.map((cell) => String(cell ?? ""))
+        );
+      });
+      return result;
+    }
+
+    if (
+      !RETRYABLE_READ_STATUS.has(response.status) ||
+      attempt >= SHEET_READ_MAX_RETRIES
+    ) {
+      throw new Error(
+        `Google Sheets batch read failed for ${workbook}: HTTP ${response.status}`
+      );
+    }
+
+    await sleep(retryDelayMs(response, attempt));
   }
 
-  const payload = (await response.json()) as {
-    valueRanges?: Array<{ range?: string; values?: unknown[][] }>;
-  };
+  throw new Error(`Google Sheets batch read failed for ${workbook}`);
+}
+
+export async function fetchSheetRanges(
+  workbook: Workbook,
+  ranges: string[]
+): Promise<Record<string, string[][]>> {
   const result: Record<string, string[][]> = {};
-  ranges.forEach((name, index) => {
-    const values = payload.valueRanges?.[index]?.values || [];
-    result[name] = values.map((row) => row.map((cell) => String(cell ?? "")));
-  });
+  const waiters: Array<{ name: string; promise: Promise<string[][]> }> = [];
+  const missing: string[] = [];
+  const now = Date.now();
+
+  for (const name of ranges) {
+    const key = rangeCacheKey(workbook, name);
+    const cached = rangeReadCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      result[name] = cached.rows;
+      continue;
+    }
+    if (cached) rangeReadCache.delete(key);
+
+    const inFlight = rangeReadInFlight.get(key);
+    if (inFlight) {
+      waiters.push({ name, promise: inFlight });
+    } else {
+      missing.push(name);
+    }
+  }
+
+  if (missing.length > 0) {
+    const batchPromise = fetchUncachedSheetRanges(workbook, missing);
+    for (const name of missing) {
+      const key = rangeCacheKey(workbook, name);
+      let rangePromise: Promise<string[][]>;
+      rangePromise = batchPromise
+        .then((snapshot) => {
+          const rows = snapshot[name] || [];
+          rangeReadCache.set(key, {
+            expiresAt: Date.now() + SHEET_READ_CACHE_TTL_MS,
+            rows,
+          });
+          return rows;
+        })
+        .finally(() => {
+          if (rangeReadInFlight.get(key) === rangePromise) {
+            rangeReadInFlight.delete(key);
+          }
+        });
+      rangeReadInFlight.set(key, rangePromise);
+      waiters.push({ name, promise: rangePromise });
+    }
+  }
+
+  const resolved = await Promise.all(
+    waiters.map(async ({ name, promise }) => ({ name, rows: await promise }))
+  );
+  for (const { name, rows } of resolved) result[name] = rows;
+
+  for (const name of ranges) {
+    if (!(name in result)) result[name] = [];
+  }
   return result;
 }
 
@@ -184,6 +288,7 @@ export async function updateSheetValues(
       `Google Sheets update failed for ${workbook}: HTTP ${response.status}`
     );
   }
+  invalidateWorkbookReadCache(workbook);
 }
 
 export async function appendSheetValues(
@@ -214,6 +319,7 @@ export async function appendSheetValues(
       `Google Sheets append failed for ${workbook}: HTTP ${response.status}`
     );
   }
+  invalidateWorkbookReadCache(workbook);
 }
 
 export type SpreadsheetBatchRequest = Record<string, unknown>;
@@ -290,4 +396,5 @@ export async function batchUpdateSpreadsheet(
       }`
     );
   }
+  invalidateWorkbookReadCache(workbook);
 }
