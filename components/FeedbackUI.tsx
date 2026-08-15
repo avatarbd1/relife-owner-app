@@ -9,15 +9,15 @@ const SPINNER_SIZE: Record<SpinnerSize, string> = {
 
 const STATUS_STYLE: Record<StatusTone, { className: string; icon: string }> = {
   success: {
-    className: "border-emerald-500 bg-emerald-100 text-emerald-600",
+    className: "border-emerald-500 bg-emerald-100 text-emerald-700",
     icon: "✓",
   },
   warning: {
-    className: "border-amber-500 bg-amber-100 text-amber-600",
+    className: "border-amber-500 bg-amber-100 text-amber-700",
     icon: "⌛",
   },
   error: {
-    className: "border-red-500 bg-red-100 text-red-600",
+    className: "border-red-500 bg-red-100 text-red-700",
     icon: "✕",
   },
   info: {
@@ -25,7 +25,7 @@ const STATUS_STYLE: Record<StatusTone, { className: string; icon: string }> = {
     icon: "i",
   },
   neutral: {
-    className: "border-slate-200 bg-slate-100 text-slate-400",
+    className: "border-slate-200 bg-slate-100 text-slate-500",
     icon: "•",
   },
 };
@@ -97,5 +97,81 @@ export function StatusBadge({
       {icon && <span aria-hidden="true">{style.icon}</span>}
       <span>{children}</span>
     </span>
+  );
+}
+
+export function ProgressBar({
+  value,
+  label,
+  tone = "auto",
+  className = "",
+}: {
+  value: number;
+  label?: string;
+  tone?: "auto" | "primary" | "success" | "warning" | "error";
+  className?: string;
+}) {
+  const safe = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+  const resolvedTone =
+    tone === "auto"
+      ? safe >= 100
+        ? "success"
+        : safe >= 67
+          ? "primary"
+          : safe >= 34
+            ? "warning"
+            : "error"
+      : tone;
+  const fill = {
+    primary: "bg-blue-700",
+    success: "bg-emerald-500",
+    warning: "bg-amber-500",
+    error: "bg-red-600",
+  }[resolvedTone];
+
+  return (
+    <div className={className}>
+      {(label || Number.isFinite(value)) && (
+        <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px] font-medium text-slate-500">
+          <span>{label || "Progress"}</span>
+          <span className="tabular-nums">{Math.round(safe)}%</span>
+        </div>
+      )}
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-slate-200"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(safe)}
+      >
+        <div
+          className={`h-full origin-left rounded-full ${fill} transition-transform duration-200 ease-out`}
+          style={{ transform: `scaleX(${safe / 100})` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function InlineNotice({
+  tone,
+  title,
+  children,
+  className = "",
+}: {
+  tone: StatusTone;
+  title?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const style = STATUS_STYLE[tone];
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2.5 text-xs leading-5 ${style.className} ${className}`}
+      role={tone === "error" ? "alert" : "status"}
+    >
+      {title && <p className="font-semibold">{title}</p>}
+      <div className={title ? "mt-0.5" : ""}>{children}</div>
+    </div>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
+import { haptic } from "@/lib/interactions";
 
 export type WorkbookView = "physio" | "dental";
 
@@ -44,42 +46,62 @@ function bdt(value: number): string {
   return `৳${new Intl.NumberFormat("en-BD", { maximumFractionDigits: 0 }).format(value)}`;
 }
 
-function departmentPill(department: string) {
-  return department === "Dental"
-    ? "bg-sky-50 text-sky-700"
-    : "bg-emerald-50 text-emerald-700";
-}
-
 export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }) {
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [pin, setPin] = useState("");
   const [receivedAmount, setReceivedAmount] = useState("");
+  const [decisionReason, setDecisionReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; good: boolean } | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
 
-  const pendingTotal =
-    snapshot.pendingExpenses.length + snapshot.pendingCashMovements.length;
-  const actionAmount = useMemo(() => {
-    if (!pendingAction) return 0;
-    return pendingAction.item.amount;
-  }, [pendingAction]);
+  useEffect(() => {
+    const update = () => setIsOnline(navigator.onLine);
+    update();
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+
+  const pendingTotal = snapshot.pendingExpenses.length + snapshot.pendingCashMovements.length;
+  const actionAmount = useMemo(() => pendingAction?.item.amount || 0, [pendingAction]);
+  const receivedNumber = Number(receivedAmount || actionAmount);
+  const discrepancy =
+    pendingAction?.kind === "cash" &&
+    pendingAction.decision === "accept" &&
+    Number.isFinite(receivedNumber)
+      ? receivedNumber - actionAmount
+      : 0;
+  const rejectionNeedsReason =
+    pendingAction?.kind === "expense" && pendingAction.decision === "reject";
 
   function openAction(action: PendingAction) {
-    setMessage("");
+    setMessage(null);
     setPin("");
-    setReceivedAmount(
-      action.kind === "cash" && action.decision === "accept"
-        ? String(action.item.amount)
-        : ""
-    );
+    setDecisionReason("");
+    setReceivedAmount(action.kind === "cash" && action.decision === "accept" ? String(action.item.amount) : "");
     setPendingAction(action);
+    haptic("tap");
   }
 
   async function submitAction() {
-    if (!pendingAction || !pin) return;
+    if (!pendingAction || !pin || busy) return;
+    if (rejectionNeedsReason && decisionReason.trim().length < 3) {
+      setMessage({ text: "Rejection reason is required.", good: false });
+      haptic("error");
+      return;
+    }
+    if (!isOnline) {
+      setMessage({ text: "Internet connection required for owner financial actions.", good: false });
+      haptic("error");
+      return;
+    }
     setBusy(true);
-    setMessage("");
+    setMessage(null);
 
     const isExpense = pendingAction.kind === "expense";
     const payload: Record<string, unknown> = {
@@ -88,89 +110,61 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
       decision: pendingAction.decision,
       pin,
     };
+    if (isExpense && pendingAction.decision === "reject") {
+      payload.reason = decisionReason.trim();
+    }
     if (!isExpense && pendingAction.decision === "accept") {
       payload.receivedAmount = Number(receivedAmount || pendingAction.item.amount);
     }
 
     try {
-      const response = await fetch(
-        isExpense ? "/api/control/expense" : "/api/control/cash-movement",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
+      const response = await fetch(isExpense ? "/api/control/expense" : "/api/control/cash-movement", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result?.error || `HTTP ${response.status}`);
-      }
-      setMessage("Saved successfully.");
+      if (!response.ok) throw new Error(result?.error || `HTTP ${response.status}`);
+      setMessage({ text: "Saved successfully.", good: true });
       setPendingAction(null);
       setPin("");
+      setDecisionReason("");
+      haptic("success");
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Action failed");
+      setMessage({ text: error instanceof Error ? error.message : "Action failed", good: false });
+      haptic("error");
     } finally {
       setBusy(false);
     }
   }
 
   if (pendingTotal === 0) {
-    return (
-      <div className="rounded-2xl bg-white px-4 py-5 text-center shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm font-semibold text-slate-900">No pending approvals</p>
-        <p className="mt-1 text-xs text-slate-500">Expense and cash requests are up to date.</p>
-      </div>
-    );
+    return <InlineNotice tone="success">No pending approvals. Expense and cash requests are up to date.</InlineNotice>;
   }
 
   return (
     <div className="space-y-4">
-      {snapshot.pendingExpenses.length > 0 && (
-        <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <div className="flex items-center justify-between px-4 py-3.5">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">Expense approvals</h2>
-              <p className="mt-0.5 text-[11px] text-slate-500">Pending owner decision</p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-              {snapshot.pendingExpenses.length}
-            </span>
-          </div>
+      {!isOnline && <InlineNotice tone="warning">Offline — owner approval and cash acceptance require internet.</InlineNotice>}
 
+      {snapshot.pendingExpenses.length > 0 && (
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <div><h2 className="text-base font-semibold text-slate-900">Expense approvals</h2><p className="mt-0.5 text-xs text-slate-500">Decision only; approval does not deduct cash</p></div>
+            <StatusBadge tone="warning">{snapshot.pendingExpenses.length} pending</StatusBadge>
+          </div>
           <div className="divide-y divide-slate-100 border-t border-slate-100">
             {snapshot.pendingExpenses.map((item) => (
               <article key={`${item.workbook}-${item.id}`} className="px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">{item.category || item.id}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{item.id} · {item.date} · {item.requestedBy || "Unknown"}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${departmentPill(item.department)}`}>
-                    {item.department}
-                  </span>
+                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-900">{item.category || item.id}</p><p className="mt-0.5 text-[11px] text-slate-500">{item.id} · {item.date} · {item.requestedBy || "Unknown"}</p></div>
+                  <StatusBadge tone="info">{item.department}</StatusBadge>
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <span className="truncate text-xs text-slate-500">From {item.paidFrom || "-"}</span>
-                  <span className="text-sm font-semibold tabular-nums text-slate-950">{bdt(item.amount)}</span>
-                </div>
-                {item.note && <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{item.note}</p>}
-                <div className="mt-3 flex justify-end gap-2">
-                  <button
-                    disabled={!snapshot.writeEnabled}
-                    onClick={() => openAction({ kind: "expense", decision: "reject", item })}
-                    className="min-h-10 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-red-600 disabled:opacity-40"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    disabled={!snapshot.writeEnabled}
-                    onClick={() => openAction({ kind: "expense", decision: "approve", item })}
-                    className="min-h-10 rounded-xl bg-slate-900 px-4 text-xs font-semibold text-white disabled:opacity-40"
-                  >
-                    Approve
-                  </button>
+                <div className="mt-2 flex items-center justify-between gap-3"><span className="truncate text-xs text-slate-500">Requested source: {item.paidFrom || "Not set"}</span><strong className="text-sm tabular-nums text-slate-950">{bdt(item.amount)}</strong></div>
+                {item.note && <p className="mt-2 rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600">{item.note}</p>}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button disabled={!snapshot.writeEnabled || !isOnline} onClick={() => openAction({ kind: "expense", decision: "reject", item })} className="min-h-10 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>
+                  <button disabled={!snapshot.writeEnabled || !isOnline} onClick={() => openAction({ kind: "expense", decision: "approve", item })} className="min-h-10 rounded-lg bg-blue-800 px-4 text-xs font-semibold text-white shadow-sm hover:bg-blue-900">Approve</button>
                 </div>
               </article>
             ))}
@@ -179,113 +173,48 @@ export default function OwnerControlsClient({ snapshot }: { snapshot: Snapshot }
       )}
 
       {snapshot.pendingCashMovements.length > 0 && (
-        <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between px-4 py-3.5">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">Cash handover</h2>
-              <p className="mt-0.5 text-[11px] text-slate-500">Confirm actual amount received</p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-              {snapshot.pendingCashMovements.length}
-            </span>
+            <div><h2 className="text-base font-semibold text-slate-900">Cash handover acceptance</h2><p className="mt-0.5 text-xs text-slate-500">Confirm actual cash received; internal transfer, not expense</p></div>
+            <StatusBadge tone="warning">{snapshot.pendingCashMovements.length} pending</StatusBadge>
           </div>
-
           <div className="divide-y divide-slate-100 border-t border-slate-100">
             {snapshot.pendingCashMovements.map((item) => (
               <article key={`${item.workbook}-${item.id}`} className="px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">{item.from} → {item.to}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{item.id} · {item.date} · {item.movedBy || "Unknown"}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${departmentPill(item.department)}`}>
-                    {item.department}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-slate-500">Requested</span>
-                  <span className="text-sm font-semibold tabular-nums text-slate-950">{bdt(item.amount)}</span>
-                </div>
-                <div className="mt-3 flex justify-end gap-2">
-                  <button
-                    disabled={!snapshot.writeEnabled}
-                    onClick={() => openAction({ kind: "cash", decision: "reject", item })}
-                    className="min-h-10 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-red-600 disabled:opacity-40"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    disabled={!snapshot.writeEnabled}
-                    onClick={() => openAction({ kind: "cash", decision: "accept", item })}
-                    className="min-h-10 rounded-xl bg-slate-900 px-4 text-xs font-semibold text-white disabled:opacity-40"
-                  >
-                    Accept
-                  </button>
-                </div>
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-900">{item.from} → {item.to}</p><p className="mt-0.5 text-[11px] text-slate-500">{item.id} · {item.date} · {item.movedBy || "Unknown"}</p></div><StatusBadge tone="info">{item.department}</StatusBadge></div>
+                <div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Requested</span><strong className="text-sm tabular-nums text-slate-950">{bdt(item.amount)}</strong></div>
+                <div className="mt-3 grid grid-cols-2 gap-2"><button disabled={!snapshot.writeEnabled || !isOnline} onClick={() => openAction({ kind: "cash", decision: "reject", item })} className="min-h-10 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button><button disabled={!snapshot.writeEnabled || !isOnline} onClick={() => openAction({ kind: "cash", decision: "accept", item })} className="min-h-10 rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700">Accept received</button></div>
               </article>
             ))}
           </div>
         </section>
       )}
 
-      {message && (
-        <p className={`rounded-xl px-3 py-2 text-xs ${message.startsWith("Saved") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-          {message}
-        </p>
-      )}
+      {message && <div className={message.good ? "relife-success-flash" : "relife-error-shake"}><InlineNotice tone={message.good ? "success" : "error"}>{message.text}</InlineNotice></div>}
 
       {pendingAction && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-4 sm:items-center sm:justify-center">
-          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl">
-            <h3 className="text-base font-semibold text-slate-900">Confirm action</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              {pendingAction.item.id} · {bdt(actionAmount)} · {pendingAction.decision.toUpperCase()}
-            </p>
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-[1px] sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-label="Confirm owner action">
+          <div className="relife-page-enter w-full max-w-md rounded-2xl bg-white p-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-900">Confirm {pendingAction.decision}</h3><p className="mt-1 text-xs text-slate-500">{pendingAction.item.id} · {bdt(actionAmount)}</p></div><StatusBadge tone={pendingAction.decision === "reject" ? "error" : pendingAction.kind === "cash" ? "success" : "info"}>{pendingAction.kind}</StatusBadge></div>
 
             {pendingAction.kind === "cash" && pendingAction.decision === "accept" && (
-              <label className="mt-4 block text-xs font-medium text-slate-600">
-                Received amount
-                <input
-                  type="number"
-                  min="0"
-                  inputMode="decimal"
-                  value={receivedAmount}
-                  onChange={(event) => setReceivedAmount(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
-                />
-              </label>
+              <div className="mt-4">
+                <label className="block text-xs font-semibold text-slate-700">Received amount<input type="number" min="0" inputMode="decimal" value={receivedAmount} onChange={(event) => setReceivedAmount(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-100" /></label>
+                {Math.abs(discrepancy) > 0.009 && <div className="mt-2"><InlineNotice tone="warning">Discrepancy: {discrepancy > 0 ? "+" : ""}{bdt(discrepancy)} versus requested amount. The accepted amount becomes the cash effect.</InlineNotice></div>}
+              </div>
             )}
 
-            <label className="mt-4 block text-xs font-medium text-slate-600">
-              Owner PIN
-              <input
-                autoFocus
-                type="password"
-                inputMode="numeric"
-                value={pin}
-                onChange={(event) => setPin(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && pin && !busy) void submitAction();
-                }}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
-                placeholder="Enter PIN"
-              />
-            </label>
+            {rejectionNeedsReason && (
+              <label className="mt-4 block text-xs font-semibold text-slate-700">Rejection reason<textarea value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} rows={2} minLength={3} className="mt-1.5 w-full rounded-lg border border-red-200 px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100" placeholder="Why is this expense being rejected?" /></label>
+            )}
+
+            <label className="mt-4 block text-xs font-semibold text-slate-700">Owner PIN<input autoFocus type="password" inputMode="numeric" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(event) => { if (event.key === "Enter" && pin && !busy && (!rejectionNeedsReason || decisionReason.trim().length >= 3)) void submitAction(); }} className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-100" placeholder="Enter PIN" /></label>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button
-                disabled={busy}
-                onClick={() => setPendingAction(null)}
-                className="rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={busy || !pin}
-                onClick={() => void submitAction()}
-                className="rounded-xl bg-slate-900 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {busy ? "Saving..." : "Confirm"}
+              <button disabled={busy} onClick={() => setPendingAction(null)} className="min-h-11 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button disabled={busy || !pin || !isOnline || (rejectionNeedsReason && decisionReason.trim().length < 3)} onClick={() => void submitAction()} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold text-white shadow-sm ${pendingAction.decision === "reject" ? "bg-red-600 hover:bg-red-700" : pendingAction.kind === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-800 hover:bg-blue-900"}`}>
+                {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving owner action" />}
+                {busy ? "Saving…" : "Confirm"}
               </button>
             </div>
           </div>
