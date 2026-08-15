@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import { getTodaysCollection } from "@/lib/calculations";
+import { getPayments } from "@/lib/data";
 import { getScopedCashPosition } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
 import {
@@ -16,6 +17,13 @@ import {
   Section,
   ActionRow,
 } from "@/components/WorkspaceUI";
+
+function paymentSessionCount(remarks?: string): number {
+  const match = /(?:^|\|)\s*Sessions:\s*(\d+)/i.exec(String(remarks || ""));
+  if (!match) return 1;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
 
 export default async function HomePage() {
   const context = await requireCurrentAccessContext();
@@ -43,12 +51,27 @@ export default async function HomePage() {
   const today = todayDhaka();
   const scope = "combined" as const;
 
-  const [cash, todays, appointments, controls] = await Promise.all([
+  const [cash, todays, appointments, controls, payments] = await Promise.all([
     getScopedCashPosition(scope, now),
     getTodaysCollection(now),
     getAppointmentsForContext(context, scope, today),
     getOwnerControlSnapshot(),
+    getPayments(),
   ]);
+
+  const todayPayments = payments.filter(
+    (payment) => payment.date.trim().slice(0, 10) === today
+  );
+  const patientKeys = new Set(
+    todayPayments
+      .map((payment) => payment.patientId.trim() || payment.patientName.trim())
+      .filter(Boolean)
+  );
+  const todayPatientCount = patientKeys.size;
+  const todaySessionCount = todayPayments.reduce(
+    (sum, payment) => sum + paymentSessionCount(payment.remarks),
+    0
+  );
 
   const completedAppointments = appointments.filter(
     (item) => item.status.trim().toLowerCase() === "completed"
@@ -103,12 +126,12 @@ export default async function HomePage() {
 
         <div className="mt-4 grid grid-cols-3 gap-2">
           <div className="rounded-xl bg-white/8 p-3">
-            <p className="text-lg font-semibold">{appointments.length}</p>
-            <p className="text-[11px] text-slate-400">Appointments</p>
+            <p className="text-lg font-semibold">{todayPatientCount}</p>
+            <p className="text-[11px] text-slate-400">Patients</p>
           </div>
           <div className="rounded-xl bg-white/8 p-3">
-            <p className="text-lg font-semibold text-emerald-300">{completedAppointments}</p>
-            <p className="text-[11px] text-slate-400">Completed</p>
+            <p className="text-lg font-semibold text-emerald-300">{todaySessionCount}</p>
+            <p className="text-[11px] text-slate-400">Sessions</p>
           </div>
           <div className="rounded-xl bg-white/8 p-3">
             <p className="text-lg font-semibold">{openAppointments}</p>
