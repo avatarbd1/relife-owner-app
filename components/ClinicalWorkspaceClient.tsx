@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { InlineNotice, ProgressBar, Spinner, StatusBadge } from "@/components/FeedbackUI";
+import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
 
 type Workspace = {
@@ -181,6 +182,7 @@ function AssessmentForm({
   online: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const [category, setCategory] = useState("general");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!online) return onSaved("✕ Internet connection required");
@@ -189,10 +191,11 @@ function AssessmentForm({
     try {
       await post("/api/clinical/assessment", {
         patientId,
-        category: form.get("category"),
+        category,
         findings: form.get("findings"),
       });
       event.currentTarget.reset();
+      setCategory("general");
       onSaved("✓ Assessment saved");
     } catch (error) {
       onSaved(`✕ ${error instanceof Error ? error.message : "Assessment save failed"}`);
@@ -202,20 +205,23 @@ function AssessmentForm({
   }
   return (
     <form onSubmit={submit} className="space-y-3">
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Assessment category</label>
-        <select name="category" defaultValue="general" className={inputClass}>
-          <option value="general">General</option>
-          <option value="lbp">Low back pain</option>
-          <option value="neck">Neck</option>
-          <option value="shoulder">Shoulder</option>
-          <option value="knee">Knee</option>
-          <option value="hip">Hip</option>
-          <option value="ankle">Ankle</option>
-          <option value="neuro">Neuro</option>
-          <option value="post_op">Post-op</option>
-        </select>
-      </div>
+      <TapChoice
+        label="Assessment category"
+        value={category}
+        columns={3}
+        options={[
+          { value: "general", label: "General", tone: "blue" },
+          { value: "lbp", label: "Low back pain", tone: "blue" },
+          { value: "neck", label: "Neck", tone: "blue" },
+          { value: "shoulder", label: "Shoulder", tone: "blue" },
+          { value: "knee", label: "Knee", tone: "blue" },
+          { value: "hip", label: "Hip", tone: "blue" },
+          { value: "ankle", label: "Ankle", tone: "blue" },
+          { value: "neuro", label: "Neuro", tone: "amber" },
+          { value: "post_op", label: "Post-op", tone: "emerald" },
+        ]}
+        onChange={(value) => value && setCategory(value)}
+      />
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Clinical findings</label>
         <textarea
@@ -283,7 +289,10 @@ function PlanForm({
             <button
               key={item}
               type="button"
-              onClick={() => setSessions(item)}
+              onClick={() => {
+                setSessions(item);
+                haptic("tap");
+              }}
               className={`min-h-11 rounded-lg border text-xs font-semibold ${sessions === item ? "border-blue-800 bg-blue-800 text-white" : "border-slate-200 bg-white text-slate-600"}`}
             >
               {item}
@@ -541,7 +550,7 @@ export default function ClinicalWorkspaceClient({
       {tab === "assessment" && (
         <div className="space-y-4 relife-fade-in">
           {canExecute && (
-            <Panel title="Quick assessment" subtitle="Focused findings with immediate audited save" badge={<StatusBadge tone="info">Live write</StatusBadge>}>
+            <Panel title="Quick assessment" subtitle="Tap category, type only patient-specific findings" badge={<StatusBadge tone="info">Live write</StatusBadge>}>
               <AssessmentForm patientId={workspace.patient.patientId} onSaved={saved} online={online} />
             </Panel>
           )}
