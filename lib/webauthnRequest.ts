@@ -7,27 +7,50 @@ function firstForwardedValue(value: string | null): string {
   return (value || "").split(",")[0]?.trim() || "";
 }
 
-export function isAllowedWebAuthnRequestOrigin(request: NextRequest): boolean {
-  const originHeader = request.headers.get("origin");
-  if (!originHeader) return false;
-
+function matchesTrustedOrigin(request: NextRequest, originHeader: string): boolean {
   try {
     const actualOrigin = new URL(originHeader).origin;
     const configuredOrigin = new URL(webauthnConfig().origin).origin;
     if (actualOrigin === configuredOrigin) return true;
 
-    // Render terminates TLS in front of the Node process. In that setup
-    // request.nextUrl can reflect an internal host while the browser sends
-    // the public app origin. Trust only Render/proxy forwarded host+proto,
-    // never an arbitrary client body/cookie value.
-    const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
+    const forwardedHost = firstForwardedValue(
+      request.headers.get("x-forwarded-host")
+    );
     const forwardedProto =
       firstForwardedValue(request.headers.get("x-forwarded-proto")) || "https";
 
-    return Boolean(
-      forwardedHost && actualOrigin === `${forwardedProto}://${forwardedHost}`
-    );
+    if (
+      forwardedHost &&
+      actualOrigin === `${forwardedProto}://${forwardedHost}`
+    ) {
+      return true;
+    }
+
+    const host = firstForwardedValue(request.headers.get("host"));
+    if (host && actualOrigin === `${request.nextUrl.protocol}//${host}`) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
+}
+
+/**
+ * Same-origin guard for authenticated application write routes. Some
+ * non-browser requests omit Origin, so those continue to rely on session /
+ * route authorization. Browser requests must match a trusted public origin.
+ */
+export function isAllowedRequestOrigin(request: NextRequest): boolean {
+  const originHeader = request.headers.get("origin");
+  if (!originHeader) return true;
+  return matchesTrustedOrigin(request, originHeader);
+}
+
+/** WebAuthn operations always require an explicit trusted Origin header. */
+export function isAllowedWebAuthnRequestOrigin(request: NextRequest): boolean {
+  const originHeader = request.headers.get("origin");
+  if (!originHeader) return false;
+  return matchesTrustedOrigin(request, originHeader);
 }

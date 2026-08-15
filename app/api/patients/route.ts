@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 import { registerPatient } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
-}
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "PATIENT_CREATE_FAILED";
@@ -35,7 +26,7 @@ function errorResponse(error: unknown): NextResponse {
 }
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
 
