@@ -7,18 +7,19 @@ import {
   startChamberSession,
   updateChamberStep,
 } from "@/lib/webos/chamber";
+import { assignChamberTherapist } from "@/lib/webos/chamberAssignment";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
   if (["ACCESS_DENIED", "THERAPIST_NOT_ASSIGNED"].includes(message)) return 403;
-  if (["APPOINTMENT_NOT_FOUND", "PATIENT_NOT_FOUND", "CHAMBER_SESSION_NOT_FOUND", "STATION_NOT_FOUND", "RESOURCE_NOT_FOUND"].includes(message)) return 404;
+  if (["APPOINTMENT_NOT_FOUND", "PATIENT_NOT_FOUND", "CHAMBER_SESSION_NOT_FOUND", "STATION_NOT_FOUND", "RESOURCE_NOT_FOUND", "STAFF_NOT_FOUND"].includes(message)) return 404;
   if (message === "CHAMBER_SCHEMA_MISSING") return 503;
   if (
     message.startsWith("CHAMBER_CAPACITY:") ||
     message.startsWith("RESOURCE_BUSY:") ||
-    ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING"].includes(message)
+    ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING", "APPOINTMENT_NOT_ACTIVE"].includes(message)
   ) return 409;
   if (["CHAMBER_STEP_REQUIRED", "INVALID_STEP_DURATION", "INVALID_ACTION", "SCHEMA_MISMATCH"].includes(message)) return 400;
   return 500;
@@ -52,6 +53,10 @@ export async function POST(request: NextRequest) {
     const action = String(body.action || "");
     if (action === "receive") {
       const result = await receiveChamberPatient(context, body.appointmentId);
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "assign_therapist") {
+      const result = await assignChamberTherapist(context, body.appointmentId, body.staffId);
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "prefer_station") {
