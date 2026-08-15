@@ -22,9 +22,11 @@ export type WebAction =
   | "payment.void"
   | "report.read_operational"
   | "report.read_financial"
+  | "expense.read"
   | "expense.request"
   | "expense.approve"
   | "expense.pay"
+  | "cash.read"
   | "cash.request"
   | "cash.accept"
   | "salary.read"
@@ -67,9 +69,11 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "payment.void",
     "report.read_operational",
     "report.read_financial",
+    "expense.read",
     "expense.request",
     "expense.approve",
     "expense.pay",
+    "cash.read",
     "cash.request",
     "cash.accept",
     "salary.read",
@@ -92,7 +96,9 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.create",
     "appointment.update",
     "report.read_operational",
+    "expense.read",
     "expense.request",
+    "cash.read",
     "cash.accept",
     "attendance.self",
     "attendance.read_team",
@@ -111,8 +117,10 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "payment.read_amount",
     "payment.create",
     "report.read_operational",
+    "expense.read",
     "expense.request",
     "expense.pay",
+    "cash.read",
     "cash.request",
     "salary.read",
     "attendance.self",
@@ -145,6 +153,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
   Auditor: new Set<WebAction>([
     "report.read_operational",
     "report.read_financial",
+    "expense.read",
+    "cash.read",
     "salary.read",
     "attendance.read_team",
     "audit.read",
