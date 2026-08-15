@@ -274,13 +274,14 @@ async function withStaffDateLock<T>(key: string, fn: () => Promise<T>): Promise<
   const previous = actionLocks.get(key) || Promise.resolve();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  actionLocks.set(key, previous.then(() => gate));
+  const current = previous.then(() => gate);
+  actionLocks.set(key, current);
   await previous;
   try {
     return await fn();
   } finally {
     release();
-    if (actionLocks.get(key) === gate) actionLocks.delete(key);
+    if (actionLocks.get(key) === current) actionLocks.delete(key);
   }
 }
 
