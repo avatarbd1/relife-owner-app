@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth";
 import { decideExpense } from "@/lib/controls";
 import type { Workbook } from "@/lib/data/googleSheets";
+import { recordExpenseRejectionReason } from "@/lib/webos/controlAudit";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
 function statusForError(message: string): number {
@@ -31,6 +32,7 @@ export async function POST(request: NextRequest) {
   const id = typeof body?.id === "string" ? body.id.trim() : "";
   const decision = body?.decision;
   const pin = typeof body?.pin === "string" ? body.pin : "";
+  const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
 
   if (!pin || !checkOwnerPin(pin)) {
     return NextResponse.json({ ok: false, error: "Incorrect PIN" }, { status: 401 });
@@ -41,9 +43,15 @@ export async function POST(request: NextRequest) {
   if (!id || !["approve", "reject"].includes(decision)) {
     return NextResponse.json({ ok: false, error: "Invalid action" }, { status: 400 });
   }
+  if (decision === "reject" && reason.length < 3) {
+    return NextResponse.json({ ok: false, error: "Rejection reason required" }, { status: 400 });
+  }
 
   try {
     await decideExpense(workbook as Workbook, id, decision);
+    if (decision === "reject") {
+      await recordExpenseRejectionReason(workbook as Workbook, id, reason);
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CONTROL_FAILED";
