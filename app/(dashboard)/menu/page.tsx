@@ -111,7 +111,7 @@ export default async function MenuPage() {
           {canReports && (
             <ActionRow
               href="/reports"
-              icon="history"
+              icon="reports"
               title="Reports"
               subtitle="Operational and financial reports by permission"
             />
@@ -122,7 +122,7 @@ export default async function MenuPage() {
       <Section title="Account & tools">
         <ActionRow
           href="/more"
-          icon="settings"
+          icon="more"
           title="More"
           subtitle="Tools, corrections, security and administration"
         />
