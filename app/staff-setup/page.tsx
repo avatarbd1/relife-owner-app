@@ -19,6 +19,7 @@ function StaffSetupForm() {
   const [staff, setStaff] = useState<StaffPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [alreadyActive, setAlreadyActive] = useState(false);
 
   useEffect(() => {
     setSupported(browserSupportsWebAuthn());
@@ -28,6 +29,7 @@ function StaffSetupForm() {
     if (!token || busy || !supported) return;
     setBusy(true);
     setMessage("");
+    setAlreadyActive(false);
     try {
       const enrollResponse = await fetch("/api/auth/enroll/start", {
         method: "POST",
@@ -70,10 +72,18 @@ function StaffSetupForm() {
         router.refresh();
       }, 450);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "NotAllowedError") {
+      const rawMessage = error instanceof Error ? error.message : "";
+      const duplicateAuthenticator =
+        (error instanceof DOMException && error.name === "InvalidStateError") ||
+        /previously registered|already registered|authenticator.*registered/i.test(rawMessage);
+
+      if (duplicateAuthenticator) {
+        setAlreadyActive(true);
+        setMessage("এই device আগেই activate করা আছে। Setup link আবার লাগবে না—নিচের Staff login চাপুন।");
+      } else if (error instanceof DOMException && error.name === "NotAllowedError") {
         setMessage("Device verification বাতিল হয়েছে। আবার চেষ্টা করুন।");
       } else {
-        setMessage(error instanceof Error ? error.message : "Staff setup ব্যর্থ হয়েছে।");
+        setMessage(rawMessage || "Staff setup ব্যর্থ হয়েছে।");
       }
     } finally {
       setBusy(false);
@@ -87,7 +97,7 @@ function StaffSetupForm() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-2xl">🔐</div>
           <h1 className="mt-4 text-xl font-semibold text-slate-900">Relife Staff Access</h1>
           <p className="mt-2 text-sm leading-5 text-slate-500">
-            Owner-এর setup link দিয়ে এই device-এ Fingerprint, Face ID, screen lock বা passkey চালু করুন।
+            Owner-এর setup link শুধু প্রথমবার এই device activate করার জন্য। এরপর প্রতিদিন normal login page থেকে Fingerprint / Face ID ব্যবহার করবেন।
           </p>
         </div>
 
@@ -100,13 +110,13 @@ function StaffSetupForm() {
         )}
 
         {!token && (
-          <p className="mt-5 rounded-xl bg-red-50 p-3 text-sm text-red-700">Setup link পাওয়া যায়নি। Owner-এর কাছ থেকে নতুন link নিন।</p>
+          <p className="mt-5 rounded-xl bg-red-50 p-3 text-sm text-red-700">Setup link পাওয়া যায়নি। প্রথম activation-এর জন্য Owner-এর কাছ থেকে নতুন link নিন। আগে activate করা থাকলে Staff login ব্যবহার করুন।</p>
         )}
         {!supported && (
           <p className="mt-5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">এই browser/device WebAuthn support করছে না। Chrome বা supported browser ব্যবহার করুন।</p>
         )}
         {message && (
-          <p className="mt-5 rounded-xl bg-slate-100 p-3 text-sm text-slate-700" role="status">{message}</p>
+          <p className={`mt-5 rounded-xl p-3 text-sm ${alreadyActive ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"}`} role="status">{message}</p>
         )}
 
         <button
@@ -118,8 +128,16 @@ function StaffSetupForm() {
           {busy ? "Setting up…" : "Activate this device"}
         </button>
 
+        <button
+          type="button"
+          onClick={() => router.replace("/login")}
+          className="mt-3 min-h-12 w-full rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-800 active:bg-slate-200"
+        >
+          Already activated? Staff login
+        </button>
+
         <p className="mt-4 text-xs leading-5 text-slate-400">
-          Linkটি অল্প সময়ের জন্য valid। Relife biometric image সংরক্ষণ করে না; device/authenticator verification handle করে।
+          Setup link one-time/short-lived হতে পারে। Login link আলাদা করে লাগবে না; মূল Relife app খুলে Fingerprint / Face ID চাপলেই হবে। Relife biometric image সংরক্ষণ করে না; device/authenticator verification handle করে।
         </p>
       </div>
     </div>
