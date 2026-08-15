@@ -5,12 +5,26 @@ import { canPerform } from "@/lib/webos/access";
 import { getChamberSnapshot } from "@/lib/webos/chamber";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 export default async function ChamberPage() {
   const context = await requireCurrentAccessContext();
-  const rawSnapshot = await getChamberSnapshot(context);
+  const [rawSnapshot, staffDirectory] = await Promise.all([
+    getChamberSnapshot(context),
+    getWebStaffDirectory(),
+  ]);
   const snapshot = await enrichChamberSnapshotWithPatientProfiles(context, rawSnapshot);
   const canEditPatient = canPerform(context, "patient.update", "Physio");
+  const canAssignTherapist = canPerform(context, "chamber.run", "Physio");
+  const therapists = staffDirectory
+    .filter(
+      (staff) =>
+        staff.status === "Active" &&
+        staff.roles.includes("Therapist") &&
+        (staff.departmentAccess.includes("Physio") || staff.departmentAccess.includes("All"))
+    )
+    .map((staff) => ({ staffId: staff.staffId, fullName: staff.fullName }));
+
   const occupiedStations = snapshot.stations.filter((item) => Boolean(item.session)).length;
   const totalStations = snapshot.stations.length;
   const stationUtilization = totalStations > 0 ? (occupiedStations / totalStations) * 100 : 0;
@@ -23,8 +37,10 @@ export default async function ChamberPage() {
     ...snapshot.queue.map((item) => {
       const raw = rawSnapshot.queue.find((row) => row.appointmentId === item.appointmentId);
       return {
+        appointmentId: item.appointmentId,
         patientId: item.patientId,
         patientName: item.patientName,
+        therapist: item.therapist,
         gender: item.gender,
         chamberGender: raw?.gender || "" as const,
         state: "Waiting" as const,
@@ -38,8 +54,10 @@ export default async function ChamberPage() {
         (row) => row.resource.resourceId === station.resource.resourceId
       )?.session;
       return [{
+        appointmentId: station.session.appointmentId,
         patientId: station.session.patientId,
         patientName: station.session.patientName,
+        therapist: station.session.therapist,
         gender: station.session.gender,
         chamberGender: raw?.gender || "" as const,
         state: "In Treatment" as const,
@@ -62,7 +80,7 @@ export default async function ChamberPage() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Physio operations</p>
             <h1 className="mt-1 text-2xl font-bold">Live chamber</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">Beds, traction, patient timing, machine locks and allocation safety.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-300">Beds, traction, patient timing, therapist assignment, machine locks and allocation safety.</p>
           </div>
           <StatusBadge tone={conflictCount ? "warning" : "success"} className="border-white/10">
             {conflictCount ? `${conflictCount} warnings` : "Live healthy"}
@@ -79,6 +97,8 @@ export default async function ChamberPage() {
       <ChamberPatientEditPanel
         initialItems={uniqueCorrectionItems}
         canEdit={canEditPatient}
+        canAssignTherapist={canAssignTherapist}
+        therapists={therapists}
       />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
