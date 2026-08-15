@@ -1,11 +1,16 @@
 import "server-only";
 
 import { createSign, randomUUID } from "node:crypto";
-import { appendSheetValues, fetchSheetRanges } from "@/lib/data/googleSheets";
-import type { AccessContext } from "@/lib/webos/access";
-import { getClinicalWorkspace } from "@/lib/webos/clinical";
+import {
+  appendSheetValues,
+  fetchSheetRanges,
+  type Workbook,
+} from "@/lib/data/googleSheets";
+import { canPerform, type AccessContext } from "@/lib/webos/access";
+import { getPatientForContext } from "@/lib/webos/reception";
 
 type SheetValue = string | number | boolean;
+type ClinicDepartment = "Physio" | "Dental";
 
 type Credentials = {
   client_email: string;
@@ -37,6 +42,14 @@ function rowForHeaders(headers: string[], values: Record<string, SheetValue>): S
     Object.entries(values).map(([key, value]) => [key.toLowerCase(), value])
   );
   return headers.map((header) => map.get(normalized(header)) ?? "");
+}
+
+function workbookForDepartment(department: ClinicDepartment): Workbook {
+  return department === "Dental" ? "dental" : "physio";
+}
+
+function clinicId(department: ClinicDepartment): string {
+  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
 }
 
 function dhakaNow(ref = new Date()) {
@@ -115,7 +128,7 @@ async function driveAccessToken(): Promise<string> {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      grant_type: "urn:ietf:params:oauth-type:jwt-bearer".replace("type", "grant"),
       assertion,
     }),
     cache: "no-store",
@@ -171,7 +184,41 @@ async function uploadToDrive(
   };
 }
 
-export async function uploadPhysioReport(
+export function driveFileIdFromLink(value: string): string {
+  const link = normalize(value);
+  if (!link) return "";
+  const pathMatch = /\/d\/([A-Za-z0-9_-]{10,})/.exec(link);
+  if (pathMatch?.[1]) return pathMatch[1];
+  try {
+    const url = new URL(link);
+    return url.searchParams.get("id")?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
+export async function downloadReportFromDrive(
+  driveLink: string
+): Promise<{ body: ArrayBuffer; contentType: string }> {
+  const fileId = driveFileIdFromLink(driveLink);
+  if (!fileId) throw new Error("DRIVE_FILE_ID_INVALID");
+  const token = await driveAccessToken();
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(35_000),
+    }
+  );
+  if (!response.ok) throw new Error(`DRIVE_DOWNLOAD_HTTP_${response.status}`);
+  return {
+    body: await response.arrayBuffer(),
+    contentType: response.headers.get("content-type") || "application/octet-stream",
+  };
+}
+
+export async function uploadPatientReport(
   context: AccessContext,
   input: {
     patientId: string;
@@ -197,9 +244,15 @@ export async function uploadPhysioReport(
   ]);
   if (!allowedMime.has(mimeType)) throw new Error("REPORT_FILE_TYPE_INVALID");
 
-  const workspace = await getClinicalWorkspace(context, patientId);
-  if (!workspace.canWrite) throw new Error("ACCESS_DENIED");
-  const snapshot = await fetchSheetRanges("physio", ["14_Reports"]);
+  const patient = await getPatientForContext(context, patientId);
+  if (!patient || patient.department === "All") throw new Error("PATIENT_NOT_FOUND");
+  const department = patient.department as ClinicDepartment;
+  if (!canPerform(context, "patient.report.upload", department)) {
+    throw new Error("ACCESS_DENIED");
+  }
+
+  const workbook = workbookForDepartment(department);
+  const snapshot = await fetchSheetRanges(workbook, ["14_Reports"]);
   const rows = snapshot["14_Reports"] || [];
   if (rows.length < 1) throw new Error("REPORT_SCHEMA_MISMATCH");
   const headers = rows[0];
@@ -218,11 +271,12 @@ export async function uploadPhysioReport(
 
   const uploaded = await uploadToDrive(input.bytes, fileName, mimeType);
   const now = dhakaNow();
-  await appendSheetValues("physio", "'14_Reports'!A:Z", [
+  const clinic = clinicId(department);
+  await appendSheetValues(workbook, "'14_Reports'!A:Z", [
     rowForHeaders(headers, {
       Report_ID: reportId,
-      Patient_ID: patientId,
-      Patient_Name: workspace.patient.fullName,
+      Patient_ID: patient.patientId,
+      Patient_Name: patient.fullName,
       File_Telegram_ID: "",
       File_Name: fileName,
       File_Type: mimeType,
@@ -230,10 +284,10 @@ export async function uploadPhysioReport(
       Uploaded_By: context.staffId,
       File_Drive_Link: uploaded.webViewLink,
       Organization_ID: "RELIFE",
-      Clinic_ID: "RELIFE-PHYSIO",
+      Clinic_ID: clinic,
       Branch_ID: "AMTALI-01",
-      Record_ID: `RELIFE-PHYSIO:${reportId}`,
-      Encounter_ID: workspace.sessions[0]?.treatmentId || "",
+      Record_ID: `${clinic}:${reportId}`,
+      Encounter_ID: "",
       Provider_ID: context.staffId,
       Source_System: "web_pwa",
       Source_Type: "human_upload",
@@ -241,26 +295,26 @@ export async function uploadPhysioReport(
       Human_Verified: true,
       Schema_Version: "relife-uda-v1",
       Provenance_Timestamp: now.provenance,
-      Department: "Physio",
+      Department: department,
     }),
   ]);
   try {
-    await appendSheetValues("physio", "'20_Data_Audit'!A:W", [[
+    await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [[
       `AUD-${randomUUID()}`,
       now.timestamp,
       context.staffId,
-      "report.upload",
+      "patient.report.upload",
       "PatientReport",
       reportId,
-      patientId,
+      patient.patientId,
       "",
       JSON.stringify({ fileName, mimeType, driveFileId: uploaded.id }),
-      "Web PWA report upload to bot-compatible Drive folder",
+      "Web PWA patient report upload",
       "RELIFE",
-      "RELIFE-PHYSIO",
+      clinic,
       "AMTALI-01",
-      `RELIFE-PHYSIO:${reportId}`,
-      workspace.sessions[0]?.treatmentId || "",
+      `${clinic}:${reportId}`,
+      "",
       context.staffId,
       "web_pwa",
       "human_upload",
@@ -268,10 +322,13 @@ export async function uploadPhysioReport(
       true,
       "relife-uda-v1",
       now.provenance,
-      "Physio",
+      department,
     ]]);
   } catch (error) {
     console.error("Report audit append failed", error);
   }
   return { reportId, driveLink: uploaded.webViewLink };
 }
+
+/** Backward-compatible alias for older callers. */
+export const uploadPhysioReport = uploadPatientReport;
