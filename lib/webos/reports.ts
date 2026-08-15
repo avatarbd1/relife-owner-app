@@ -37,9 +37,10 @@ export async function getPatientReportsForContext(
   patient: PatientRecord
 ): Promise<PatientReport[]> {
   if (patient.department !== "Physio" && patient.department !== "Dental") return [];
-  if (!canPerform(context, "clinical.read", patient.department)) return [];
+  const department: "Physio" | "Dental" = patient.department;
+  if (!canPerform(context, "clinical.read", department)) return [];
 
-  const workbook = workbookForDepartment(patient.department);
+  const workbook = workbookForDepartment(department);
   const data = await fetchSheetRanges(workbook, ["14_Reports"]);
   const rows = rowObjects(data["14_Reports"] || []);
 
@@ -58,7 +59,7 @@ export async function getPatientReportsForContext(
       uploadDate: String(row.Upload_Date || "").trim(),
       uploadedBy: String(row.Uploaded_By || "").trim(),
       driveLink: String(row.File_Drive_Link || "").trim(),
-      department: patient.department,
+      department,
     }))
     .sort((a, b) => b.uploadDate.localeCompare(a.uploadDate));
 }
