@@ -6,16 +6,7 @@ import {
 } from "@/lib/auth";
 import { decideCashMovement } from "@/lib/controls";
 import type { Workbook } from "@/lib/data/googleSheets";
-
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
-}
+import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
 function statusForError(message: string): number {
   if (message === "CONTROL_NOT_FOUND") return 404;
@@ -26,7 +17,7 @@ function statusForError(message: string): number {
 }
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
 
