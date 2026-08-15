@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import ScopeSelector from "@/components/ScopeSelector";
 import BottomNav from "@/components/BottomNav";
+import LogoutButton from "@/components/LogoutButton";
 import { IS_LIVE_DATA } from "@/lib/data";
 import { actionsForRoles, type WebRole } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -53,6 +54,7 @@ export default async function DashboardLayout({
               </span>
             )}
             <ScopeSelector current={scope} allowed={allowedScopes} />
+            <LogoutButton />
           </div>
         </div>
       </header>
