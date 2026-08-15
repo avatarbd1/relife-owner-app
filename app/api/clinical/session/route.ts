@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { recordTreatmentSession } from "@/lib/webos/clinical";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
-
-function sameOrigin(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try { return new URL(origin).host === request.nextUrl.host; } catch { return false; }
-}
 
 function code(message: string) {
   if (message === "ACCESS_DENIED") return 403;
@@ -18,7 +13,7 @@ function code(message: string) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
+  if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
     const context = await requireCurrentAccessContext();
     const body = await request.json().catch(() => null);
