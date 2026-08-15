@@ -108,11 +108,28 @@ export default function BottomNav({
     () => visibleItems.map((item) => ({ href: item.href, matches: item.matches })),
     [visibleItems]
   );
-  const { isNavigating, setIsNavigating } = useSwipeNavigation({
+  const {
+    isNavigating,
+    setIsNavigating,
+    swipeProgress,
+    swipeDirection,
+  } = useSwipeNavigation({
     pathname,
     routes: swipeRoutes,
-    threshold: 56,
+    threshold: 52,
   });
+
+  const activeIndex = visibleItems.findIndex((item) =>
+    isActive(pathname, item.matches)
+  );
+  const swipeTarget =
+    swipeDirection === "next"
+      ? visibleItems[activeIndex + 1]
+      : swipeDirection === "previous"
+        ? visibleItems[activeIndex - 1]
+        : undefined;
+  const cueOpacity = Math.max(0, Math.min(1, (swipeProgress - 0.08) / 0.92));
+  const cueShift = 10 * (1 - swipeProgress);
 
   return (
     <>
@@ -122,14 +139,25 @@ export default function BottomNav({
           isNavigating ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
         }`}
       />
-      <div
-        aria-hidden="true"
-        className={`pointer-events-none fixed inset-0 z-[19] bg-white transition-opacity duration-200 ${
-          isNavigating ? "opacity-[0.08]" : "opacity-0"
-        }`}
-      />
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(15,23,42,0.05)] backdrop-blur">
+      {swipeTarget && swipeProgress > 0.08 && (
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none fixed top-1/2 z-50 -translate-y-1/2 rounded-full bg-slate-900/92 px-3 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur ${
+            swipeDirection === "next" ? "right-3" : "left-3"
+          }`}
+          style={{
+            opacity: cueOpacity,
+            transform: `translateY(-50%) translateX(${swipeDirection === "next" ? cueShift : -cueShift}px) scale(${0.96 + swipeProgress * 0.04})`,
+          }}
+        >
+          {swipeDirection === "previous" ? "‹ " : ""}
+          {swipeTarget.label}
+          {swipeDirection === "next" ? " ›" : ""}
+        </div>
+      )}
+
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200/90 bg-white/94 pb-[env(safe-area-inset-bottom)] shadow-[0_-5px_18px_rgba(15,23,42,0.045)] backdrop-blur-xl supports-[backdrop-filter]:bg-white/88">
         <ul className="flex">
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.matches);
@@ -141,7 +169,7 @@ export default function BottomNav({
                   onClick={() => {
                     if (!active) setIsNavigating(true);
                   }}
-                  className={`relative flex min-h-[62px] select-none flex-col items-center justify-center gap-1 px-1 text-[11px] transition duration-100 active:scale-[0.97] ${
+                  className={`relative flex min-h-[58px] select-none flex-col items-center justify-center gap-0.5 px-1 text-[10.5px] transition-[color,transform] duration-150 active:scale-[0.96] ${
                     active
                       ? "text-emerald-700"
                       : "text-slate-500 active:text-slate-800"
@@ -149,14 +177,20 @@ export default function BottomNav({
                 >
                   <span
                     aria-hidden="true"
-                    className={`absolute top-0 h-0.5 w-8 rounded-full bg-emerald-500 transition-all duration-200 ${
-                      active ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
+                    className={`absolute top-0 h-0.5 rounded-full bg-emerald-500 transition-[width,opacity] duration-220 ${
+                      active ? "w-9 opacity-100" : "w-2 opacity-0"
                     }`}
                   />
-                  <AppIcon
-                    name={item.icon}
-                    className={`h-[21px] w-[21px] ${active ? "stroke-[2]" : ""}`}
-                  />
+                  <span
+                    className={`transition-transform duration-180 ease-out ${
+                      active ? "-translate-y-0.5 scale-[1.07]" : "translate-y-0 scale-100"
+                    }`}
+                  >
+                    <AppIcon
+                      name={item.icon}
+                      className={`h-5 w-5 ${active ? "stroke-[2]" : ""}`}
+                    />
+                  </span>
                   <span className={active ? "font-semibold" : "font-medium"}>
                     {item.label}
                   </span>

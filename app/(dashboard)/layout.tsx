@@ -23,20 +23,20 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-900 px-4 pb-3 pt-[max(env(safe-area-inset-top),0.75rem)]">
-        <div className="flex min-h-12 items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-900 px-4 pb-2 pt-[max(env(safe-area-inset-top),0.45rem)] shadow-sm">
+        <div className="flex min-h-9 items-center justify-between gap-3">
+          <div className="min-w-0 leading-tight">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
               Relife Clinic
             </p>
-            <p className="mt-0.5 truncate text-sm font-medium text-slate-200">
+            <p className="mt-0.5 truncate text-[12px] font-medium text-slate-200">
               {isOwner ? "Owner workspace" : roleLabel}
             </p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
             {!IS_LIVE_DATA && (
-              <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-[10px] font-semibold text-amber-300">
+              <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[9px] font-semibold text-amber-300">
                 Sample
               </span>
             )}
@@ -45,7 +45,9 @@ export default async function DashboardLayout({
         </div>
       </header>
 
-      <main className="flex-1 bg-slate-50 px-4 py-4 pb-24">{children}</main>
+      <main className="flex-1 bg-slate-50 px-4 py-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))]">
+        {children}
+      </main>
 
       <BottomNav
         roles={context.roles}

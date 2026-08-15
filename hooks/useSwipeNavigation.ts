@@ -8,11 +8,14 @@ export type SwipeRoute = {
   matches: string[];
 };
 
+export type SwipeDirection = "next" | "previous" | null;
+
 type SwipeNavigationOptions = {
   pathname: string;
   routes: SwipeRoute[];
   threshold?: number;
   maxDurationMs?: number;
+  edgeGuardPx?: number;
 };
 
 function routeMatches(pathname: string, matches: string[]): boolean {
@@ -49,8 +52,9 @@ function isHorizontalScroller(target: EventTarget | null): boolean {
 export function useSwipeNavigation({
   pathname,
   routes,
-  threshold = 56,
-  maxDurationMs = 700,
+  threshold = 52,
+  maxDurationMs = 800,
+  edgeGuardPx = 24,
 }: SwipeNavigationOptions) {
   const router = useRouter();
   const startRef = useRef<{
@@ -60,6 +64,8 @@ export function useSwipeNavigation({
     ignored: boolean;
   } | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [swipeProgress, setSwipeProgress] = useState(0);
+  const [swipeDirection, setSwipeDirection] = useState<SwipeDirection>(null);
 
   const routeKey = useMemo(
     () => routes.map((route) => `${route.href}:${route.matches.join(",")}`).join("|"),
@@ -68,6 +74,8 @@ export function useSwipeNavigation({
 
   useEffect(() => {
     setIsNavigating(false);
+    setSwipeProgress(0);
+    setSwipeDirection(null);
   }, [pathname]);
 
   useEffect(() => {
@@ -76,26 +84,77 @@ export function useSwipeNavigation({
     );
     if (activeIndex < 0 || routes.length < 2) return;
 
+    function resetGesture() {
+      startRef.current = null;
+      if (!isNavigating) {
+        setSwipeProgress(0);
+        setSwipeDirection(null);
+      }
+    }
+
     function onTouchStart(event: TouchEvent) {
       if (event.touches.length !== 1 || isNavigating) {
-        startRef.current = null;
+        resetGesture();
         return;
       }
       const touch = event.touches[0];
+      const nearSystemEdge =
+        touch.clientX <= edgeGuardPx ||
+        touch.clientX >= window.innerWidth - edgeGuardPx;
       startRef.current = {
         x: touch.clientX,
         y: touch.clientY,
         at: Date.now(),
         ignored:
-          isInteractiveTarget(event.target) || isHorizontalScroller(event.target),
+          nearSystemEdge ||
+          isInteractiveTarget(event.target) ||
+          isHorizontalScroller(event.target),
       };
+    }
+
+    function onTouchMove(event: TouchEvent) {
+      const start = startRef.current;
+      const touch = event.touches[0];
+      if (!start || !touch || start.ignored || isNavigating) return;
+
+      const deltaX = touch.clientX - start.x;
+      const deltaY = touch.clientY - start.y;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      if (absX < 10 || absX <= absY * 1.15) {
+        if (absY > absX) {
+          setSwipeProgress(0);
+          setSwipeDirection(null);
+        }
+        return;
+      }
+
+      const direction: SwipeDirection = deltaX < 0 ? "next" : "previous";
+      const nextIndex = direction === "next" ? activeIndex + 1 : activeIndex - 1;
+      if (!routes[nextIndex]) {
+        setSwipeProgress(0);
+        setSwipeDirection(null);
+        return;
+      }
+
+      setSwipeDirection(direction);
+      setSwipeProgress(Math.min(absX / threshold, 1));
     }
 
     function onTouchEnd(event: TouchEvent) {
       const start = startRef.current;
       startRef.current = null;
-      if (!start || start.ignored || isNavigating) return;
-      if (Date.now() - start.at > maxDurationMs) return;
+      if (!start || start.ignored || isNavigating) {
+        setSwipeProgress(0);
+        setSwipeDirection(null);
+        return;
+      }
+      if (Date.now() - start.at > maxDurationMs) {
+        setSwipeProgress(0);
+        setSwipeDirection(null);
+        return;
+      }
 
       const touch = event.changedTouches[0];
       if (!touch) return;
@@ -105,28 +164,46 @@ export function useSwipeNavigation({
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
 
-      // Horizontal intent must be clear enough that normal vertical scrolling wins.
-      if (absX < threshold || absX <= absY * 1.25) return;
+      if (absX < threshold || absX <= absY * 1.2) {
+        setSwipeProgress(0);
+        setSwipeDirection(null);
+        return;
+      }
 
       const nextIndex = deltaX < 0 ? activeIndex + 1 : activeIndex - 1;
       const next = routes[nextIndex];
-      if (!next) return;
+      if (!next) {
+        setSwipeProgress(0);
+        setSwipeDirection(null);
+        return;
+      }
 
       if (typeof navigator !== "undefined" && "vibrate" in navigator) {
         navigator.vibrate(8);
       }
 
+      setSwipeProgress(1);
+      setSwipeDirection(deltaX < 0 ? "next" : "previous");
       setIsNavigating(true);
       router.push(next.href);
     }
 
     document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
     document.addEventListener("touchend", onTouchEnd, { passive: true });
+    document.addEventListener("touchcancel", resetGesture, { passive: true });
     return () => {
       document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
       document.removeEventListener("touchend", onTouchEnd);
+      document.removeEventListener("touchcancel", resetGesture);
     };
-  }, [isNavigating, maxDurationMs, pathname, routeKey, router, routes, threshold]);
+  }, [edgeGuardPx, isNavigating, maxDurationMs, pathname, routeKey, router, routes, threshold]);
 
-  return { isNavigating, setIsNavigating };
+  return {
+    isNavigating,
+    setIsNavigating,
+    swipeProgress,
+    swipeDirection,
+  };
 }
