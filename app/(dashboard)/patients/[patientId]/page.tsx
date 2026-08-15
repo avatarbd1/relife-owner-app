@@ -13,6 +13,7 @@ import {
   getPatientForContext,
 } from "@/lib/webos/reception";
 import { getPatientReportsForContext } from "@/lib/webos/reports";
+import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 function isPhoto(fileType: string, fileName: string): boolean {
   const normalizedType = fileType.trim().toLowerCase();
@@ -41,12 +42,23 @@ export default async function PatientFilePage({
   const canSeeClinical = canPerform(context, "clinical.read", patient.department);
   const canSeeReports = canPerform(context, "patient.report.read", patient.department);
   const canUploadReports = canPerform(context, "patient.report.upload", patient.department);
-  const [appointments, reports] = await Promise.all([
+  const [appointments, reports, staffDirectory] = await Promise.all([
     getPatientAppointmentsForContext(context, patient),
     canSeeReports
       ? getPatientReportsForContext(context, patient)
       : Promise.resolve([]),
+    canEditPatient ? getWebStaffDirectory() : Promise.resolve([]),
   ]);
+
+  const clinicianRole = patient.department === "Dental" ? "Dentist" : "Therapist";
+  const clinicianOptions = staffDirectory
+    .filter(
+      (staff) =>
+        staff.status === "Active" &&
+        staff.roles.includes(clinicianRole) &&
+        (staff.departmentAccess.includes(patient.department) || staff.departmentAccess.includes("All"))
+    )
+    .map((staff) => ({ staffId: staff.staffId, fullName: staff.fullName }));
 
   const mediaItems = reports.map((report) => ({
     id: report.reportId,
@@ -102,6 +114,9 @@ export default async function PatientFilePage({
         <PatientEditForm
           patientId={patient.patientId}
           defaultOpen={query.edit === "1"}
+          clinicians={clinicianOptions}
+          clinicianLabel={patient.department === "Dental" ? "Dentist" : "Therapist"}
+          clinicianTone={patient.department === "Dental" ? "emerald" : "blue"}
           initial={{
             fullName: patient.fullName,
             phone: patient.phone.replace(/^'/, ""),

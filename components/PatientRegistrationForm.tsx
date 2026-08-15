@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/FeedbackUI";
+import TapChoice from "@/components/TapChoice";
+import { haptic } from "@/lib/interactions";
 
 type Department = "Physio" | "Dental";
 
@@ -79,9 +82,11 @@ export default function PatientRegistrationForm({
         if (result.error === "ACCESS_DENIED") throw new Error("এই Department-এ patient create permission নেই।");
         throw new Error(result.error || `HTTP ${response.status}`);
       }
+      haptic("success");
       router.push(`/patients/${encodeURIComponent(result.patientId)}`);
       router.refresh();
     } catch (submitError) {
+      haptic("error");
       setError(submitError instanceof Error ? submitError.message : "Patient registration failed");
     } finally {
       setBusy(false);
@@ -97,30 +102,49 @@ export default function PatientRegistrationForm({
   }
 
   const inputClass =
-    "mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-400";
+    "mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition-colors duration-100 focus:border-blue-700 focus:ring-2 focus:ring-blue-100";
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      {allowedDepartments.length > 1 ? (
+        <TapChoice
+          label="Department"
+          value={department}
+          options={allowedDepartments.map((item) => ({
+            value: item,
+            label: item,
+            tone: item === "Dental" ? "emerald" : "blue",
+          }))}
+          onChange={(value) => {
+            if (!value) return;
+            setDepartment(value as Department);
+            setTherapist("");
+          }}
+        />
+      ) : (
+        <div className={`rounded-lg px-3 py-2.5 text-xs font-semibold ${department === "Dental" ? "bg-emerald-50 text-emerald-800" : "bg-blue-50 text-blue-800"}`}>
+          Department · {department}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
-        <label className="text-xs font-medium text-slate-600">
-          Department
-          <select
-            value={department}
-            onChange={(event) => {
-              setDepartment(event.target.value as Department);
-              setTherapist("");
-            }}
-            className={inputClass}
-          >
-            {allowedDepartments.map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-        </label>
         <label className="text-xs font-medium text-slate-600">
           Age
           <input value={age} onChange={(event) => setAge(event.target.value)} inputMode="numeric" className={inputClass} />
         </label>
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-600">Gender</p>
+          <TapChoice
+            value={gender}
+            columns={2}
+            allowClear
+            options={[
+              { value: "Male", label: "Male", tone: "blue" },
+              { value: "Female", label: "Female", tone: "emerald" },
+            ]}
+            onChange={setGender}
+          />
+        </div>
       </div>
 
       <label className="block text-xs font-medium text-slate-600">
@@ -135,7 +159,7 @@ export default function PatientRegistrationForm({
 
       <div className="grid grid-cols-2 gap-3">
         <label className="text-xs font-medium text-slate-600">
-          Phone
+          Phone {department === "Dental" && <span className="font-normal text-slate-400">(optional)</span>}
           <input value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" className={inputClass} />
         </label>
         <label className="text-xs font-medium text-slate-600">
@@ -144,26 +168,22 @@ export default function PatientRegistrationForm({
         </label>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="text-xs font-medium text-slate-600">
-          Gender
-          <select value={gender} onChange={(event) => setGender(event.target.value)} className={inputClass}>
-            <option value="">Select</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Other">Other</option>
-          </select>
-        </label>
-        <label className="text-xs font-medium text-slate-600">
-          Clinician
-          <select value={therapist} onChange={(event) => setTherapist(event.target.value)} className={inputClass}>
-            <option value="">Unassigned</option>
-            {departmentClinicians.map((item) => (
-              <option key={item.staffId} value={item.fullName}>{item.fullName}</option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <TapChoice
+        label={`${department === "Dental" ? "Dentist" : "Therapist"} · tap to assign`}
+        value={therapist}
+        allowClear
+        columns={departmentClinicians.length >= 3 ? 3 : 2}
+        tone={department === "Dental" ? "emerald" : "blue"}
+        options={departmentClinicians.map((item) => ({
+          value: item.fullName,
+          label: item.fullName,
+          subtitle: item.staffId,
+        }))}
+        onChange={setTherapist}
+      />
+      {departmentClinicians.length === 0 && (
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">Active clinician option নেই; patient unassigned রাখা যাবে।</p>
+      )}
 
       <label className="block text-xs font-medium text-slate-600">
         Address
@@ -186,14 +206,15 @@ export default function PatientRegistrationForm({
         </label>
       </div>
 
-      {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {error && <p className="relife-error-shake rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
 
       <button
         type="submit"
         disabled={busy || !fullName.trim()}
-        className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white disabled:opacity-40"
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-800 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-900 disabled:opacity-40"
       >
-        {busy ? "Saving..." : "Register patient"}
+        {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving patient" />}
+        {busy ? "Saving…" : "Register patient"}
       </button>
     </form>
   );

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
+import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
 
 type Treatment = {
@@ -49,7 +50,6 @@ const PROCEDURES = [
   "Denture",
   "Other",
 ];
-
 const STATUSES = ["Planned", "Ongoing", "Completed", "Follow-up"];
 const FDI_TEETH = [
   "18", "17", "16", "15", "14", "13", "12", "11",
@@ -78,13 +78,7 @@ function ProcedureBadge({ value }: { value: string }) {
   return <StatusBadge tone={tone}>{value || "Procedure"}</StatusBadge>;
 }
 
-export default function DentalClinicalWorkspaceClient({
-  workspace,
-  oversight = false,
-}: {
-  workspace: Workspace;
-  oversight?: boolean;
-}) {
+export default function DentalClinicalWorkspaceClient({ workspace, oversight = false }: { workspace: Workspace; oversight?: boolean }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("today");
   const [procedureChoice, setProcedureChoice] = useState(PROCEDURES[0]);
@@ -108,14 +102,8 @@ export default function DentalClinicalWorkspaceClient({
     };
   }, []);
 
-  const completed = useMemo(
-    () => workspace.treatments.filter((item) => item.status.toLowerCase() === "completed").length,
-    [workspace.treatments]
-  );
-  const ongoing = useMemo(
-    () => workspace.treatments.filter((item) => ["ongoing", "follow-up", "planned"].includes(item.status.toLowerCase())).length,
-    [workspace.treatments]
-  );
+  const completed = useMemo(() => workspace.treatments.filter((item) => item.status.toLowerCase() === "completed").length, [workspace.treatments]);
+  const ongoing = useMemo(() => workspace.treatments.filter((item) => ["ongoing", "follow-up", "planned"].includes(item.status.toLowerCase())).length, [workspace.treatments]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -131,13 +119,7 @@ export default function DentalClinicalWorkspaceClient({
       const response = await fetch("/api/clinical/dental", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          patientId: workspace.patient.patientId,
-          procedure,
-          toothArea,
-          clinicalNote,
-          status,
-        }),
+        body: JSON.stringify({ patientId: workspace.patient.patientId, procedure, toothArea, clinicalNote, status }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "DENTAL_CLINICAL_FAILED");
@@ -164,26 +146,10 @@ export default function DentalClinicalWorkspaceClient({
 
   return (
     <div className="space-y-4">
-      {!online && (
-        <InlineNotice tone="warning" title="Offline — Dental writes paused">
-          Loaded history দেখা যাবে, কিন্তু procedure save করতে internet লাগবে।
-        </InlineNotice>
-      )}
-      {oversight && (
-        <InlineNotice tone="info" title="Owner oversight mode">
-          Dental clinical data read-only. একই account-এ Dentist role থাকলে execution controls দেখা যাবে।
-        </InlineNotice>
-      )}
-      {!oversight && !workspace.canWrite && (
-        <InlineNotice tone="warning" title="Read-only Dental file">
-          এই patient-এর Dental write permission/assignment এই account-এ নেই।
-        </InlineNotice>
-      )}
-      {message && (
-        <div className={message.startsWith("✓") ? "relife-success-flash" : "relife-error-shake"}>
-          <InlineNotice tone={message.startsWith("✓") ? "success" : "error"}>{message}</InlineNotice>
-        </div>
-      )}
+      {!online && <InlineNotice tone="warning" title="Offline — Dental writes paused">Loaded history দেখা যাবে, কিন্তু procedure save করতে internet লাগবে।</InlineNotice>}
+      {oversight && <InlineNotice tone="info" title="Owner oversight mode">Dental clinical data read-only. একই account-এ Dentist role থাকলে execution controls দেখা যাবে।</InlineNotice>}
+      {!oversight && !workspace.canWrite && <InlineNotice tone="warning" title="Read-only Dental file">এই patient-এর Dental write permission/assignment এই account-এ নেই।</InlineNotice>}
+      {message && <div className={message.startsWith("✓") ? "relife-success-flash" : "relife-error-shake"}><InlineNotice tone={message.startsWith("✓") ? "success" : "error"}>{message}</InlineNotice></div>}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -202,17 +168,7 @@ export default function DentalClinicalWorkspaceClient({
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm" data-horizontal-scroll>
         <div className="flex min-w-max gap-1" role="tablist" aria-label="Dental clinical tabs">
           {tabs.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === item.id}
-              onClick={() => {
-                setTab(item.id);
-                haptic("tap");
-              }}
-              className={`min-h-11 rounded-lg px-4 text-xs font-semibold ${tab === item.id ? "bg-emerald-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}
-            >
+            <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => { setTab(item.id); haptic("tap"); }} className={`min-h-11 rounded-lg px-4 text-xs font-semibold ${tab === item.id ? "bg-emerald-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}>
               {item.label}
             </button>
           ))}
@@ -226,22 +182,28 @@ export default function DentalClinicalWorkspaceClient({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-slate-950">Today&apos;s procedure</h2>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-500">Procedure → FDI tooth/area → clinical note → status → immediate save</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-500">Tap procedure → tooth → status; type only clinical note</p>
                 </div>
                 <StatusBadge tone="success">Execution</StatusBadge>
               </div>
 
               <form onSubmit={submit} className="mt-4 space-y-4">
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Procedure *</label>
-                  <select className={inputClass} value={procedureChoice} onChange={(event) => setProcedureChoice(event.target.value)}>
-                    {PROCEDURES.map((item) => <option key={item}>{item}</option>)}
-                  </select>
-                </div>
+                <TapChoice
+                  label="Procedure *"
+                  value={procedureChoice}
+                  columns={3}
+                  tone="emerald"
+                  options={PROCEDURES.map((item) => ({
+                    value: item,
+                    label: item,
+                    tone: /extract/i.test(item) ? "red" as const : /rct|dressing/i.test(item) ? "amber" as const : "emerald" as const,
+                  }))}
+                  onChange={(value) => value && setProcedureChoice(value)}
+                />
                 {procedureChoice === "Other" && (
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-700">Procedure name *</label>
-                    <input className={inputClass} value={customProcedure} onChange={(event) => setCustomProcedure(event.target.value)} required placeholder="যেমন: Pulpotomy" />
+                    <input className={inputClass} value={customProcedure} onChange={(event) => setCustomProcedure(event.target.value)} required placeholder="Only type when procedure is not in the buttons" />
                   </div>
                 )}
 
@@ -251,77 +213,48 @@ export default function DentalClinicalWorkspaceClient({
                     {FDI_TEETH.map((tooth) => {
                       const active = toothArea === tooth;
                       return (
-                        <button
-                          key={tooth}
-                          type="button"
-                          aria-pressed={active}
-                          onClick={() => {
-                            setToothArea(tooth);
-                            haptic("tap");
-                          }}
-                          className={`min-h-10 rounded-md border text-xs font-bold ${active ? "border-emerald-700 bg-emerald-700 text-white" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-emerald-50"}`}
-                        >
+                        <button key={tooth} type="button" aria-pressed={active} onClick={() => { setToothArea(tooth); haptic("tap"); }} className={`min-h-10 rounded-md border text-xs font-bold ${active ? "border-emerald-700 bg-emerald-700 text-white" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-emerald-50"}`}>
                           {tooth}
                         </button>
                       );
                     })}
                   </div>
-                  <input
-                    className={`${inputClass} mt-2`}
-                    value={toothArea}
-                    onChange={(event) => setToothArea(event.target.value)}
-                    placeholder="FDI number or area, e.g. 16 / Upper anterior"
-                  />
+                  <input className={`${inputClass} mt-2`} value={toothArea} onChange={(event) => setToothArea(event.target.value)} placeholder="Only type area if FDI button is not enough" />
                 </fieldset>
 
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-slate-700">Clinical finding / today&apos;s treatment *</label>
-                  <textarea className={`${inputClass} min-h-28 resize-y py-3`} value={clinicalNote} onChange={(event) => setClinicalNote(event.target.value)} required placeholder="Complaint, finding, procedure details, material, follow-up…" />
+                  <textarea className={`${inputClass} min-h-28 resize-y py-3`} value={clinicalNote} onChange={(event) => setClinicalNote(event.target.value)} required placeholder="Complaint, finding, treatment details, material, follow-up…" />
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Status *</label>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {STATUSES.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => {
-                          setStatus(item);
-                          haptic("tap");
-                        }}
-                        className={`min-h-11 rounded-lg border text-xs font-semibold ${status === item ? "border-emerald-700 bg-emerald-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <TapChoice
+                  label="Status *"
+                  value={status}
+                  columns={4}
+                  tone="emerald"
+                  options={STATUSES.map((item) => ({
+                    value: item,
+                    label: item,
+                    tone: item === "Completed" ? "emerald" as const : item === "Planned" ? "amber" as const : "blue" as const,
+                  }))}
+                  onChange={(value) => value && setStatus(value)}
+                />
 
-                <button
-                  type="submit"
-                  disabled={busy || !online || !clinicalNote.trim() || (procedureChoice === "Other" && !customProcedure.trim())}
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white shadow-md hover:bg-emerald-800 disabled:shadow-none"
-                >
+                <button type="submit" disabled={busy || !online || !clinicalNote.trim() || (procedureChoice === "Other" && !customProcedure.trim())} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white shadow-md hover:bg-emerald-800 disabled:shadow-none">
                   {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving Dental record" />}
                   {busy ? "Saving…" : "Save Dental record"}
                 </button>
                 <p className="text-center text-[10px] text-slate-400">Immediate audited write · no local draft advertised.</p>
               </form>
             </section>
-          ) : (
-            <InlineNotice tone="neutral">Execution controls unavailable in this view. Open History or Overview.</InlineNotice>
-          )}
+          ) : <InlineNotice tone="neutral">Execution controls unavailable in this view. Open History or Overview.</InlineNotice>}
         </div>
       )}
 
       {tab === "history" && (
         <section className="relife-fade-in rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-950">Dental treatment history</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Live 05_Treatments · latest first</p>
-            </div>
+            <div><h2 className="text-base font-semibold text-slate-950">Dental treatment history</h2><p className="mt-0.5 text-xs text-slate-500">Live 05_Treatments · latest first</p></div>
             <StatusBadge tone="neutral">{workspace.treatments.length}</StatusBadge>
           </div>
           <div className="mt-4 space-y-2">
@@ -330,10 +263,7 @@ export default function DentalClinicalWorkspaceClient({
                 <summary className="cursor-pointer list-none">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <ProcedureBadge value={item.procedure} />
-                        {item.toothArea && <StatusBadge tone="info">FDI {item.toothArea}</StatusBadge>}
-                      </div>
+                      <div className="flex flex-wrap items-center gap-2"><ProcedureBadge value={item.procedure} />{item.toothArea && <StatusBadge tone="info">FDI {item.toothArea}</StatusBadge>}</div>
                       <p className="mt-2 text-[11px] text-slate-500">{item.date || "—"}{item.clinician ? ` · ${item.clinician}` : ""}</p>
                     </div>
                     <StatusBadge tone={statusTone(item.status)}>{item.status || "Recorded"}</StatusBadge>
@@ -360,12 +290,7 @@ export default function DentalClinicalWorkspaceClient({
               <div className="rounded-lg bg-emerald-50 p-3"><p className="text-[10px] text-emerald-700">Completed</p><p className="mt-1 text-lg font-bold text-emerald-950">{completed}</p></div>
               <div className="rounded-lg bg-amber-50 p-3"><p className="text-[10px] text-amber-700">Active</p><p className="mt-1 text-lg font-bold text-amber-950">{ongoing}</p></div>
             </div>
-            {workspace.patient.diagnosis && (
-              <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Complaint / diagnosis</p>
-                <p className="mt-1 text-sm leading-6 text-slate-800">{workspace.patient.diagnosis}</p>
-              </div>
-            )}
+            {workspace.patient.diagnosis && <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Complaint / diagnosis</p><p className="mt-1 text-sm leading-6 text-slate-800">{workspace.patient.diagnosis}</p></div>}
           </section>
         </div>
       )}

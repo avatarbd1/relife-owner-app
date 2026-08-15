@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
+import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
 
 type PatientEditValues = {
@@ -16,16 +17,27 @@ type PatientEditValues = {
   status: string;
 };
 
+type Clinician = {
+  staffId: string;
+  fullName: string;
+};
+
 const inputClass =
   "min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-[border-color,box-shadow] duration-100 focus:border-blue-700 focus:ring-2 focus:ring-blue-100";
 
 export default function PatientEditForm({
   patientId,
   initial,
+  clinicians = [],
+  clinicianLabel = "Clinician",
+  clinicianTone = "blue",
   defaultOpen = false,
 }: {
   patientId: string;
   initial: PatientEditValues;
+  clinicians?: Clinician[];
+  clinicianLabel?: string;
+  clinicianTone?: "blue" | "emerald";
   defaultOpen?: boolean;
 }) {
   const router = useRouter();
@@ -79,11 +91,11 @@ export default function PatientEditForm({
       <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-900">
         <span>
           Edit patient profile
-          <span className="mt-0.5 block text-[11px] font-normal text-slate-500">Name, phone, age, gender, diagnosis, clinician and status</span>
+          <span className="mt-0.5 block text-[11px] font-normal text-slate-500">Tap fixed choices; type only patient-specific information</span>
         </span>
         <StatusBadge tone="info">Edit</StatusBadge>
       </summary>
-      <form onSubmit={submit} className="space-y-3 border-t border-slate-100 p-4">
+      <form onSubmit={submit} className="space-y-4 border-t border-slate-100 p-4">
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Name</label>
           <input className={inputClass} value={values.fullName} onChange={(e) => update("fullName", e.target.value)} required minLength={2} />
@@ -98,25 +110,46 @@ export default function PatientEditForm({
             <input className={inputClass} inputMode="numeric" value={values.age} onChange={(e) => update("age", e.target.value)} />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Gender</label>
-            <select className={inputClass} value={values.gender} onChange={(e) => update("gender", e.target.value)}>
-              <option value="">Not set</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-            <p className="mt-1 text-[10px] leading-4 text-slate-400">Live Chamber bed allocation supports Male/Female room safety. Other/not set will require manual correction before treatment-bed allocation.</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Status</label>
-            <select className={inputClass} value={values.status} onChange={(e) => update("status", e.target.value)}>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-        </div>
+
+        <TapChoice
+          label="Gender"
+          value={values.gender}
+          allowClear
+          options={[
+            { value: "Male", label: "Male", tone: "blue" },
+            { value: "Female", label: "Female", tone: "emerald" },
+          ]}
+          onChange={(value) => update("gender", value)}
+        />
+        <p className="-mt-2 text-[10px] leading-4 text-slate-400">Live Chamber normal treatment beds require Male/Female for room safety.</p>
+
+        <TapChoice
+          label="Patient status"
+          value={values.status}
+          options={[
+            { value: "Active", label: "Active", tone: "emerald" },
+            { value: "Inactive", label: "Inactive", tone: "slate" },
+          ]}
+          onChange={(value) => value && update("status", value)}
+        />
+
+        <TapChoice
+          label={`${clinicianLabel} · tap to assign`}
+          value={values.therapist}
+          allowClear
+          columns={clinicians.length >= 3 ? 3 : 2}
+          tone={clinicianTone}
+          options={clinicians.map((item) => ({
+            value: item.fullName,
+            label: item.fullName,
+            subtitle: item.staffId,
+          }))}
+          onChange={(value) => update("therapist", value)}
+        />
+        {clinicians.length === 0 && (
+          <InlineNotice tone="neutral">Active {clinicianLabel.toLowerCase()} option পাওয়া যায়নি; current assignment অপরিবর্তিত রাখা যাবে।</InlineNotice>
+        )}
+
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Address</label>
           <input className={inputClass} value={values.address} onChange={(e) => update("address", e.target.value)} />
@@ -124,10 +157,6 @@ export default function PatientEditForm({
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Diagnosis / complaint</label>
           <textarea className={`${inputClass} min-h-20`} value={values.diagnosis} onChange={(e) => update("diagnosis", e.target.value)} />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">Therapist / clinician</label>
-          <input className={inputClass} value={values.therapist} onChange={(e) => update("therapist", e.target.value)} />
         </div>
         <button disabled={busy} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-900 disabled:shadow-none">
           {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving patient profile" />}
