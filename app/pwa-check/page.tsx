@@ -1,38 +1,16 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import PwaStatusClient from "@/components/PwaStatusClient";
 
 export default function PwaCheckPage() {
-  const [status, setStatus] = useState("Checking PWA...");
-
-  useEffect(() => {
-    const run = async () => {
-      const lines: string[] = [];
-      lines.push(`HTTPS: ${location.protocol === "https:" ? "OK" : "FAIL"}`);
-      lines.push(`Service worker API: ${"serviceWorker" in navigator ? "OK" : "FAIL"}`);
-      try {
-        const manifest = await fetch("/manifest.webmanifest", { cache: "no-store" });
-        lines.push(`Manifest HTTP: ${manifest.status}`);
-      } catch {
-        lines.push("Manifest HTTP: FAIL");
-      }
-      try {
-        const sw = await navigator.serviceWorker.getRegistration("/");
-        lines.push(`Service worker registered: ${sw ? "YES" : "NO"}`);
-        lines.push(`Service worker scope: ${sw?.scope ?? "none"}`);
-      } catch {
-        lines.push("Service worker registered: ERROR");
-      }
-      lines.push(`Standalone: ${window.matchMedia("(display-mode: standalone)").matches ? "YES" : "NO"}`);
-      setStatus(lines.join("\n"));
-    };
-    void run();
-  }, []);
-
   return (
-    <main className="min-h-screen bg-slate-100 p-6 text-slate-900">
-      <h1 className="mb-4 text-2xl font-bold">Relife PWA Check</h1>
-      <pre className="whitespace-pre-wrap rounded-xl bg-white p-4 shadow">{status}</pre>
+    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 sm:px-6">
+      <div className="mx-auto max-w-3xl space-y-4">
+        <section className="overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 to-blue-950 p-5 text-white shadow-lg">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Relife PWA diagnostic</p>
+          <h1 className="mt-1 text-2xl font-bold">Install & service worker check</h1>
+          <p className="mt-1 text-xs leading-5 text-slate-300">Public technical diagnostics only; no clinic data is exposed here.</p>
+        </section>
+        <PwaStatusClient />
+      </div>
     </main>
   );
 }
