@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { InlineNotice, ProgressBar, Spinner, StatusBadge } from "@/components/FeedbackUI";
+import { haptic } from "@/lib/interactions";
 
 type Workspace = {
   patient: {
@@ -55,8 +57,11 @@ type Workspace = {
   }>;
 };
 
-const inputClass = "min-h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500";
-const textareaClass = `${inputClass} min-h-24 resize-y`;
+type Tab = "assessment" | "plans" | "today" | "history";
+
+const inputClass =
+  "min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition-[border-color,box-shadow] duration-100 focus:border-blue-800 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400";
+const textareaClass = `${inputClass} min-h-24 resize-y py-3`;
 
 async function post(url: string, body: Record<string, unknown>) {
   const response = await fetch(url, {
@@ -66,13 +71,119 @@ async function post(url: string, body: Record<string, unknown>) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.ok) throw new Error(payload.error || "SAVE_FAILED");
-  return payload;
+  return payload as Record<string, unknown>;
 }
 
-function AssessmentForm({ patientId, onSaved }: { patientId: string; onSaved: (message: string) => void }) {
+function findings(text: string): string {
+  try {
+    const data = JSON.parse(text) as { Findings?: string };
+    return data.Findings || text;
+  } catch {
+    return text;
+  }
+}
+
+function painNumber(value: string): number | null {
+  const match = String(value || "").match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(10, parsed)) : null;
+}
+
+function painTone(value: string): "success" | "warning" | "error" | "neutral" {
+  const score = painNumber(value);
+  if (score === null) return "neutral";
+  if (score <= 3) return "success";
+  if (score <= 7) return "warning";
+  return "error";
+}
+
+function PainScale({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+}) {
+  return (
+    <fieldset>
+      <legend className="mb-2 text-xs font-semibold text-slate-700">{label}</legend>
+      <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-10">
+        {Array.from({ length: 10 }, (_, index) => String(index + 1)).map((item) => {
+          const active = value === item;
+          const score = Number(item);
+          const tone =
+            score <= 3
+              ? active
+                ? "border-emerald-600 bg-emerald-600 text-white"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : score <= 7
+                ? active
+                  ? "border-amber-600 bg-amber-600 text-white"
+                  : "border-amber-200 bg-amber-50 text-amber-800"
+                : active
+                  ? "border-red-600 bg-red-600 text-white"
+                  : "border-red-200 bg-red-50 text-red-800";
+          return (
+            <button
+              key={item}
+              type="button"
+              onClick={() => {
+                onChange(item);
+                haptic("tap");
+              }}
+              className={`min-h-11 rounded-lg border text-sm font-bold ${tone}`}
+              aria-pressed={active}
+            >
+              {item}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function Panel({
+  title,
+  subtitle,
+  children,
+  badge,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs leading-5 text-slate-500">{subtitle}</p>}
+        </div>
+        {badge}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function AssessmentForm({
+  patientId,
+  onSaved,
+  online,
+}: {
+  patientId: string;
+  onSaved: (message: string) => void;
+  online: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!online) return onSaved("✕ Internet connection required");
     const form = new FormData(event.currentTarget);
     setBusy(true);
     try {
@@ -84,24 +195,63 @@ function AssessmentForm({ patientId, onSaved }: { patientId: string; onSaved: (m
       event.currentTarget.reset();
       onSaved("✓ Assessment saved");
     } catch (error) {
-      onSaved(error instanceof Error ? error.message : "Assessment save failed");
-    } finally { setBusy(false); }
+      onSaved(`✕ ${error instanceof Error ? error.message : "Assessment save failed"}`);
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <form onSubmit={submit} className="space-y-3">
-      <select name="category" defaultValue="general" className={inputClass}>
-        <option value="general">General</option><option value="lbp">Low back pain</option><option value="neck">Neck</option><option value="shoulder">Shoulder</option><option value="knee">Knee</option><option value="hip">Hip</option><option value="ankle">Ankle</option><option value="neuro">Neuro</option><option value="post_op">Post-op</option>
-      </select>
-      <textarea name="findings" required placeholder="Key findings, tests, ROM, neuro, clinical impression…" className={textareaClass} />
-      <button disabled={busy} className="min-h-12 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white active:scale-[0.99] disabled:opacity-50">{busy ? "Saving…" : "Save quick assessment"}</button>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Assessment category</label>
+        <select name="category" defaultValue="general" className={inputClass}>
+          <option value="general">General</option>
+          <option value="lbp">Low back pain</option>
+          <option value="neck">Neck</option>
+          <option value="shoulder">Shoulder</option>
+          <option value="knee">Knee</option>
+          <option value="hip">Hip</option>
+          <option value="ankle">Ankle</option>
+          <option value="neuro">Neuro</option>
+          <option value="post_op">Post-op</option>
+        </select>
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Clinical findings</label>
+        <textarea
+          name="findings"
+          required
+          placeholder="Key findings, tests, ROM, neuro, clinical impression…"
+          className={textareaClass}
+        />
+      </div>
+      <button
+        disabled={busy || !online}
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow-md hover:bg-blue-900 disabled:shadow-none"
+      >
+        {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving assessment" />}
+        {busy ? "Saving…" : "Save assessment"}
+      </button>
     </form>
   );
 }
 
-function PlanForm({ patientId, diagnosis, onSaved }: { patientId: string; diagnosis: string; onSaved: (message: string) => void }) {
+function PlanForm({
+  patientId,
+  diagnosis,
+  onSaved,
+  online,
+}: {
+  patientId: string;
+  diagnosis: string;
+  onSaved: (message: string) => void;
+  online: boolean;
+}) {
   const [busy, setBusy] = useState(false);
+  const [sessions, setSessions] = useState("10");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!online) return onSaved("✕ Internet connection required");
     const form = new FormData(event.currentTarget);
     setBusy(true);
     try {
@@ -115,143 +265,407 @@ function PlanForm({ patientId, diagnosis, onSaved }: { patientId: string; diagno
       });
       onSaved("✓ Treatment plan saved");
     } catch (error) {
-      onSaved(error instanceof Error ? error.message : "Plan save failed");
-    } finally { setBusy(false); }
+      onSaved(`✕ ${error instanceof Error ? error.message : "Plan save failed"}`);
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <form onSubmit={submit} className="space-y-3">
-      <input name="diagnosis" defaultValue={diagnosis} placeholder="Diagnosis" className={inputClass} />
-      <input name="totalSessions" type="number" min="1" max="365" required defaultValue="10" placeholder="Total sessions" className={inputClass} />
-      <textarea name="exercisePlan" placeholder="Exercise plan" className={textareaClass} />
-      <textarea name="electrotherapyPlan" placeholder="Electrotherapy plan" className={textareaClass} />
-      <textarea name="manualTherapyPlan" placeholder="Manual therapy plan" className={textareaClass} />
-      <button disabled={busy} className="min-h-12 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white active:scale-[0.99] disabled:opacity-50">{busy ? "Saving…" : "Create / replace active plan"}</button>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Diagnosis</label>
+        <input name="diagnosis" defaultValue={diagnosis} placeholder="Diagnosis" className={inputClass} />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Planned sessions</label>
+        <div className="grid grid-cols-4 gap-2">
+          {["7", "14", "21", "28"].map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setSessions(item)}
+              className={`min-h-11 rounded-lg border text-xs font-semibold ${sessions === item ? "border-blue-800 bg-blue-800 text-white" : "border-slate-200 bg-white text-slate-600"}`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+        <input
+          name="totalSessions"
+          type="number"
+          min="1"
+          max="365"
+          required
+          value={sessions}
+          onChange={(event) => setSessions(event.target.value)}
+          className={`${inputClass} mt-2`}
+        />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Exercise plan</label>
+        <textarea name="exercisePlan" placeholder="Exercise plan" className={textareaClass} />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Electrotherapy</label>
+        <textarea name="electrotherapyPlan" placeholder="TENS, IFT, EMS, US, SWD…" className={textareaClass} />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Manual therapy</label>
+        <textarea name="manualTherapyPlan" placeholder="Mobilization, Mulligan, soft tissue…" className={textareaClass} />
+      </div>
+      <button
+        disabled={busy || !online}
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow-md hover:bg-blue-900 disabled:shadow-none"
+      >
+        {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving treatment plan" />}
+        {busy ? "Saving…" : "Create treatment plan"}
+      </button>
     </form>
   );
 }
 
-function SessionForm({ patientId, activePlan, onSaved }: { patientId: string; activePlan: Workspace["activePlan"]; onSaved: (message: string) => void }) {
+function SessionForm({
+  patientId,
+  activePlan,
+  onSaved,
+  online,
+}: {
+  patientId: string;
+  activePlan: Workspace["activePlan"];
+  onSaved: (message: string) => void;
+  online: boolean;
+}) {
   const [busy, setBusy] = useState(false);
+  const [painBefore, setPainBefore] = useState("");
+  const [painAfter, setPainAfter] = useState("");
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!online) return onSaved("✕ Internet connection required");
     const form = new FormData(event.currentTarget);
     setBusy(true);
     try {
       const result = await post("/api/clinical/session", {
         patientId,
-        painBefore: form.get("painBefore"),
-        painAfter: form.get("painAfter"),
+        painBefore,
+        painAfter,
         response: form.get("response"),
         modification: form.get("modification"),
         remarks: form.get("remarks"),
       });
       event.currentTarget.reset();
-      onSaved(`✓ Session ${result.sessionNo} saved`);
+      setPainBefore("");
+      setPainAfter("");
+      onSaved(`✓ Session ${String(result.sessionNo || "")} saved`);
     } catch (error) {
-      onSaved(error instanceof Error ? error.message : "Session save failed");
-    } finally { setBusy(false); }
+      onSaved(`✕ ${error instanceof Error ? error.message : "Session save failed"}`);
+    } finally {
+      setBusy(false);
+    }
   }
-  if (!activePlan) return <p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-700">Treatment session দিতে আগে active plan তৈরি করুন।</p>;
+
+  if (!activePlan) {
+    return (
+      <InlineNotice tone="warning" title="Active plan required">
+        Treatment session record করার আগে treatment plan তৈরি করুন।
+      </InlineNotice>
+    );
+  }
+
+  const planProgress = activePlan.totalSessions
+    ? (activePlan.sessionsDone / activePlan.totalSessions) * 100
+    : 0;
+
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-        <p className="font-semibold text-slate-800">Active plan · {activePlan.planId}</p>
-        <p className="mt-1">{activePlan.sessionsDone}/{activePlan.totalSessions} sessions recorded</p>
+    <form onSubmit={submit} className="space-y-4">
+      <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-blue-950">Active plan · {activePlan.planId}</p>
+            <p className="mt-0.5 text-[11px] text-blue-700">{activePlan.diagnosis || "Physio plan"}</p>
+          </div>
+          <StatusBadge tone="info">{activePlan.sessionsDone}/{activePlan.totalSessions}</StatusBadge>
+        </div>
+        <ProgressBar value={planProgress} label="Plan progress" className="mt-3" />
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <input name="painBefore" placeholder="Pain before" className={inputClass} />
-        <input name="painAfter" placeholder="Pain after" className={inputClass} />
+
+      <PainScale value={painBefore} onChange={setPainBefore} label="Pain before · 1–10" />
+      <PainScale value={painAfter} onChange={setPainAfter} label="Pain after · 1–10" />
+
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Response to treatment</label>
+        <textarea name="response" placeholder="Response to treatment" className={textareaClass} />
       </div>
-      <textarea name="response" placeholder="Response to treatment" className={textareaClass} />
-      <textarea name="modification" placeholder="Modification / progression" className={textareaClass} />
-      <textarea name="remarks" placeholder="Daily note / remarks" className={textareaClass} />
-      <button disabled={busy} className="min-h-12 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white active:scale-[0.99] disabled:opacity-50">{busy ? "Saving…" : "Save treatment session"}</button>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Modification / progression</label>
+        <textarea name="modification" placeholder="Progression, regression, changes…" className={textareaClass} />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Daily note</label>
+        <textarea name="remarks" placeholder="Daily treatment note / remarks" className={textareaClass} />
+      </div>
+      <button
+        disabled={busy || !online}
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow-md hover:bg-emerald-700 disabled:shadow-none"
+      >
+        {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving treatment session" />}
+        {busy ? "Saving…" : "Complete session"}
+      </button>
+      <p className="text-center text-[10px] leading-4 text-slate-400">Save writes immediately to the clinical record; no local draft is advertised.</p>
     </form>
   );
 }
 
-function findings(text: string): string {
-  try {
-    const data = JSON.parse(text) as { Findings?: string };
-    return data.Findings || text;
-  } catch { return text; }
-}
-
-export default function ClinicalWorkspaceClient({ workspace }: { workspace: Workspace }) {
+export default function ClinicalWorkspaceClient({
+  workspace,
+  oversight = false,
+}: {
+  workspace: Workspace;
+  oversight?: boolean;
+}) {
   const router = useRouter();
+  const [tab, setTab] = useState<Tab>(workspace.activePlan ? "today" : "assessment");
   const [message, setMessage] = useState<string | null>(null);
+  const [online, setOnline] = useState(true);
+  const canExecute = workspace.canWrite && !oversight;
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    update();
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+
+  const progress = workspace.activePlan?.totalSessions
+    ? (workspace.activePlan.sessionsDone / workspace.activePlan.totalSessions) * 100
+    : 0;
+  const latestSession = workspace.sessions[0];
+  const painChange = useMemo(() => {
+    if (!latestSession) return null;
+    const before = painNumber(latestSession.painBefore);
+    const after = painNumber(latestSession.painAfter);
+    if (before === null || after === null) return null;
+    return before - after;
+  }, [latestSession]);
+
   function saved(value: string) {
     setMessage(value);
     if (value.startsWith("✓")) {
-      if (navigator.vibrate) navigator.vibrate(18);
+      haptic("success");
       router.refresh();
+    } else {
+      haptic("error");
     }
   }
 
+  const tabs: Array<{ id: Tab; label: string }> = [
+    { id: "assessment", label: "Assessment" },
+    { id: "plans", label: "Plans" },
+    { id: "today", label: "Today" },
+    { id: "history", label: "History" },
+  ];
+
   return (
     <div className="space-y-4">
-      {message && <p role="status" className={`rounded-xl p-3 text-xs ${message.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{message}</p>}
+      {!online && (
+        <InlineNotice tone="warning" title="Offline — clinical writes paused">
+          Loaded information দেখা যাবে, কিন্তু assessment/plan/session save করতে internet লাগবে।
+        </InlineNotice>
+      )}
+      {oversight && (
+        <InlineNotice tone="info" title="Owner oversight mode">
+          Clinical data read-only দেখানো হচ্ছে। Clinician role একই account-এ থাকলে execution controls available হবে।
+        </InlineNotice>
+      )}
+      {!oversight && !workspace.canWrite && (
+        <InlineNotice tone="warning" title="Read-only clinical file">
+          এই patient আপনার assigned/cross-cover scope-এ নেই। History দেখা যাবে, write controls নয়।
+        </InlineNotice>
+      )}
+      {message && (
+        <div className={message.startsWith("✓") ? "relife-success-flash" : "relife-error-shake"}>
+          <InlineNotice tone={message.startsWith("✓") ? "success" : "error"}>{message}</InlineNotice>
+        </div>
+      )}
 
-      {workspace.activePlan && (
-        <section className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Active treatment plan</p>
-          <div className="mt-2 flex items-start justify-between gap-3">
-            <div><h2 className="font-semibold">{workspace.activePlan.diagnosis || "Physio plan"}</h2><p className="mt-1 text-xs text-slate-300">{workspace.activePlan.planId}</p></div>
-            <span className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold">{workspace.activePlan.sessionsDone}/{workspace.activePlan.totalSessions}</span>
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">Physio clinical</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">{workspace.patient.diagnosis || "Clinical workspace"}</h2>
+            <p className="mt-1 text-xs text-slate-500">{workspace.patient.therapist || "Unassigned therapist"}</p>
           </div>
-          <div className="mt-3 space-y-1 text-xs text-slate-300">
-            {workspace.activePlan.exercisePlan && <p>Exercise · {workspace.activePlan.exercisePlan}</p>}
-            {workspace.activePlan.electrotherapyPlan && <p>Electro · {workspace.activePlan.electrotherapyPlan}</p>}
-            {workspace.activePlan.manualTherapyPlan && <p>Manual · {workspace.activePlan.manualTherapyPlan}</p>}
+          <div className="flex flex-wrap gap-2">
+            {workspace.activePlan && <StatusBadge tone="info">Active plan</StatusBadge>}
+            {painChange !== null && (
+              <StatusBadge tone={painChange > 0 ? "success" : painChange < 0 ? "error" : "neutral"}>
+                {painChange > 0 ? `↓ Pain ${painChange}` : painChange < 0 ? `↑ Pain ${Math.abs(painChange)}` : "Pain unchanged"}
+              </StatusBadge>
+            )}
           </div>
-        </section>
-      )}
+        </div>
 
-      {workspace.canWrite && (
-        <>
-          <details className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200" open={!workspace.activePlan}>
-            <summary className="min-h-12 cursor-pointer select-none py-3 text-sm font-semibold text-slate-900">+ Assessment</summary>
-            <div className="pt-3"><AssessmentForm patientId={workspace.patient.patientId} onSaved={saved} /></div>
-          </details>
-          <details className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <summary className="min-h-12 cursor-pointer select-none py-3 text-sm font-semibold text-slate-900">+ Treatment plan</summary>
-            <div className="pt-3"><PlanForm patientId={workspace.patient.patientId} diagnosis={workspace.patient.diagnosis} onSaved={saved} /></div>
-          </details>
-          <details className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200" open={Boolean(workspace.activePlan)}>
-            <summary className="min-h-12 cursor-pointer select-none py-3 text-sm font-semibold text-slate-900">+ Today treatment / daily note</summary>
-            <div className="pt-3"><SessionForm patientId={workspace.patient.patientId} activePlan={workspace.activePlan} onSaved={saved} /></div>
-          </details>
-        </>
-      )}
+        {workspace.activePlan ? (
+          <div className="mt-4">
+            <ProgressBar value={progress} label={`${workspace.activePlan.sessionsDone}/${workspace.activePlan.totalSessions} sessions completed`} />
+          </div>
+        ) : (
+          <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">No active treatment plan.</p>
+        )}
+      </section>
 
-      {!workspace.canWrite && (
-        <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-amber-200">Clinical file read-only. Write access শুধু assigned clinician / today cross-cover / Owner-এর জন্য।</p>
-      )}
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm" data-horizontal-scroll>
+        <div className="flex min-w-max gap-1" role="tablist" aria-label="Clinical workspace tabs">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.id}
+              onClick={() => {
+                setTab(item.id);
+                haptic("tap");
+              }}
+              className={`min-h-11 rounded-lg px-4 text-xs font-semibold ${tab === item.id ? "bg-blue-800 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <div className="flex items-end justify-between"><div><h2 className="text-sm font-semibold text-slate-900">Treatment history</h2><p className="text-[11px] text-slate-500">05_Treatments</p></div><span className="text-xs text-slate-500">{workspace.sessions.length}</span></div>
-        <div className="mt-3 space-y-2">
-          {workspace.sessions.slice(0, 40).map((session) => (
-            <div key={session.treatmentId} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-              <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">Session {session.sessionNo} · {session.date}</p><p className="mt-0.5 text-[11px] text-slate-500">{session.therapist} · {session.planId}</p></div><span className="text-xs font-medium text-slate-600">{session.painBefore && session.painAfter ? `${session.painBefore} → ${session.painAfter}` : session.painAfter || session.painBefore}</span></div>
-              {session.response && <p className="mt-2 text-xs leading-5 text-slate-700">Response: {session.response}</p>}
-              {session.modification && <p className="mt-1 text-xs leading-5 text-slate-600">Modification: {session.modification}</p>}
-              {session.remarks && <p className="mt-1 text-xs leading-5 text-slate-600">{session.remarks}</p>}
+      {tab === "assessment" && (
+        <div className="space-y-4 relife-fade-in">
+          {canExecute && (
+            <Panel title="Quick assessment" subtitle="Focused findings with immediate audited save" badge={<StatusBadge tone="info">Live write</StatusBadge>}>
+              <AssessmentForm patientId={workspace.patient.patientId} onSaved={saved} online={online} />
+            </Panel>
+          )}
+          <Panel title="Assessment history" subtitle="Latest first" badge={<StatusBadge tone="neutral">{workspace.assessments.length}</StatusBadge>}>
+            <div className="space-y-2">
+              {workspace.assessments.slice(0, 30).map((assessment) => (
+                <article key={assessment.assessmentId} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <StatusBadge tone="info">{assessment.category || "general"}</StatusBadge>
+                    <span className="text-[10px] text-slate-400">{assessment.createdAt}</span>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-800">{findings(assessment.testData)}</p>
+                  <p className="mt-2 text-[10px] text-slate-400">{assessment.createdBy} · {assessment.assessmentId}</p>
+                </article>
+              ))}
+              {workspace.assessments.length === 0 && <InlineNotice tone="neutral">Assessment নেই।</InlineNotice>}
             </div>
-          ))}
-          {workspace.sessions.length === 0 && <p className="py-5 text-center text-sm text-slate-400">Treatment session নেই।</p>}
+          </Panel>
         </div>
-      </section>
+      )}
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-        <div className="flex items-end justify-between"><div><h2 className="text-sm font-semibold text-slate-900">Assessment history</h2><p className="text-[11px] text-slate-500">10_Assessments</p></div><span className="text-xs text-slate-500">{workspace.assessments.length}</span></div>
-        <div className="mt-3 space-y-2">
-          {workspace.assessments.slice(0, 30).map((assessment) => (
-            <div key={assessment.assessmentId} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{assessment.category} · {assessment.createdAt}</p><p className="mt-1 text-sm leading-6 text-slate-800">{findings(assessment.testData)}</p></div>
-          ))}
-          {workspace.assessments.length === 0 && <p className="py-5 text-center text-sm text-slate-400">Assessment নেই।</p>}
+      {tab === "plans" && (
+        <div className="space-y-4 relife-fade-in">
+          {workspace.activePlan && (
+            <Panel title="Active treatment plan" subtitle={workspace.activePlan.planId} badge={<StatusBadge tone="success">Active</StatusBadge>}>
+              <div className="space-y-3">
+                <ProgressBar value={progress} label={`${workspace.activePlan.sessionsDone}/${workspace.activePlan.totalSessions} sessions`} />
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <PlanItem title="Exercise" value={workspace.activePlan.exercisePlan} />
+                  <PlanItem title="Electro" value={workspace.activePlan.electrotherapyPlan} />
+                  <PlanItem title="Manual" value={workspace.activePlan.manualTherapyPlan} />
+                </div>
+              </div>
+            </Panel>
+          )}
+          {canExecute && (
+            <Panel title="Create / replace plan" subtitle="Quick packages 7 / 14 / 21 / 28 sessions">
+              <PlanForm patientId={workspace.patient.patientId} diagnosis={workspace.patient.diagnosis} onSaved={saved} online={online} />
+            </Panel>
+          )}
+          <Panel title="Plan history" subtitle="Previous and active plans" badge={<StatusBadge tone="neutral">{workspace.plans.length}</StatusBadge>}>
+            <div className="space-y-2">
+              {workspace.plans.map((plan) => {
+                const value = plan.totalSessions ? (plan.sessionsDone / plan.totalSessions) * 100 : 0;
+                return (
+                  <article key={plan.planId} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div><p className="text-sm font-semibold text-slate-900">{plan.diagnosis || "Physio plan"}</p><p className="mt-0.5 text-[11px] text-slate-500">{plan.planId} · {plan.createdDate} · {plan.createdBy}</p></div>
+                      <StatusBadge tone={plan.status.toLowerCase() === "active" ? "success" : "neutral"}>{plan.status}</StatusBadge>
+                    </div>
+                    <ProgressBar value={value} label={`${plan.sessionsDone}/${plan.totalSessions} sessions`} className="mt-3" />
+                  </article>
+                );
+              })}
+              {workspace.plans.length === 0 && <InlineNotice tone="neutral">Treatment plan নেই।</InlineNotice>}
+            </div>
+          </Panel>
         </div>
-      </section>
+      )}
+
+      {tab === "today" && (
+        <div className="space-y-4 relife-fade-in">
+          <Panel title="Today treatment / daily note" subtitle="Pain before/after, response and progression" badge={canExecute ? <StatusBadge tone="success">Execution</StatusBadge> : <StatusBadge tone="neutral">Read only</StatusBadge>}>
+            {canExecute ? (
+              <SessionForm patientId={workspace.patient.patientId} activePlan={workspace.activePlan} onSaved={saved} online={online} />
+            ) : latestSession ? (
+              <SessionSummary session={latestSession} />
+            ) : (
+              <InlineNotice tone="neutral">আজকের জন্য recorded treatment session নেই।</InlineNotice>
+            )}
+          </Panel>
+        </div>
+      )}
+
+      {tab === "history" && (
+        <div className="space-y-4 relife-fade-in">
+          <Panel title="Treatment history" subtitle="Live 05_Treatments · latest first" badge={<StatusBadge tone="neutral">{workspace.sessions.length}</StatusBadge>}>
+            <div className="space-y-2">
+              {workspace.sessions.slice(0, 60).map((session) => <SessionSummary key={session.treatmentId} session={session} />)}
+              {workspace.sessions.length === 0 && <InlineNotice tone="neutral">Treatment session নেই।</InlineNotice>}
+            </div>
+          </Panel>
+        </div>
+      )}
     </div>
+  );
+}
+
+function PlanItem({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">{title}</p>
+      <p className="mt-1 text-xs leading-5 text-slate-700">{value || "Not specified"}</p>
+    </div>
+  );
+}
+
+function SessionSummary({ session }: { session: Workspace["sessions"][number] }) {
+  const before = painNumber(session.painBefore);
+  const after = painNumber(session.painAfter);
+  const change = before !== null && after !== null ? before - after : null;
+  return (
+    <article className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">Session {session.sessionNo} · {session.date}</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">{session.therapist} · {session.planId}</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {session.painBefore && <StatusBadge tone={painTone(session.painBefore)}>Before {session.painBefore}</StatusBadge>}
+          {session.painAfter && <StatusBadge tone={painTone(session.painAfter)}>After {session.painAfter}</StatusBadge>}
+        </div>
+      </div>
+      {change !== null && (
+        <div className="mt-2">
+          <StatusBadge tone={change > 0 ? "success" : change < 0 ? "error" : "neutral"}>
+            {change > 0 ? `Improved ↓${change}` : change < 0 ? `Worse ↑${Math.abs(change)}` : "No pain change"}
+          </StatusBadge>
+        </div>
+      )}
+      {session.response && <p className="mt-2 text-xs leading-5 text-slate-700"><strong>Response:</strong> {session.response}</p>}
+      {session.modification && <p className="mt-1 text-xs leading-5 text-slate-600"><strong>Modification:</strong> {session.modification}</p>}
+      {session.remarks && <p className="mt-1 text-xs leading-5 text-slate-600">{session.remarks}</p>}
+      <p className="mt-2 text-[10px] text-slate-400">{session.treatmentId}</p>
+    </article>
   );
 }
