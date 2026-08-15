@@ -1,0 +1,79 @@
+import { NextRequest, NextResponse } from "next/server";
+import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import {
+  completeChamberSession,
+  getChamberSnapshot,
+  receiveChamberPatient,
+  startChamberSession,
+  updateChamberStep,
+} from "@/lib/webos/chamber";
+import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+
+function statusFor(message: string): number {
+  if (["ACCESS_DENIED", "THERAPIST_NOT_ASSIGNED"].includes(message)) return 403;
+  if (["APPOINTMENT_NOT_FOUND", "PATIENT_NOT_FOUND", "CHAMBER_SESSION_NOT_FOUND", "STATION_NOT_FOUND", "RESOURCE_NOT_FOUND"].includes(message)) return 404;
+  if (message === "CHAMBER_SCHEMA_MISSING") return 503;
+  if (
+    message.startsWith("CHAMBER_CAPACITY:") ||
+    message.startsWith("RESOURCE_BUSY:") ||
+    ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING"].includes(message)
+  ) return 409;
+  if (["CHAMBER_STEP_REQUIRED", "INVALID_STEP_DURATION", "INVALID_ACTION"].includes(message)) return 400;
+  return 500;
+}
+
+export async function GET() {
+  try {
+    const context = await requireCurrentAccessContext();
+    const snapshot = await getChamberSnapshot(context);
+    return NextResponse.json({ ok: true, snapshot });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "CHAMBER_READ_FAILED";
+    const status = statusFor(message);
+    if (status === 500) console.error("Chamber read failed", error);
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  if (!isAllowedRequestOrigin(request)) {
+    return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
+  }
+  try {
+    const context = await requireCurrentAccessContext();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
+    }
+
+    const action = String(body.action || "");
+    if (action === "receive") {
+      const result = await receiveChamberPatient(context, body.appointmentId);
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "start") {
+      const result = await startChamberSession(context, body.sessionId);
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "step") {
+      const result = await updateChamberStep(context, {
+        sessionId: body.sessionId,
+        step: body.step,
+        resourceId: body.resourceId,
+        stationId: body.stationId,
+        durationMin: body.durationMin,
+      });
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "complete") {
+      const result = await completeChamberSession(context, body.sessionId);
+      return NextResponse.json({ ok: true, ...result });
+    }
+    throw new Error("INVALID_ACTION");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "CHAMBER_ACTION_FAILED";
+    const status = statusFor(message);
+    if (status === 500) console.error("Chamber action failed", error);
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+}

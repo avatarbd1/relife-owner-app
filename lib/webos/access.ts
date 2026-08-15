@@ -39,6 +39,9 @@ export type WebAction =
   | "clinical.clearance_read"
   | "inventory.read"
   | "inventory.write"
+  | "chamber.read"
+  | "chamber.receive"
+  | "chamber.run"
   | "audit.read"
   | "settings.manage";
 
@@ -90,6 +93,9 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "clinical.clearance_read",
     "inventory.read",
     "inventory.write",
+    "chamber.read",
+    "chamber.receive",
+    "chamber.run",
     "audit.read",
     "settings.manage",
   ]),
@@ -112,6 +118,9 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "clinical.clearance_read",
     "inventory.read",
     "inventory.write",
+    "chamber.read",
+    "chamber.receive",
+    "chamber.run",
   ]),
   Receptionist: new Set<WebAction>([
     "patient.read",
@@ -133,6 +142,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "attendance.self",
     "inventory.read",
     "inventory.write",
+    "chamber.read",
+    "chamber.receive",
   ]),
   Therapist: new Set<WebAction>([
     "patient.read",
@@ -143,6 +154,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "clinical.write",
     "clinical.clearance_read",
     "inventory.read",
+    "chamber.read",
+    "chamber.run",
   ]),
   Dentist: new Set<WebAction>([
     "patient.read",
