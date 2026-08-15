@@ -15,15 +15,21 @@ function readScope(value: string | undefined): Scope {
   return "combined";
 }
 
+function department(value: string | undefined): "Physio" | "Dental" | undefined {
+  if (value === "Physio" || value === "Dental") return value;
+  return undefined;
+}
+
 export default async function NewAppointmentPage({
   searchParams,
 }: {
-  searchParams: Promise<{ patientId?: string }>;
+  searchParams: Promise<{ patientId?: string; department?: string }>;
 }) {
   const context = await requireCurrentAccessContext();
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
-  const { patientId } = await searchParams;
+  const { patientId, department: departmentParam } = await searchParams;
+  const defaultDepartment = department(departmentParam);
   const [visiblePatients, clinicians] = await Promise.all([
     getVisiblePatients(context, scope),
     getClinicianOptions(context),
@@ -37,22 +43,24 @@ export default async function NewAppointmentPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs text-slate-400">W2 · Reception</p>
-          <h2 className="text-lg font-semibold text-slate-900">নতুন Appointment</h2>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">Appointments</p>
+          <h1 className="mt-0.5 text-xl font-bold text-slate-950">New appointment</h1>
+          <p className="mt-1 text-xs text-slate-500">Select patient, time and assigned clinician</p>
         </div>
-        <Link href="/appointments" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">
+        <Link href="/appointments" className="relife-interactive rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600">
           Back
         </Link>
       </div>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <AppointmentForm
           patients={patients}
           clinicians={clinicians}
           defaultPatientId={patientId}
           defaultDate={todayDhaka()}
+          defaultDepartment={defaultDepartment}
         />
       </section>
     </div>

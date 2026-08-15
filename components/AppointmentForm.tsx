@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/FeedbackUI";
+import { haptic } from "@/lib/interactions";
 
 type Department = "Physio" | "Dental";
 
@@ -22,14 +24,20 @@ export default function AppointmentForm({
   clinicians,
   defaultPatientId,
   defaultDate,
+  defaultDepartment,
 }: {
   patients: Patient[];
   clinicians: Clinician[];
   defaultPatientId?: string;
   defaultDate: string;
+  defaultDepartment?: Department;
 }) {
   const router = useRouter();
   const defaultPatient = patients.find((patient) => patient.patientId === defaultPatientId);
+  const initialDepartment = defaultPatient?.department === "Physio" || defaultPatient?.department === "Dental"
+    ? defaultPatient.department
+    : defaultDepartment;
+  const [departmentFilter, setDepartmentFilter] = useState<Department | "All">(initialDepartment || "All");
   const [patientText, setPatientText] = useState(
     defaultPatient ? `${defaultPatient.patientId} — ${defaultPatient.fullName}` : ""
   );
@@ -42,6 +50,10 @@ export default function AppointmentForm({
 
   const patientId = patientText.split("—")[0]?.trim() || "";
   const selectedPatient = patients.find((patient) => patient.patientId === patientId);
+  const visiblePatients = useMemo(
+    () => patients.filter((patient) => departmentFilter === "All" || patient.department === departmentFilter),
+    [departmentFilter, patients]
+  );
   const departmentClinicians = useMemo(
     () =>
       selectedPatient && selectedPatient.department !== "All"
@@ -80,9 +92,11 @@ export default function AppointmentForm({
         }
         throw new Error(result.error || `HTTP ${response.status}`);
       }
-      router.push("/appointments");
+      haptic("success");
+      router.push(`/appointments?date=${encodeURIComponent(date)}`);
       router.refresh();
     } catch (submitError) {
+      haptic("error");
       setError(submitError instanceof Error ? submitError.message : "Appointment failed");
     } finally {
       setBusy(false);
@@ -90,11 +104,38 @@ export default function AppointmentForm({
   }
 
   const inputClass =
-    "mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-400";
+    "mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors duration-100 focus:border-blue-700 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400";
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <label className="block text-xs font-medium text-slate-600">
+      <div>
+        <p className="text-xs font-semibold text-slate-700">Department</p>
+        <div className="mt-2 grid grid-cols-3 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
+          {(["All", "Physio", "Dental"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => {
+                haptic("tap");
+                setDepartmentFilter(item);
+                if (selectedPatient && item !== "All" && selectedPatient.department !== item) {
+                  setPatientText("");
+                  setTherapist("");
+                }
+              }}
+              className={`relife-interactive min-h-10 rounded-lg px-2 text-xs font-semibold ${
+                departmentFilter === item
+                  ? "bg-white text-blue-800 shadow-sm ring-1 ring-slate-200"
+                  : "text-slate-500"
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="block text-xs font-semibold text-slate-700">
         Patient *
         <input
           list="appointment-patients"
@@ -107,31 +148,36 @@ export default function AppointmentForm({
           className={inputClass}
         />
         <datalist id="appointment-patients">
-          {patients.map((patient) => (
+          {visiblePatients.map((patient) => (
             <option key={`${patient.department}-${patient.patientId}`} value={`${patient.patientId} — ${patient.fullName}`} />
           ))}
         </datalist>
       </label>
 
       {selectedPatient && (
-        <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          {selectedPatient.fullName} · {selectedPatient.patientId} · {selectedPatient.department}
-        </p>
+        <div className={`rounded-xl border px-3 py-2.5 text-xs ${
+          selectedPatient.department === "Dental"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "border-blue-200 bg-blue-50 text-blue-800"
+        }`}>
+          <p className="font-semibold">{selectedPatient.fullName}</p>
+          <p className="mt-0.5 text-[11px] opacity-75">{selectedPatient.patientId} · {selectedPatient.department}</p>
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="text-xs font-medium text-slate-600">
+        <label className="text-xs font-semibold text-slate-700">
           Date *
           <input type="date" required value={date} onChange={(event) => setDate(event.target.value)} className={inputClass} />
         </label>
-        <label className="text-xs font-medium text-slate-600">
+        <label className="text-xs font-semibold text-slate-700">
           Time *
           <input type="time" required value={time} onChange={(event) => setTime(event.target.value)} className={inputClass} />
         </label>
       </div>
 
-      <label className="block text-xs font-medium text-slate-600">
-        Clinician *
+      <label className="block text-xs font-semibold text-slate-700">
+        {selectedPatient?.department === "Dental" ? "Dentist" : "Therapist"} *
         <select
           required
           value={therapist}
@@ -146,25 +192,30 @@ export default function AppointmentForm({
         </select>
       </label>
 
-      <label className="block text-xs font-medium text-slate-600">
+      <label className="block text-xs font-semibold text-slate-700">
         Remarks
-        <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={2} className={inputClass} />
+        <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={3} className={inputClass} />
       </label>
 
       {selectedPatient?.department === "Physio" && (
-        <p className="text-[11px] leading-4 text-slate-400">
-          Physio booking-এ Web OS live slot দেখে treatment bed/traction allocation tag তৈরি করবে। Gender না থাকলে Waiting allocation হবে।
-        </p>
+        <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-[11px] leading-4 text-blue-800">
+          Room/bed/traction allocation is calculated from the live slot, patient gender and active treatment plan. If gender is missing, the booking is marked Waiting for allocation.
+        </div>
       )}
 
-      {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {error && (
+        <p className="relife-error-shake rounded-xl border border-red-200 bg-red-100 px-3 py-2.5 text-xs text-red-700" role="alert">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"
         disabled={busy || !selectedPatient || !date || !time || !therapist}
-        className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white disabled:opacity-40"
+        className="relife-interactive inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-800 px-4 py-3 text-sm font-semibold text-white shadow-md hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {busy ? "Saving..." : "Create appointment"}
+        {busy && <Spinner size="sm" className="border-white/40 border-t-white" label="Creating appointment" />}
+        {busy ? "Creating appointment…" : "Create appointment"}
       </button>
     </form>
   );
