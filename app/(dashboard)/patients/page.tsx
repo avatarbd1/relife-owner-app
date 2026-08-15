@@ -6,9 +6,12 @@ import { formatBDT } from "@/lib/format";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
 import {
   allowedPatientCreateDepartments,
+  getAppointmentsForContext,
   getVisiblePatients,
+  todayDhaka,
 } from "@/lib/webos/reception";
 
 function readScope(value: string | undefined): Scope {
@@ -32,16 +35,51 @@ function bdMonthKey(date: Date): string {
   return `${values.year}-${values.month}`;
 }
 
-export default async function PatientsPage() {
+function identityMatches(value: string, staffId: string, fullName: string): boolean {
+  const normalized = String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return Boolean(
+    normalized &&
+      (normalized === staffId.trim().toLowerCase() ||
+        normalized === fullName.trim().toLowerCase().replace(/\s+/g, " "))
+  );
+}
+
+export default async function PatientsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ view?: string }>;
+}) {
   const context = await requireCurrentAccessContext();
   const cookieStore = await cookies();
+  const params = searchParams ? await searchParams : {};
   const scope = readScope(cookieStore.get("relife_scope")?.value);
-  const [patients, createDepartments] = await Promise.all([
+  const clinician = context.roles.includes("Therapist") || context.roles.includes("Dentist");
+  const todayView = clinician && params.view === "today";
+
+  const [allPatients, createDepartments, identity] = await Promise.all([
     getVisiblePatients(context, scope),
     allowedPatientCreateDepartments(context),
+    clinician ? getActiveWebStaffById(context.staffId) : Promise.resolve(null),
   ]);
-  const monthKey = bdMonthKey(new Date());
 
+  let patients = allPatients;
+  let todayPatientCount = 0;
+  if (clinician && identity) {
+    const appointments = await getAppointmentsForContext(context, scope, todayDhaka());
+    const myTodayIds = new Set(
+      appointments
+        .filter((appointment) =>
+          identityMatches(appointment.therapist, identity.staffId, identity.fullName)
+        )
+        .map((appointment) => appointment.patientId)
+    );
+    todayPatientCount = myTodayIds.size;
+    if (todayView) {
+      patients = allPatients.filter((patient) => myTodayIds.has(patient.patientId));
+    }
+  }
+
+  const monthKey = bdMonthKey(new Date());
   const active = patients.filter((patient) => patient.status.toLowerCase() === "active").length;
   const newThisMonth = patients.filter((patient) => patient.registrationDate.startsWith(monthKey)).length;
   const canSeeAnyMoney = ["Physio", "Dental"].some((department) =>
@@ -54,6 +92,23 @@ export default async function PatientsPage() {
 
   return (
     <div className="space-y-4">
+      {clinician && (
+        <div className="grid grid-cols-2 gap-2">
+          <Link
+            href="/patients?view=today"
+            className={`rounded-xl px-3 py-3 text-center text-xs font-semibold ${todayView ? "bg-emerald-600 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+          >
+            🩺 My Today ({todayPatientCount})
+          </Link>
+          <Link
+            href="/patients"
+            className={`rounded-xl px-3 py-3 text-center text-xs font-semibold ${!todayView ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+          >
+            All permitted
+          </Link>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         {createDepartments.length > 0 && (
           <Link href="/patients/new" className="rounded-xl bg-slate-900 px-3 py-3 text-center text-xs font-semibold text-white">
@@ -67,10 +122,13 @@ export default async function PatientsPage() {
         )}
       </div>
 
-      <Card title="Patients" subtitle={`Scope: ${SCOPE_LABEL[scope]} · Live 02_Patients`}>
+      <Card
+        title={todayView ? "আজকের আমার রোগী" : "Patients"}
+        subtitle={`${todayView ? "Telegram My Patients parity" : `Scope: ${SCOPE_LABEL[scope]}`} · Live 02_Patients`}
+      >
         <Row label="Total patients" value={String(patients.length)} emphasis />
         <Row label="Active" value={String(active)} />
-        <Row label="New this month" value={String(newThisMonth)} />
+        {!todayView && <Row label="New this month" value={String(newThisMonth)} />}
         {canSeeAnyMoney && (
           <Row
             label="Patient master due"
