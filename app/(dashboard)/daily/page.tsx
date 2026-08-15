@@ -3,13 +3,9 @@ import { cookies } from "next/headers";
 import DailyOperationsClient from "@/components/DailyOperationsClient";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
-import { getDailyOperationsSnapshot } from "@/lib/webos/attendance";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-
-function readScope(value: string | undefined): Scope {
-  if (value === "physio" || value === "dental" || value === "combined") return value;
-  return "combined";
-}
+import { resolveAuthorizedScope } from "@/lib/webos/scope";
+import { getDailyOperationsSnapshot } from "@/lib/webos/attendance";
 
 function department(value: string): Department | null {
   if (value === "Physio" || value === "Dental" || value === "All") return value;
@@ -20,8 +16,8 @@ const LABEL: Record<Scope, string> = { combined: "Combined", physio: "Physio", d
 
 export default async function DailyPage() {
   const cookieStore = await cookies();
-  const scope = readScope(cookieStore.get("relife_scope")?.value);
   const context = await requireCurrentAccessContext();
+  const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const snapshot = await getDailyOperationsSnapshot(context, scope);
   const safeSnapshot = snapshot.attendance.canReadTeam
     ? {

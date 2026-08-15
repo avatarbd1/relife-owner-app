@@ -4,12 +4,8 @@ import FinanceOperationsClient from "@/components/FinanceOperationsClient";
 import { getFinanceOperationsSnapshot } from "@/lib/webos/financeOps";
 import { actionsForRoles } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { resolveAuthorizedScope } from "@/lib/webos/scope";
 import type { Scope } from "@/lib/types";
-
-function readScope(value: string | undefined): Scope {
-  if (value === "physio" || value === "dental" || value === "combined") return value;
-  return "combined";
-}
 
 const SCOPE_LABEL: Record<Scope, string> = {
   combined: "Combined",
@@ -19,8 +15,8 @@ const SCOPE_LABEL: Record<Scope, string> = {
 
 export default async function OperationsPage() {
   const cookieStore = await cookies();
-  const scope = readScope(cookieStore.get("relife_scope")?.value);
   const context = await requireCurrentAccessContext();
+  const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const snapshot = await getFinanceOperationsSnapshot(context, scope);
   const isOwner = context.roles.includes("Owner");
   const actions = new Set(actionsForRoles(context.roles));
