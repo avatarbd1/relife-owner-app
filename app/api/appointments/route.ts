@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { createPhysioBooking, type BookingValidationResult } from "@/lib/webos/appointmentScheduling";
 import { withMutationLock } from "@/lib/webos/mutationLock";
-import { createAppointment } from "@/lib/webos/reception";
+import { createAppointment, getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
+  const typed = error as Error & { validation?: BookingValidationResult };
   const message = error instanceof Error ? error.message : "APPOINTMENT_CREATE_FAILED";
   if (message === "ACCESS_DENIED") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
@@ -14,6 +16,19 @@ function errorResponse(error: unknown): NextResponse {
   }
   if (message === "APPOINTMENT_DUPLICATE") {
     return NextResponse.json({ ok: false, error: message }, { status: 409 });
+  }
+  if (message.startsWith("APPOINTMENT_CONFLICT:")) {
+    const [, type, ...detailParts] = message.split(":");
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "APPOINTMENT_CONFLICT",
+        conflictType: type || "other",
+        detail: detailParts.join(":") || "Booking conflict",
+        validation: typed.validation,
+      },
+      { status: 409 }
+    );
   }
   if (message.startsWith("APPOINTMENT_CAPACITY:")) {
     return NextResponse.json(
@@ -41,17 +56,31 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
+    const patient = await getPatientForContext(context, String(body.patientId || ""));
+    if (!patient || patient.department === "All") {
+      return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
+    }
 
-    const lockKey = `appointment-create:${String(body.date || "")}:${String(body.time || "")}`;
-    const result = await withMutationLock(lockKey, () =>
-      createAppointment(context, {
-        patientId: body.patientId,
+    const lockKey = `appointment-create:${String(body.date || "")}`;
+    const result = await withMutationLock(lockKey, () => {
+      if (patient.department === "Physio") {
+        return createPhysioBooking(context, {
+          patientId: patient.patientId,
+          date: body.date,
+          time: body.time,
+          therapist: body.therapist,
+          remarks: body.remarks,
+          modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
+        });
+      }
+      return createAppointment(context, {
+        patientId: patient.patientId,
         date: body.date,
         time: body.time,
         therapist: body.therapist,
         remarks: body.remarks,
-      })
-    );
+      });
+    });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
