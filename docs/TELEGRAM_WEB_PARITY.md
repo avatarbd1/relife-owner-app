@@ -9,6 +9,7 @@ This file tracks production-established Telegram workflows mirrored into the Rel
 - Physio and Dental data remain department-separated unless the caller has explicit `All` access.
 - `Dental_Temporary_Data_Entry` is not a general Receptionist clinical permission. Web mirrors the Telegram fail-closed rule: Receptionist + primary Dental + Dental-only access + exact scope flag.
 - Reception → Home Treasury/Bank is a cash movement, not an expense.
+- Telegram-style entry correction is limited to the current staff member's own entry from today and still requires latest-entry/stale-state guards. Reversal + Delete_Log + audit are atomic with the payment deletion.
 
 ## Web routes
 
@@ -24,8 +25,9 @@ This file tracks production-established Telegram workflows mirrored into the Rel
 | Physio clinical | `/patients/{id}/clinical` | assessment, plan, treatment session/history |
 | Dental clinical | `/patients/{id}/clinical` | Procedure → Tooth/Area → Clinical note → Status → history |
 | Payment / finance actions | `/operations` | payment, expense, handover, salary according to permission |
+| Today entry correction | `/corrections` | Owner/Receptionist/Manager own same-day entries only; Physio/Dental; reversal + audit |
 | Cash handover receive | `/finance/cash-receive` | pending handover acceptance/rejection + actual received amount |
-| Expense / cash / salary history | `/finance/history` | scoped read history; rejected expenses included |
+| Expense / cash / salary history | `/finance/history` | cash balance + scoped read history; rejected expenses included |
 | Daily Register | `/register` | dual-department 06_Payments; money hidden without amount permission |
 | Owner dashboard | `/finance` | Physio/Dental/Combined scopes |
 | Reports | `/reports` | role + department scoped |
@@ -38,3 +40,4 @@ This file tracks production-established Telegram workflows mirrored into the Rel
 - `Dental_Assistant` remains fail-closed until a production allowlist is explicitly approved.
 - Physio-specific AI/case-study/inventory internals are not exposed as Dental clinical tools merely for visual parity.
 - Owner-only controls remain owner-only even when another role can perform a narrower equivalent operation; e.g. Manager cash acceptance uses `/finance/cash-receive`, not Owner `/more`.
+- The older Owner Physio correction utility under `/tools` remains for backward compatibility, while Telegram parity uses `/corrections` and the stricter own-entry policy.
