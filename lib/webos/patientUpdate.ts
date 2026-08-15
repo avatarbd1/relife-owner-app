@@ -1,17 +1,15 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import {
-  appendSheetValues,
-  fetchSheetRanges,
-  updateSheetValues,
-  type Workbook,
-} from "@/lib/data/googleSheets";
+import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getPatientForContext } from "@/lib/webos/reception";
+import {
+  replaceEntityRowWithAudit,
+  type SheetCellValue,
+} from "@/lib/webos/sheetTransaction";
 
 type ClinicDepartment = "Physio" | "Dental";
-type SheetValue = string | number | boolean;
 
 export interface PatientUpdateInput {
   fullName?: string;
@@ -45,17 +43,6 @@ function at(row: string[], index: number): string {
   return index >= 0 ? normalize(row[index]) : "";
 }
 
-function columnLetter(index: number): string {
-  let n = index + 1;
-  let result = "";
-  while (n > 0) {
-    n -= 1;
-    result = String.fromCharCode(65 + (n % 26)) + result;
-    n = Math.floor(n / 26);
-  }
-  return result;
-}
-
 function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
@@ -81,9 +68,6 @@ function dhakaNow(ref = new Date()) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
   }).formatToParts(ref);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const date = `${values.year}-${values.month}-${values.day}`;
@@ -99,44 +83,39 @@ function dhakaNow(ref = new Date()) {
   };
 }
 
-async function appendAudit(
-  workbook: Workbook,
+function auditRow(
   context: AccessContext,
   department: ClinicDepartment,
   patientId: string,
-  summary: Record<string, string>
-): Promise<void> {
-  const now = dhakaNow();
-  try {
-    const clinic = clinicId(department);
-    await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      context.staffId,
-      "patient.update",
-      "Patient",
-      patientId,
-      patientId,
-      "",
-      JSON.stringify(summary),
-      "Web patient profile correction",
-      "RELIFE",
-      clinic,
-      "AMTALI-01",
-      `${clinic}:${patientId}`,
-      "",
-      context.staffId,
-      "web_pwa",
-      "human_entry",
-      false,
-      true,
-      "relife-uda-v1",
-      now.provenance,
-      department,
-    ]]);
-  } catch (error) {
-    console.error("Patient update audit append failed", error);
-  }
+  summary: Record<string, string>,
+  now: ReturnType<typeof dhakaNow>
+): SheetCellValue[] {
+  const clinic = clinicId(department);
+  return [
+    `AUD-${randomUUID()}`,
+    now.timestamp,
+    context.staffId,
+    "patient.update",
+    "Patient",
+    patientId,
+    patientId,
+    "",
+    JSON.stringify(summary),
+    "Web patient profile correction",
+    "RELIFE",
+    clinic,
+    "AMTALI-01",
+    `${clinic}:${patientId}`,
+    "",
+    context.staffId,
+    "web_pwa",
+    "human_entry",
+    false,
+    true,
+    "relife-uda-v1",
+    now.provenance,
+    department,
+  ];
 }
 
 export async function updatePatientProfile(
@@ -177,12 +156,12 @@ export async function updatePatientProfile(
   const row = [...rows[dataIndex + 1]];
   while (row.length < headers.length) row.push("");
   const changed: Record<string, string> = {};
-  const set = (header: string, value: string | undefined) => {
+  const set = (header: string, value: string | undefined, track = true) => {
     if (value === undefined) return;
     const index = headerIndex(headers, header);
     if (index < 0) return;
     row[index] = value;
-    changed[header] = value;
+    if (track) changed[header] = value;
   };
 
   const fullName = input.fullName === undefined ? undefined : normalize(input.fullName);
@@ -199,17 +178,16 @@ export async function updatePatientProfile(
 
   if (Object.keys(changed).length === 0) throw new Error("NO_CHANGES");
   const now = dhakaNow();
-  set("Last_Updated", now.timestamp);
-  set("Provider_ID", context.staffId);
-  set("Provenance_Timestamp", now.provenance);
+  set("Last_Updated", now.timestamp, false);
+  set("Provider_ID", context.staffId, false);
+  set("Provenance_Timestamp", now.provenance, false);
 
-  const rowNumber = dataIndex + 2;
-  const endColumn = columnLetter(Math.max(0, headers.length - 1));
-  await updateSheetValues(
+  await replaceEntityRowWithAudit(
     workbook,
-    `'02_Patients'!A${rowNumber}:${endColumn}${rowNumber}`,
-    [row as SheetValue[]]
+    "02_Patients",
+    dataIndex + 2,
+    row,
+    auditRow(context, department, patient.patientId, changed, now)
   );
-  await appendAudit(workbook, context, department, patient.patientId, changed);
   return { patientId: patient.patientId };
 }
