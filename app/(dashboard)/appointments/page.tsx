@@ -5,15 +5,11 @@ import { Card, Row } from "@/components/Card";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { resolveAuthorizedScope } from "@/lib/webos/scope";
 import {
   getAppointmentsForContext,
   todayDhaka,
 } from "@/lib/webos/reception";
-
-function readScope(value: string | undefined): Scope {
-  if (value === "physio" || value === "dental" || value === "combined") return value;
-  return "combined";
-}
 
 const SCOPE_LABEL: Record<Scope, string> = {
   combined: "Combined",
@@ -32,7 +28,7 @@ function statusTone(status: string): string {
 export default async function AppointmentsPage() {
   const context = await requireCurrentAccessContext();
   const cookieStore = await cookies();
-  const scope = readScope(cookieStore.get("relife_scope")?.value);
+  const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const today = todayDhaka();
   const appointments = await getAppointmentsForContext(context, scope, today);
   const scheduled = appointments.filter((row) => row.status.toLowerCase() === "scheduled").length;
