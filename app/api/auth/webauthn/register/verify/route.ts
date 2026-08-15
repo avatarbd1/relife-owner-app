@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getCurrentStaffIdentity } from "@/lib/webos/currentUser";
+import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import {
   finishPasskeyRegistration,
   readChallengeState,
   WEBAUTHN_CHALLENGE_COOKIE,
 } from "@/lib/webauthn";
-
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
-}
 
 function clearChallenge(response: NextResponse) {
   response.cookies.set(WEBAUTHN_CHALLENGE_COOKIE, "", {
@@ -28,7 +19,7 @@ function clearChallenge(response: NextResponse) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isAllowedWebAuthnRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
