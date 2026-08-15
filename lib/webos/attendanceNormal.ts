@@ -1,13 +1,11 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import {
-  appendSheetValues,
-  fetchSheetRanges,
-} from "@/lib/data/googleSheets";
+import { fetchSheetRanges } from "@/lib/data/googleSheets";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
 import type { AttendanceRecord } from "@/lib/webos/attendance";
+import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 
 type SheetValue = string | number | boolean;
 
@@ -63,41 +61,37 @@ function dhakaNow(ref = new Date()) {
   };
 }
 
-async function appendAudit(
+function auditRow(
   context: AccessContext,
   attendanceId: string,
-  checkInTime: string
-) {
-  const now = dhakaNow();
-  try {
-    await appendSheetValues("physio", "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      context.staffId,
-      "attendance.check_in",
-      "Attendance",
-      attendanceId,
-      "",
-      "",
-      checkInTime,
-      "Normal Web PWA attendance; GPS not required by clinic policy",
-      "RELIFE",
-      "RELIFE-PHYSIO",
-      "AMTALI-01",
-      `RELIFE-PHYSIO:${attendanceId}`,
-      "",
-      context.staffId,
-      "web_pwa",
-      "human_entry",
-      false,
-      true,
-      "relife-uda-v1",
-      now.provenance,
-      "All",
-    ]]);
-  } catch (error) {
-    console.error("Attendance audit append failed", error);
-  }
+  checkInTime: string,
+  now: ReturnType<typeof dhakaNow>
+): SheetValue[] {
+  return [
+    `AUD-${randomUUID()}`,
+    now.timestamp,
+    context.staffId,
+    "attendance.check_in",
+    "Attendance",
+    attendanceId,
+    "",
+    "",
+    checkInTime,
+    "Normal Web PWA attendance; GPS not required by clinic policy",
+    "RELIFE",
+    "RELIFE-PHYSIO",
+    "AMTALI-01",
+    `RELIFE-PHYSIO:${attendanceId}`,
+    "",
+    context.staffId,
+    "web_pwa",
+    "human_entry",
+    false,
+    true,
+    "relife-uda-v1",
+    now.provenance,
+    "All",
+  ];
 }
 
 const checkInLocks = new Map<string, Promise<void>>();
@@ -187,11 +181,14 @@ export async function performNormalAttendanceCheckIn(
       Provenance_Timestamp: now.provenance,
     };
 
-    await appendSheetValues("physio", "'03_Attendance'!A:Z", [
+    await appendEntityWithAudit(
+      "physio",
+      "03_Attendance",
       rowForHeaders(headers, values),
-    ]);
+      auditRow(context, attendanceId, now.displayTime, now)
+    );
 
-    const result: AttendanceRecord = {
+    return {
       attendanceId,
       date: now.date,
       staffId: identity.staffId,
@@ -207,8 +204,5 @@ export async function performNormalAttendanceCheckIn(
       status,
       remarks,
     };
-
-    await appendAudit(context, attendanceId, now.displayTime);
-    return result;
   });
 }
