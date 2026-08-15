@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 import { registerPatient } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
@@ -25,6 +26,12 @@ function errorResponse(error: unknown): NextResponse {
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
+function normalizePhone(value: unknown): string {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.startsWith("880")) digits = digits.slice(3);
+  return digits;
+}
+
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
@@ -36,20 +43,25 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await registerPatient(context, {
-      department: body.department,
-      fullName: body.fullName,
-      fatherHusbandName: body.fatherHusbandName,
-      phone: body.phone,
-      alternativePhone: body.alternativePhone,
-      age: body.age,
-      gender: body.gender,
-      address: body.address,
-      diagnosis: body.diagnosis,
-      therapist: body.therapist,
-      referral: body.referral,
-      remarks: body.remarks,
-    });
+
+    const phone = normalizePhone(body.phone);
+    const lockKey = `patient-create:${String(body.department || "unknown")}:${phone || "no-phone"}`;
+    const result = await withMutationLock(lockKey, () =>
+      registerPatient(context, {
+        department: body.department,
+        fullName: body.fullName,
+        fatherHusbandName: body.fatherHusbandName,
+        phone: body.phone,
+        alternativePhone: body.alternativePhone,
+        age: body.age,
+        gender: body.gender,
+        address: body.address,
+        diagnosis: body.diagnosis,
+        therapist: body.therapist,
+        referral: body.referral,
+        remarks: body.remarks,
+      })
+    );
     if (body.department === "Physio") {
       await consumePhysioInventorySystem(["Patient Card"], context.staffId, "Auto-Registration");
     }
