@@ -21,36 +21,42 @@ export async function recordExpenseRejectionReason(
   workbook: Workbook,
   expenseId: string,
   reason: string
-): Promise<void> {
+): Promise<boolean> {
   const clean = String(reason || "").trim();
-  if (!clean) return;
+  if (!clean) return false;
   const department = workbook === "dental" ? "Dental" : "Physio";
   const clinic = workbook === "dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
   const actor = process.env.OWNER_DISPLAY_NAME || "Owner";
   const timestamp = nowDhaka();
-  await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [[
-    `AUD-${randomUUID()}`,
-    timestamp,
-    actor,
-    "EXPENSE_REJECTION_REASON",
-    "Expense",
-    expenseId,
-    "",
-    "",
-    "Rejected",
-    clean,
-    "RELIFE",
-    clinic,
-    "AMTALI-01",
-    `${clinic}:${expenseId}`,
-    "",
-    actor,
-    "owner_pwa",
-    "owner_action",
-    false,
-    true,
-    "relife-uda-v1",
-    new Date().toISOString(),
-    department,
-  ]]);
+  try {
+    await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [[
+      `AUD-${randomUUID()}`,
+      timestamp,
+      actor,
+      "EXPENSE_REJECTION_REASON",
+      "Expense",
+      expenseId,
+      "",
+      "",
+      "Rejected",
+      clean,
+      "RELIFE",
+      clinic,
+      "AMTALI-01",
+      `${clinic}:${expenseId}`,
+      "",
+      actor,
+      "owner_pwa",
+      "owner_action",
+      false,
+      true,
+      "relife-uda-v1",
+      new Date().toISOString(),
+      department,
+    ]]);
+    return true;
+  } catch (error) {
+    console.error("Expense rejection reason audit append failed", error);
+    return false;
+  }
 }
