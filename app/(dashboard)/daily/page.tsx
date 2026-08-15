@@ -1,24 +1,50 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import DailyOperationsClient from "@/components/DailyOperationsClient";
+import { getPayments } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
+import { getDailyOperationsSnapshot } from "@/lib/webos/attendance";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
-import { getDailyOperationsSnapshot } from "@/lib/webos/attendance";
 
 function department(value: string): Department | null {
   if (value === "Physio" || value === "Dental" || value === "All") return value;
   return null;
 }
 
-const LABEL: Record<Scope, string> = { combined: "Combined", physio: "Physio", dental: "Dental" };
+function paymentInScope(scope: Scope, value: Department): boolean {
+  if (value === "All") return false;
+  if (scope === "combined") return value === "Physio" || value === "Dental";
+  return value === (scope === "physio" ? "Physio" : "Dental");
+}
+
+function paymentSessionCount(remarks?: string): number {
+  const match = /(?:^|\|)\s*Sessions:\s*(\d+)/i.exec(String(remarks || ""));
+  if (!match) return 1;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+const LABEL: Record<Scope, string> = {
+  combined: "Combined",
+  physio: "Physio",
+  dental: "Dental",
+};
 
 export default async function DailyPage() {
   const cookieStore = await cookies();
   const context = await requireCurrentAccessContext();
-  const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
-  const snapshot = await getDailyOperationsSnapshot(context, scope);
+  const scope = resolveAuthorizedScope(
+    context,
+    cookieStore.get("relife_scope")?.value
+  );
+
+  const [snapshot, payments] = await Promise.all([
+    getDailyOperationsSnapshot(context, scope),
+    getPayments(),
+  ]);
+
   const safeSnapshot = snapshot.attendance.canReadTeam
     ? {
         ...snapshot,
@@ -26,25 +52,61 @@ export default async function DailyPage() {
           ...snapshot.attendance,
           team: snapshot.attendance.team.filter((staff) => {
             const target = department(staff.department);
-            return target ? canPerform(context, "attendance.read_team", target) : false;
+            return target
+              ? canPerform(context, "attendance.read_team", target)
+              : false;
           }),
         },
       }
     : snapshot;
 
+  const todayPayments = payments.filter(
+    (payment) =>
+      payment.date.trim().slice(0, 10) === safeSnapshot.date &&
+      paymentInScope(scope, payment.department)
+  );
+  const patientKeys = new Set(
+    todayPayments
+      .map((payment) => {
+        const identity = payment.patientId.trim() || payment.patientName.trim();
+        return identity ? `${payment.department}:${identity}` : "";
+      })
+      .filter(Boolean)
+  );
+  const activityCounts = {
+    patients: patientKeys.size,
+    sessions: todayPayments.reduce(
+      (sum, payment) => sum + paymentSessionCount(payment.remarks),
+      0
+    ),
+    appointments: safeSnapshot.appointmentCounts.total,
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Web OS · W4</p>
-          <h1 className="text-lg font-semibold text-slate-900">Daily Operations</h1>
-          <p className="mt-0.5 text-xs text-slate-500">{safeSnapshot.date} · {LABEL[scope]}</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">
+            Web OS · W4
+          </p>
+          <h1 className="text-lg font-semibold text-slate-900">
+            Daily Operations
+          </h1>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {safeSnapshot.date} · {LABEL[scope]}
+          </p>
         </div>
-        <Link href="/home" className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 active:bg-slate-50">
+        <Link
+          href="/home"
+          className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 active:bg-slate-50"
+        >
           Home
         </Link>
       </div>
-      <DailyOperationsClient snapshot={safeSnapshot} />
+      <DailyOperationsClient
+        snapshot={safeSnapshot}
+        activityCounts={activityCounts}
+      />
     </div>
   );
 }
