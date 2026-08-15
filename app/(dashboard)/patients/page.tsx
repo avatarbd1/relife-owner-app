@@ -19,6 +19,8 @@ import {
   ActionRow,
 } from "@/components/WorkspaceUI";
 
+const CLINIC_DEPARTMENTS = ["Physio", "Dental"] as const;
+
 function bdMonthKey(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Dhaka",
@@ -78,12 +80,18 @@ export default async function PatientsPage({
   const monthKey = bdMonthKey(new Date());
   const active = patients.filter((patient) => patient.status.toLowerCase() === "active").length;
   const newThisMonth = patients.filter((patient) => patient.registrationDate.startsWith(monthKey)).length;
-  const canSeeAnyMoney = ["Physio", "Dental"].some((department) =>
-    canPerform(context, "payment.read_amount", department as "Physio" | "Dental")
+  const canSeeAnyMoney = CLINIC_DEPARTMENTS.some((department) =>
+    canPerform(context, "payment.read_amount", department)
   );
   const totalDue = patients.reduce((sum, patient) => sum + patient.due, 0);
-  const canReadSchedule = ["Physio", "Dental"].some((department) =>
-    canPerform(context, "appointment.read", department as "Physio" | "Dental")
+  const canReadSchedule = CLINIC_DEPARTMENTS.some((department) =>
+    canPerform(context, "appointment.read", department)
+  );
+  const paymentDepartments = CLINIC_DEPARTMENTS.filter((department) =>
+    canPerform(context, "payment.create", department)
+  );
+  const appointmentDepartments = CLINIC_DEPARTMENTS.filter((department) =>
+    canPerform(context, "appointment.create", department)
   );
 
   return (
@@ -92,16 +100,16 @@ export default async function PatientsPage({
         title={todayView ? "My patients today" : "Patients"}
         subtitle={
           context.roles.includes("Owner")
-            ? "Combined patient workspace"
-            : "Only patients allowed by your role and department"
+            ? "Combined Physio & Dental patient workspace"
+            : "Role and department scoped patient workspace"
         }
         action={
           createDepartments.length > 0 ? (
             <Link
               href="/patients/new"
-              className="shrink-0 rounded-xl bg-slate-900 px-3.5 py-2.5 text-xs font-semibold text-white active:scale-[0.98]"
+              className="shrink-0 rounded-xl bg-blue-800 px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm active:scale-[0.98]"
             >
-              + Patient
+              + Register
             </Link>
           ) : undefined
         }
@@ -112,7 +120,7 @@ export default async function PatientsPage({
           <Link
             href="/patients?view=today"
             className={`min-h-10 flex-1 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${
-              todayView ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500"
+              todayView ? "bg-white text-blue-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500"
             }`}
           >
             My Today ({todayPatientCount})
@@ -120,7 +128,7 @@ export default async function PatientsPage({
           <Link
             href="/patients"
             className={`min-h-10 flex-1 rounded-lg px-3 py-2.5 text-center text-xs font-semibold ${
-              !todayView ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500"
+              !todayView ? "bg-white text-blue-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500"
             }`}
           >
             All permitted
@@ -128,7 +136,7 @@ export default async function PatientsPage({
         </div>
       )}
 
-      <Section title="Patient snapshot">
+      <Section title="Patient snapshot" subtitle="Current visible patient set">
         <div className="px-4 pb-4">
           <MetricGrid
             items={[
@@ -137,10 +145,12 @@ export default async function PatientsPage({
               { label: "New this month", value: String(newThisMonth) },
             ]}
           />
-          {canSeeAnyMoney && totalDue > 0 && (
+          {canSeeAnyMoney && (
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-              <span className="text-xs text-slate-500">Patient master due</span>
-              <span className="text-sm font-semibold tabular-nums text-red-600">{formatBDT(totalDue)}</span>
+              <span className="text-xs text-slate-500">Outstanding patient due</span>
+              <span className={`text-sm font-semibold tabular-nums ${totalDue > 0 ? "text-red-600" : "text-emerald-700"}`}>
+                {formatBDT(totalDue)}
+              </span>
             </div>
           )}
         </div>
@@ -168,9 +178,14 @@ export default async function PatientsPage({
       <section className="mb-4">
         <div className="mb-2">
           <h2 className="text-sm font-semibold text-slate-900">Patient list</h2>
-          <p className="mt-0.5 text-[11px] text-slate-500">Search, open file and continue clinical workflow</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">Search, filter, sort and continue permitted workflows</p>
         </div>
-        <PatientsClient patients={patients} showMoney={canSeeAnyMoney} />
+        <PatientsClient
+          patients={patients}
+          showMoney={canSeeAnyMoney}
+          paymentDepartments={[...paymentDepartments]}
+          appointmentDepartments={[...appointmentDepartments]}
+        />
       </section>
     </div>
   );
