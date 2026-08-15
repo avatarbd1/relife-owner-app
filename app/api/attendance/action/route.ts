@@ -1,18 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { performAttendanceAction, type AttendanceAction } from "@/lib/webos/attendance";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 const ACTIONS = new Set<AttendanceAction>(["check_in", "break_out", "break_in", "check_out"]);
-
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
-}
 
 function statusFor(error: string): number {
   if (error === "ACCESS_DENIED") return 403;
@@ -23,7 +14,7 @@ function statusFor(error: string): number {
 }
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
