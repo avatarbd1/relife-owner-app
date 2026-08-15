@@ -1,8 +1,8 @@
 import "server-only";
 
 import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
+import type { PatientRecord } from "@/lib/patients";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
-import type { PatientRecord } from "@/lib/webos/reception";
 
 export type PatientReport = {
   reportId: string;
