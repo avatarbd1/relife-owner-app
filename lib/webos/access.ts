@@ -20,11 +20,14 @@ export type WebAction =
   | "payment.read_amount"
   | "payment.create"
   | "payment.void"
+  | "payment.correct_own_today"
   | "report.read_operational"
   | "report.read_financial"
+  | "expense.read"
   | "expense.request"
   | "expense.approve"
   | "expense.pay"
+  | "cash.read"
   | "cash.request"
   | "cash.accept"
   | "salary.read"
@@ -45,6 +48,9 @@ export interface AccessContext {
   primaryDepartment: Department;
   /** Explicit authorization scope. Never infer All from a missing value. */
   departmentAccess: Department[];
+  /** Live 08_Staff policy flags; optional for owner/system compatibility. */
+  clinicalWriteScope?: string;
+  financialAccess?: string;
 }
 
 export interface AccessConditions {
@@ -65,11 +71,14 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "payment.read_amount",
     "payment.create",
     "payment.void",
+    "payment.correct_own_today",
     "report.read_operational",
     "report.read_financial",
+    "expense.read",
     "expense.request",
     "expense.approve",
     "expense.pay",
+    "cash.read",
     "cash.request",
     "cash.accept",
     "salary.read",
@@ -91,8 +100,11 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.read",
     "appointment.create",
     "appointment.update",
+    "payment.correct_own_today",
     "report.read_operational",
+    "expense.read",
     "expense.request",
+    "cash.read",
     "cash.accept",
     "attendance.self",
     "attendance.read_team",
@@ -110,9 +122,12 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.update",
     "payment.read_amount",
     "payment.create",
+    "payment.correct_own_today",
     "report.read_operational",
+    "expense.read",
     "expense.request",
     "expense.pay",
+    "cash.read",
     "cash.request",
     "salary.read",
     "attendance.self",
@@ -145,6 +160,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
   Auditor: new Set<WebAction>([
     "report.read_operational",
     "report.read_financial",
+    "expense.read",
+    "cash.read",
     "salary.read",
     "attendance.read_team",
     "audit.read",
@@ -173,6 +190,17 @@ function roleAllows(roles: WebRole[], action: WebAction): boolean {
   return roles.some((role) => ROLE_ACTIONS[role]?.has(action));
 }
 
+function hasTemporaryDentalDataEntry(context: AccessContext): boolean {
+  const departments = uniqueKnownDepartments(context.departmentAccess);
+  return Boolean(
+    context.roles.includes("Receptionist") &&
+      context.clinicalWriteScope?.trim() === "Dental_Temporary_Data_Entry" &&
+      departments.length === 1 &&
+      departments[0] === "Dental" &&
+      context.primaryDepartment === "Dental"
+  );
+}
+
 export function canPerform(
   context: AccessContext,
   action: WebAction,
@@ -180,6 +208,18 @@ export function canPerform(
   conditions: AccessConditions = {}
 ): boolean {
   if (!canAccessDepartment(context, recordDepartment)) return false;
+
+  // Production Telegram parity: an explicitly provisioned Dental-only
+  // Receptionist may temporarily read and enter Dental clinical data. This is
+  // NOT a general Receptionist permission and fails closed for All/mixed/Physio.
+  if (
+    (action === "clinical.read" || action === "clinical.write") &&
+    recordDepartment === "Dental" &&
+    hasTemporaryDentalDataEntry(context)
+  ) {
+    return true;
+  }
+
   if (!roleAllows(context.roles, action)) return false;
 
   if (action === "clinical.write") {

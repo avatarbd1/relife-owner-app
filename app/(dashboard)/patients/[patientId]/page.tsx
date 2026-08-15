@@ -22,9 +22,7 @@ export default async function PatientFilePage({
   const appointments = await getPatientAppointmentsForContext(context, patient);
   const canSeeMoney = canPerform(context, "payment.read_amount", patient.department);
   const canCreateAppointment = canPerform(context, "appointment.create", patient.department);
-  const canSeeClinical =
-    patient.department === "Physio" &&
-    canPerform(context, "clinical.read", patient.department);
+  const canSeeClinical = canPerform(context, "clinical.read", patient.department);
 
   return (
     <div className="space-y-4">
@@ -44,7 +42,7 @@ export default async function PatientFilePage({
         <Row label="Phone" value={patient.phone || "-"} />
         <Row label="Age / Gender" value={[patient.age && `${patient.age}y`, patient.gender].filter(Boolean).join(" · ") || "-"} />
         <Row label="Address" value={patient.address || "-"} />
-        <Row label="Clinician" value={patient.therapist || "Unassigned"} />
+        <Row label={patient.department === "Dental" ? "Dentist / clinician" : "Therapist"} value={patient.therapist || "Unassigned"} />
         {canSeeMoney && (
           <>
             <Row label="Paid" value={formatBDT(patient.paid)} />
@@ -53,7 +51,7 @@ export default async function PatientFilePage({
         )}
       </Card>
 
-      <Card title="Diagnosis / complaint">
+      <Card title={patient.department === "Dental" ? "Complaint / diagnosis" : "Diagnosis / complaint"}>
         <p className="text-sm leading-6 text-slate-700">{patient.diagnosis || "No diagnosis recorded."}</p>
       </Card>
 
@@ -64,7 +62,7 @@ export default async function PatientFilePage({
               href={`/patients/${encodeURIComponent(patient.patientId)}/clinical`}
               className="flex min-h-14 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
             >
-              Clinical file
+              {patient.department === "Dental" ? "🦷 Dental clinical" : "Clinical file"}
             </Link>
           )}
           {canCreateAppointment && (

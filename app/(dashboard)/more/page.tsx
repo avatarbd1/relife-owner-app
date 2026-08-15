@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import OwnerControlsClient from "@/components/OwnerControlsClient";
 import { getOwnerControlSnapshot } from "@/lib/controls";
 import type { Scope } from "@/lib/types";
+import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function readScope(value: string | undefined): Scope {
@@ -15,7 +16,13 @@ function readScope(value: string | undefined): Scope {
 
 export default async function MorePage() {
   const context = await requireCurrentAccessContext();
-  if (!context.roles.includes("Owner")) redirect("/home");
+  if (!context.roles.includes("Owner")) {
+    const canAcceptCash = ["Physio", "Dental"].some((department) =>
+      canPerform(context, "cash.accept", department as "Physio" | "Dental")
+    );
+    if (canAcceptCash) redirect("/finance/cash-receive");
+    redirect("/home");
+  }
 
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
