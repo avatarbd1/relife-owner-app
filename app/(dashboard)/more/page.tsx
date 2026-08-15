@@ -5,7 +5,7 @@ import {
   ActionRow,
 } from "@/components/WorkspaceUI";
 import { getOwnerControlSnapshot } from "@/lib/controls";
-import { actionsForRoles } from "@/lib/webos/access";
+import { actionsForRoles, canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 export default async function MorePage() {
@@ -16,7 +16,7 @@ export default async function MorePage() {
   const canInventory = canClinical || actionSet.has("audit.read");
   const canCorrect = actionSet.has("payment.void");
   const canAcceptCash = actionSet.has("cash.accept");
-  const canChamber = actionSet.has("chamber.read");
+  const canChamber = canPerform(context, "chamber.read", "Physio");
   const canReadRegister =
     actionSet.has("patient.read") ||
     actionSet.has("appointment.read") ||
