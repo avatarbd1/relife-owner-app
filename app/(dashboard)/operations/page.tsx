@@ -21,6 +21,10 @@ export default async function OperationsPage() {
   const scope = readScope(cookieStore.get("relife_scope")?.value);
   const context = await requireCurrentAccessContext();
   const snapshot = await getFinanceOperationsSnapshot(context, scope);
+  const isOwner = context.roles.includes("Owner");
+  const safeSnapshot = snapshot.capabilities.salaryPay
+    ? snapshot
+    : { ...snapshot, staff: [] };
 
   return (
     <div>
@@ -30,13 +34,15 @@ export default async function OperationsPage() {
         <p className="mt-1 text-xs text-slate-300">
           Scope: {SCOPE_LABEL[scope]} · Payment, expense, cash custody এবং salary operational write
         </p>
-        <div className="mt-3 flex gap-2 text-xs">
-          <Link href="/finance" className="rounded-lg bg-white/10 px-3 py-2">Finance dashboard</Link>
-          <Link href="/more" className="rounded-lg bg-white/10 px-3 py-2">Owner approvals</Link>
-        </div>
+        {isOwner && (
+          <div className="mt-3 flex gap-2 text-xs">
+            <Link href="/finance" className="rounded-lg bg-white/10 px-3 py-2">Finance dashboard</Link>
+            <Link href="/more" className="rounded-lg bg-white/10 px-3 py-2">Owner approvals</Link>
+          </div>
+        )}
       </div>
 
-      <FinanceOperationsClient snapshot={snapshot} />
+      <FinanceOperationsClient snapshot={safeSnapshot} />
     </div>
   );
 }

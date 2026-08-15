@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { Card, Row } from "@/components/Card";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import {
@@ -66,10 +67,30 @@ function QuickAction({
 }
 
 export default async function HomePage() {
+  const context = await requireCurrentAccessContext();
+
+  if (!context.roles.includes("Owner")) {
+    if (context.roles.includes("Auditor")) redirect("/reports");
+    if (context.roles.includes("System Admin")) redirect("/tools");
+    if (
+      context.roles.includes("Manager") ||
+      context.roles.includes("Receptionist") ||
+      context.roles.includes("Therapist") ||
+      context.roles.includes("Dentist")
+    ) {
+      redirect("/daily");
+    }
+
+    return (
+      <div className="rounded-2xl bg-white p-5 text-sm text-slate-700 shadow-sm ring-1 ring-slate-200">
+        Web access active, কিন্তু এই role-এর জন্য কোনো operational module এখনো enable করা নেই। Owner access update করলে menu দেখা যাবে।
+      </div>
+    );
+  }
+
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
   const now = new Date();
-  const context = await requireCurrentAccessContext();
   const today = todayDhaka();
 
   const [cash, todays, month, salary, appointments, controls] = await Promise.all([

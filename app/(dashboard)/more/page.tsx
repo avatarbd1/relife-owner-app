@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import OwnerControlsClient from "@/components/OwnerControlsClient";
 import { getOwnerControlSnapshot } from "@/lib/controls";
 import type { Scope } from "@/lib/types";
+import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function readScope(value: string | undefined): Scope {
   if (value === "physio" || value === "dental" || value === "combined") {
@@ -12,6 +14,9 @@ function readScope(value: string | undefined): Scope {
 }
 
 export default async function MorePage() {
+  const context = await requireCurrentAccessContext();
+  if (!context.roles.includes("Owner")) redirect("/home");
+
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
   const snapshot = await getOwnerControlSnapshot();

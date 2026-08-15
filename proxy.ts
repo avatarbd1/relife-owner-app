@@ -4,6 +4,10 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
 const PUBLIC_PATHS = [
   "/login",
   "/api/login",
+  "/staff-setup",
+  "/api/auth/enroll/start",
+  "/api/auth/webauthn/register/start",
+  "/api/auth/webauthn/register/verify",
   "/manifest.webmanifest",
   "/sw.js",
   "/icon-192.png",
