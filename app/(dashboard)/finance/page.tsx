@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { Card, Row } from "@/components/Card";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import {
@@ -9,6 +10,7 @@ import {
 } from "@/lib/calculations";
 import { getScopedCashPosition } from "@/lib/scopedCash";
 import type { Scope } from "@/lib/types";
+import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function readScope(value: string | undefined): Scope {
   if (value === "physio" || value === "dental" || value === "combined") {
@@ -29,6 +31,9 @@ function percent(value: number): string {
 }
 
 export default async function FinancePage() {
+  const context = await requireCurrentAccessContext();
+  if (!context.roles.includes("Owner")) redirect("/home");
+
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
   const now = new Date();
