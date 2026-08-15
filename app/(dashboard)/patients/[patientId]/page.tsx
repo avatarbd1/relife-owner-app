@@ -8,6 +8,12 @@ import {
   getPatientAppointmentsForContext,
   getPatientForContext,
 } from "@/lib/webos/reception";
+import { getPatientReportsForContext } from "@/lib/webos/reports";
+
+function isPhoto(fileType: string, fileName: string): boolean {
+  if (fileType.trim().toLowerCase() === "photo") return true;
+  return /\.(?:jpe?g|png|webp|gif)$/i.test(fileName.trim());
+}
 
 export default async function PatientFilePage({
   params,
@@ -19,10 +25,15 @@ export default async function PatientFilePage({
   const patient = await getPatientForContext(context, decodeURIComponent(patientId));
   if (!patient || patient.department === "All") notFound();
 
-  const appointments = await getPatientAppointmentsForContext(context, patient);
   const canSeeMoney = canPerform(context, "payment.read_amount", patient.department);
   const canCreateAppointment = canPerform(context, "appointment.create", patient.department);
   const canSeeClinical = canPerform(context, "clinical.read", patient.department);
+  const [appointments, reports] = await Promise.all([
+    getPatientAppointmentsForContext(context, patient),
+    canSeeClinical
+      ? getPatientReportsForContext(context, patient)
+      : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -74,6 +85,74 @@ export default async function PatientFilePage({
             </Link>
           )}
         </div>
+      )}
+
+      {canSeeClinical && (
+        <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Photos & reports</h3>
+              <p className="mt-0.5 text-xs text-slate-400">Patient-scoped clinical media · latest first</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+              {reports.length}
+            </span>
+          </div>
+
+          {reports.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2.5 p-3">
+              {reports.map((report) => {
+                const mediaUrl = `/api/patients/${encodeURIComponent(patient.patientId)}/reports/${encodeURIComponent(report.reportId)}/media`;
+                const photo = isPhoto(report.fileType, report.fileName);
+                return (
+                  <a
+                    key={`${report.department}-${report.reportId}`}
+                    href={mediaUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 transition active:scale-[0.98]"
+                  >
+                    {photo ? (
+                      <div className="aspect-[4/3] overflow-hidden bg-slate-100">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={mediaUrl}
+                          alt={`${patient.fullName} · ${report.reportId}`}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-cover transition duration-200 group-active:scale-[0.99]"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex aspect-[4/3] items-center justify-center bg-slate-100 px-3 text-center">
+                        <span className="text-sm font-semibold text-slate-600">
+                          {report.fileType || "Document"}
+                        </span>
+                      </div>
+                    )}
+                    <div className="p-2.5">
+                      <p className="truncate text-xs font-semibold text-slate-800">
+                        {report.fileName || report.reportId}
+                      </p>
+                      <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                        {report.uploadDate || "Date unavailable"}
+                      </p>
+                      {report.uploadedBy && (
+                        <p className="truncate text-[10px] leading-4 text-slate-400">
+                          {report.uploadedBy}
+                        </p>
+                      )}
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="px-4 py-8 text-center text-sm text-slate-400">
+              কোনো patient photo/report নেই।
+            </p>
+          )}
+        </section>
       )}
 
       <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
