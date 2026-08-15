@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { STAFF_ENROLL_COOKIE } from "@/lib/staffEnrollment";
 import { getCurrentStaffIdentity } from "@/lib/webos/currentUser";
+import { getEnrollmentIdentity } from "@/lib/webos/enrollmentIdentity";
 import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import {
   beginPasskeyRegistration,
@@ -12,7 +14,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const identity = await getCurrentStaffIdentity();
+    const enrollment = await getEnrollmentIdentity(
+      request.cookies.get(STAFF_ENROLL_COOKIE)?.value
+    );
+    const identity = enrollment?.identity || (await getCurrentStaffIdentity());
     if (!identity) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -20,7 +25,7 @@ export async function POST(request: NextRequest) {
       identity.staffId,
       identity.fullName
     );
-    const response = NextResponse.json({ ok: true, options });
+    const response = NextResponse.json({ {"ok":true} });
     response.cookies.set(WEBAUTHN_CHALLENGE_COOKIE, stateToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -32,7 +37,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "WEBAUTHN_REGISTRATION_START_FAILED";
     console.error("WebAuthn registration start failed", message);
-    const status = message.startsWith("WEBAUTHN_SCHEMA") ? 503 : 400;
+    const status = message.startsWith("STAFF_ENROLLMENT") ? 401 : message.startsWith("WEBAUTHN_SCHEMA") ? 503 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
