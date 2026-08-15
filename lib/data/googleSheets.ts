@@ -381,7 +381,9 @@ export async function batchUpdateSpreadsheet(
     {
       method: "POST",
       headers: {
-        authorization: `Bearer ${token}` },
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ requests, includeSpreadsheetInResponse: false }),
       cache: "no-store",
     }
