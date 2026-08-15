@@ -22,21 +22,21 @@ export default async function DashboardLayout({
   const isOwner = context.roles.includes("Owner");
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-900 px-4 pb-2 pt-[max(env(safe-area-inset-top),0.45rem)] shadow-sm">
-        <div className="flex min-h-9 items-center justify-between gap-3">
+    <div className="flex min-h-dvh flex-col bg-slate-50">
+      <header className="sticky top-0 z-20 border-b border-slate-800/90 bg-slate-950 px-4 pb-2.5 pt-[max(env(safe-area-inset-top),0.55rem)] shadow-sm sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-10 w-full max-w-7xl items-center justify-between gap-3">
           <div className="min-w-0 leading-tight">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
-              Relife Clinic
+            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-blue-200">
+              Relife Clinic OS
             </p>
-            <p className="mt-0.5 truncate text-[12px] font-medium text-slate-200">
+            <p className="mt-0.5 truncate text-xs font-medium text-slate-200">
               {isOwner ? "Owner workspace" : roleLabel}
             </p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
             {!IS_LIVE_DATA && (
-              <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[9px] font-semibold text-amber-300">
+              <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-[9px] font-semibold text-amber-300 ring-1 ring-amber-300/10">
                 Sample
               </span>
             )}
@@ -45,7 +45,7 @@ export default async function DashboardLayout({
         </div>
       </header>
 
-      <main className="flex-1 bg-slate-50 px-4 py-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))]">
+      <main className="flex-1 bg-slate-50 px-4 py-4 pb-[calc(4.75rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:py-6">
         {children}
       </main>
 
