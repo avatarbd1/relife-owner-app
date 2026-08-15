@@ -4,6 +4,7 @@ import { Card, Row } from "@/components/Card";
 import PatientEditForm from "@/components/PatientEditForm";
 import PatientMediaGallery from "@/components/PatientMediaGallery";
 import PatientReportUpload from "@/components/PatientReportUpload";
+import { StatusBadge } from "@/components/FeedbackUI";
 import { formatBDT } from "@/lib/format";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -21,11 +22,16 @@ function isPhoto(fileType: string, fileName: string): boolean {
 
 export default async function PatientFilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ patientId: string }>;
+  searchParams?: Promise<{ edit?: string }>;
 }) {
   const context = await requireCurrentAccessContext();
-  const { patientId } = await params;
+  const [{ patientId }, query] = await Promise.all([
+    params,
+    searchParams ? searchParams : Promise.resolve({} as { edit?: string }),
+  ]);
   const patient = await getPatientForContext(context, decodeURIComponent(patientId));
   if (!patient || patient.department === "All") notFound();
 
@@ -54,15 +60,28 @@ export default async function PatientFilePage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs text-slate-400">Patient file · {patient.department}</p>
-          <h2 className="truncate text-lg font-semibold text-slate-900">{patient.fullName}</h2>
-          <p className="text-xs text-slate-500">{patient.patientId}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs text-slate-400">Patient file</p>
+            <StatusBadge tone={patient.department === "Dental" ? "success" : "info"}>{patient.department}</StatusBadge>
+          </div>
+          <h1 className="mt-1 truncate text-xl font-bold text-slate-950">{patient.fullName}</h1>
+          <p className="mt-0.5 text-xs text-slate-500">{patient.patientId}</p>
         </div>
-        <Link href="/patients" className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 active:bg-slate-50">
-          Back
-        </Link>
+        <div className="flex shrink-0 gap-2">
+          {canEditPatient && (
+            <Link
+              href={`/patients/${encodeURIComponent(patient.patientId)}?edit=1#patient-edit`}
+              className="flex min-h-11 items-center rounded-lg bg-blue-800 px-3 text-xs font-semibold text-white shadow-sm hover:bg-blue-900"
+            >
+              Edit
+            </Link>
+          )}
+          <Link href="/patients" className="flex min-h-11 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            Back
+          </Link>
+        </div>
       </div>
 
       <Card title="Patient profile" subtitle={`Registered ${patient.registrationDate || "-"}`}>
@@ -82,6 +101,7 @@ export default async function PatientFilePage({
       {canEditPatient && (
         <PatientEditForm
           patientId={patient.patientId}
+          defaultOpen={query.edit === "1"}
           initial={{
             fullName: patient.fullName,
             phone: patient.phone.replace(/^'/, ""),
@@ -104,7 +124,7 @@ export default async function PatientFilePage({
           {canSeeClinical && (
             <Link
               href={`/patients/${encodeURIComponent(patient.patientId)}/clinical`}
-              className="flex min-h-14 items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
+              className="flex min-h-14 items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
             >
               {patient.department === "Dental" ? "🦷 Dental clinical" : "Clinical file"}
             </Link>
@@ -112,7 +132,7 @@ export default async function PatientFilePage({
           {canCreateAppointment && (
             <Link
               href={`/appointments/new?patientId=${encodeURIComponent(patient.patientId)}`}
-              className="flex min-h-14 items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
+              className="flex min-h-14 items-center justify-center rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
             >
               + Appointment
             </Link>
@@ -126,7 +146,7 @@ export default async function PatientFilePage({
         <PatientMediaGallery items={mediaItems} patientName={patient.fullName} />
       )}
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-800">Appointment history</h3>
