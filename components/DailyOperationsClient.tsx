@@ -231,7 +231,7 @@ export default function DailyOperationsClient({ snapshot }: { snapshot: Snapshot
         <div className="mt-3 grid grid-cols-3 gap-2">
           <div className="rounded-xl bg-slate-50 p-3"><p className="text-lg font-bold text-slate-900">{snapshot.appointmentCounts.open}</p><p className="text-[10px] text-slate-500">Open</p></div>
           <div className="rounded-xl bg-emerald-50 p-3"><p className="text-lg font-bold text-emerald-700">{snapshot.appointmentCounts.completed}</p><p className="text-[10px] text-emerald-600">Completed</p></div>
-          <div className="rounded-xl bg-red-50 p-3"><p className="text-lg font-bold text-red-700">{snapshot.appointmentCounts.missed}</p><p className="text-[10px] text-red-500">Missed</p></div>
+          <div className="rounded-xl bg-red-50 p-3"><p className="text-lg font-bold text-red-700">{snapshot.appointmentCounts.missed}</p><p className="text-[10px] text-red-600">Missed</p></div>
         </div>
         <div className="mt-3 space-y-2">
           {snapshot.appointments.slice(0, 40).map((item) => (
