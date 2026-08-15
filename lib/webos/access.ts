@@ -206,10 +206,10 @@ export function canPerform(
   if (!canAccessDepartment(context, recordDepartment)) return false;
 
   // Production Telegram parity: an explicitly provisioned Dental-only
-  // Receptionist may temporarily enter Dental clinical data. This is NOT a
-  // general Receptionist permission and fails closed for All/mixed/Physio.
+  // Receptionist may temporarily read and enter Dental clinical data. This is
+  // NOT a general Receptionist permission and fails closed for All/mixed/Physio.
   if (
-    action === "clinical.write" &&
+    (action === "clinical.read" || action === "clinical.write") &&
     recordDepartment === "Dental" &&
     hasTemporaryDentalDataEntry(context)
   ) {
