@@ -32,6 +32,7 @@ export default function PatientEditForm({
   const [values, setValues] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ good: boolean; text: string } | null>(null);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const update = (key: keyof PatientEditValues, value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
@@ -69,7 +70,12 @@ export default function PatientEditForm({
   }
 
   return (
-    <details id="patient-edit" open={defaultOpen} className="scroll-mt-24 rounded-xl border border-blue-200 bg-white shadow-sm">
+    <details
+      id="patient-edit"
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      className="scroll-mt-24 rounded-xl border border-blue-200 bg-white shadow-sm"
+    >
       <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-900">
         <span>
           Edit patient profile
