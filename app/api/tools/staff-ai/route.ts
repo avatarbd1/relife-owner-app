@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { answerStaffAi } from "@/lib/webos/ai";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
-function sameOrigin(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try { return new URL(origin).host === request.nextUrl.host; } catch { return false; }
-}
-
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
+  if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
     const context = await requireCurrentAccessContext();
     const body = await request.json().catch(() => null);
