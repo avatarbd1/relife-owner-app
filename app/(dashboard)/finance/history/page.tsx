@@ -1,14 +1,12 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { formatBDT } from "@/lib/format";
+import { getScopedCashPosition } from "@/lib/scopedCash";
 import type { Scope } from "@/lib/types";
+import { canPerform } from "@/lib/webos/access";
 import { getFinanceHistorySnapshot } from "@/lib/webos/financeHistory";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-
-function readScope(value: string | undefined): Scope {
-  if (value === "physio" || value === "dental" || value === "combined") return value;
-  return "combined";
-}
+import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 const SCOPE_LABEL: Record<Scope, string> = {
   combined: "Combined",
@@ -29,8 +27,15 @@ export default async function FinanceHistoryPage() {
     requireCurrentAccessContext(),
     cookies(),
   ]);
-  const scope = readScope(cookieStore.get("relife_scope")?.value);
+  const scope = resolveAuthorizedScope(
+    context,
+    cookieStore.get("relife_scope")?.value
+  );
   const snapshot = await getFinanceHistorySnapshot(context, scope);
+  const canReadCash = ["Physio", "Dental"].some((department) =>
+    canPerform(context, "cash.read", department as "Physio" | "Dental")
+  );
+  const cashPosition = canReadCash ? await getScopedCashPosition(scope) : null;
   const hasAny =
     snapshot.capabilities.expenseHistory ||
     snapshot.capabilities.cashHistory ||
@@ -43,11 +48,38 @@ export default async function FinanceHistoryPage() {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-300">Telegram → Web finance parity</p>
             <h1 className="mt-1 text-lg font-semibold">হিসাব ও হিস্ট্রি</h1>
-            <p className="mt-1 text-xs text-slate-300">{SCOPE_LABEL[scope]} · Expense Tracker · Rejected · Cash Movement · Salary History</p>
+            <p className="mt-1 text-xs text-slate-300">{SCOPE_LABEL[scope]} · Cash Balance · Expense Tracker · Rejected · Cash Movement · Salary History</p>
           </div>
           <Link href="/operations" className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white">Finance actions</Link>
         </div>
       </section>
+
+      {cashPosition && (
+        <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">⚖️ ক্যাশ ব্যালেন্স</h2>
+            <p className="mt-0.5 text-[11px] text-slate-500">Current month-to-date position · accepted transfers only</p>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-[10px] text-slate-500">Reception</p>
+              <p className="mt-1 text-lg font-bold text-slate-900">{formatBDT(cashPosition.reception)}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-[10px] text-slate-500">Home Treasury</p>
+              <p className="mt-1 text-lg font-bold text-slate-900">{formatBDT(cashPosition.homeTreasury)}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-[10px] text-slate-500">Digital / Bank</p>
+              <p className="mt-1 text-lg font-bold text-slate-900">{formatBDT(cashPosition.bank)}</p>
+            </div>
+            <div className="rounded-xl bg-slate-900 p-3 text-white">
+              <p className="text-[10px] text-slate-300">মোট হাতে আছে</p>
+              <p className="mt-1 text-lg font-bold">{formatBDT(cashPosition.total)}</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {!hasAny && (
         <section className="rounded-2xl bg-white p-5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
