@@ -12,15 +12,16 @@ export default async function MorePage() {
   const context = await requireCurrentAccessContext();
   const actionSet = new Set(actionsForRoles(context.roles));
   const isOwner = context.roles.includes("Owner");
-  const canClinical = actionSet.has("clinical.read") || actionSet.has("clinical.write");
-  const canInventory = canClinical || actionSet.has("audit.read");
-  const canCorrect = actionSet.has("payment.void");
+  const canPhysioClinicalTools = canPerform(context, "clinical.read", "Physio");
+  const canPhysioInventory = canPerform(context, "inventory.read", "Physio");
+  const canPhysioAudit = canPerform(context, "audit.read", "Physio");
+  const canCorrect =
+    actionSet.has("payment.void") || actionSet.has("payment.correct_own_today");
   const canAcceptCash = actionSet.has("cash.accept");
   const canChamber = canPerform(context, "chamber.read", "Physio");
   const canReadRegister =
-    actionSet.has("patient.read") ||
-    actionSet.has("appointment.read") ||
-    actionSet.has("report.read_operational");
+    canPerform(context, "register.read", "Physio") ||
+    canPerform(context, "register.read", "Dental");
 
   const snapshot = isOwner ? await getOwnerControlSnapshot() : null;
   const pendingTotal = snapshot
@@ -65,19 +66,19 @@ export default async function MorePage() {
             subtitle="Confirm actual amount received"
           />
         )}
-        {canInventory && (
+        {canPhysioInventory && (
           <ActionRow
             href="/tools"
             icon="inventory"
             title="Inventory"
-            subtitle="Authorized stock and inventory log"
+            subtitle="Authorized Physio stock and inventory log"
           />
         )}
       </Section>
 
-      {(canClinical || actionSet.has("audit.read")) && (
+      {(canPhysioClinicalTools || canPhysioAudit || canCorrect) && (
         <Section title="Clinical & learning">
-          {canClinical && (
+          {canPhysioClinicalTools && (
             <ActionRow
               href="/tools"
               icon="clinical"
@@ -90,7 +91,7 @@ export default async function MorePage() {
               href="/corrections"
               icon="correction"
               title="Same-day correction"
-              subtitle="Own eligible entries with audit trail"
+              subtitle="Eligible same-day entries with audit trail"
             />
           )}
         </Section>
