@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Row } from "@/components/Card";
 import PatientMediaGallery from "@/components/PatientMediaGallery";
+import PatientReportUpload from "@/components/PatientReportUpload";
 import { formatBDT } from "@/lib/format";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -12,8 +13,9 @@ import {
 import { getPatientReportsForContext } from "@/lib/webos/reports";
 
 function isPhoto(fileType: string, fileName: string): boolean {
-  if (fileType.trim().toLowerCase() === "photo") return true;
-  return /\.(?:jpe?g|png|webp|gif)$/i.test(fileName.trim());
+  const normalizedType = fileType.trim().toLowerCase();
+  if (normalizedType === "photo" || normalizedType.startsWith("image/")) return true;
+  return /\.(?:jpe?g|png|webp|gif|heic|heif)$/i.test(fileName.trim());
 }
 
 export default async function PatientFilePage({
@@ -29,9 +31,11 @@ export default async function PatientFilePage({
   const canSeeMoney = canPerform(context, "payment.read_amount", patient.department);
   const canCreateAppointment = canPerform(context, "appointment.create", patient.department);
   const canSeeClinical = canPerform(context, "clinical.read", patient.department);
+  const canSeeReports = canPerform(context, "patient.report.read", patient.department);
+  const canUploadReports = canPerform(context, "patient.report.upload", patient.department);
   const [appointments, reports] = await Promise.all([
     getPatientAppointmentsForContext(context, patient),
-    canSeeClinical
+    canSeeReports
       ? getPatientReportsForContext(context, patient)
       : Promise.resolve([]),
   ]);
@@ -98,7 +102,9 @@ export default async function PatientFilePage({
         </div>
       )}
 
-      {canSeeClinical && (
+      {canUploadReports && <PatientReportUpload patientId={patient.patientId} />}
+
+      {canSeeReports && (
         <PatientMediaGallery items={mediaItems} patientName={patient.fullName} />
       )}
 
