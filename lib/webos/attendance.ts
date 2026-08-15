@@ -1,11 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import {
-  appendSheetValues,
-  fetchSheetRanges,
-  updateSheetValues,
-} from "@/lib/data/googleSheets";
+import { fetchSheetRanges } from "@/lib/data/googleSheets";
 import type { Scope } from "@/lib/types";
 import { canPerform, assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getAppointmentsForContext, todayDhaka } from "@/lib/webos/reception";
@@ -14,6 +10,10 @@ import {
   getWebStaffDirectory,
   type WebStaffIdentity,
 } from "@/lib/webos/staffDirectory";
+import {
+  appendEntityWithAudit,
+  replaceEntityRowWithAudit,
+} from "@/lib/webos/sheetTransaction";
 
 export type AttendanceAction = "check_in" | "break_out" | "break_in" | "check_out";
 
@@ -229,43 +229,39 @@ function verifyLocation(location: { latitude?: number; longitude?: number; accur
   return { distance: Math.round(distance), accuracy: Math.round(accuracy) };
 }
 
-async function appendAudit(
+function auditRow(
   context: AccessContext,
   action: AttendanceAction,
   attendanceId: string,
   afterValue: string,
-  reason: string
-) {
-  const now = dhakaNow();
-  try {
-    await appendSheetValues("physio", "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      context.staffId,
-      `attendance.${action}`,
-      "Attendance",
-      attendanceId,
-      "",
-      "",
-      afterValue,
-      reason,
-      "RELIFE",
-      "RELIFE-PHYSIO",
-      "AMTALI-01",
-      `RELIFE-PHYSIO:${attendanceId}`,
-      "",
-      context.staffId,
-      "web_pwa",
-      "human_entry",
-      false,
-      true,
-      "relife-uda-v1",
-      now.provenance,
-      "All",
-    ]]);
-  } catch (error) {
-    console.error("Attendance audit append failed", error);
-  }
+  reason: string,
+  now: ReturnType<typeof dhakaNow>
+): SheetValue[] {
+  return [
+    `AUD-${randomUUID()}`,
+    now.timestamp,
+    context.staffId,
+    `attendance.${action}`,
+    "Attendance",
+    attendanceId,
+    "",
+    "",
+    afterValue,
+    reason,
+    "RELIFE",
+    "RELIFE-PHYSIO",
+    "AMTALI-01",
+    `RELIFE-PHYSIO:${attendanceId}`,
+    "",
+    context.staffId,
+    "web_pwa",
+    "human_entry",
+    false,
+    true,
+    "relife-uda-v1",
+    now.provenance,
+    "All",
+  ];
 }
 
 const actionLocks = new Map<string, Promise<unknown>>();
@@ -351,10 +347,13 @@ export async function performAttendanceAction(
         Schema_Version: "relife-uda-v1",
         Provenance_Timestamp: now.provenance,
       };
-      await appendSheetValues("physio", "'03_Attendance'!A:Z", [rowForHeaders(headers, values)]);
-      const result = { attendanceId, date: now.date, staffId: identity.staffId, staffName: identity.fullName, role: identity.roles[0] || "Staff", checkIn: now.displayTime, breakOut: "", breakIn: "", checkOut: "", workingHours: null, lateMinutes, overtime: 0, status, remarks: "Web PWA check-in" };
-      await appendAudit(context, action, attendanceId, now.displayTime, locationReason);
-      return result;
+      await appendEntityWithAudit(
+        "physio",
+        "03_Attendance",
+        rowForHeaders(headers, values),
+        auditRow(context, action, attendanceId, now.displayTime, locationReason, now)
+      );
+      return { attendanceId, date: now.date, staffId: identity.staffId, staffName: identity.fullName, role: identity.roles[0] || "Staff", checkIn: now.displayTime, breakOut: "", breakIn: "", checkOut: "", workingHours: null, lateMinutes, overtime: 0, status, remarks: "Web PWA check-in" };
     }
 
     if (!current || !currentRaw) throw new Error("ATTENDANCE_NOT_CHECKED_IN");
@@ -389,8 +388,13 @@ export async function performAttendanceAction(
       current.overtime = overtime;
     }
     set("Provenance_Timestamp", now.provenance);
-    await updateSheetValues("physio", `'03_Attendance'!A${currentRaw.rowNumber}:Z${currentRaw.rowNumber}`, [values]);
-    await appendAudit(context, action, current.attendanceId, now.displayTime, locationReason);
+    await replaceEntityRowWithAudit(
+      "physio",
+      "03_Attendance",
+      currentRaw.rowNumber,
+      values,
+      auditRow(context, action, current.attendanceId, now.displayTime, locationReason, now)
+    );
     return current;
   });
 }
