@@ -9,15 +9,15 @@ const SPINNER_SIZE: Record<SpinnerSize, string> = {
 
 const STATUS_STYLE: Record<StatusTone, { className: string; icon: string }> = {
   success: {
-    className: "border-emerald-500 bg-emerald-100 text-emerald-700",
+    className: "border-emerald-500 bg-emerald-100 text-emerald-600",
     icon: "✓",
   },
   warning: {
-    className: "border-amber-500 bg-amber-100 text-amber-700",
+    className: "border-amber-500 bg-amber-100 text-amber-600",
     icon: "⌛",
   },
   error: {
-    className: "border-red-500 bg-red-100 text-red-700",
+    className: "border-red-500 bg-red-100 text-red-600",
     icon: "✕",
   },
   info: {
@@ -25,7 +25,7 @@ const STATUS_STYLE: Record<StatusTone, { className: string; icon: string }> = {
     icon: "i",
   },
   neutral: {
-    className: "border-slate-200 bg-slate-100 text-slate-500",
+    className: "border-slate-200 bg-slate-100 text-slate-400",
     icon: "•",
   },
 };
