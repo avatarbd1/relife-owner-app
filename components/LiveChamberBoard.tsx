@@ -10,6 +10,7 @@ type ActionState = { key: string; error: string };
 function humanError(message: string): string {
   if (message === "PATIENT_GENDER_REQUIRED") return "Gender set না থাকায় bed assign করা যাচ্ছে না।";
   if (message === "THERAPIST_NOT_ASSIGNED") return "এই patient আপনার assigned/cross-cover patient নয়।";
+  if (message === "CHAMBER_SESSION_NOT_WAITING") return "Patient আর waiting অবস্থায় নেই। Refresh করে আবার দেখুন।";
   if (message.startsWith("CHAMBER_CAPACITY:")) return message.replace("CHAMBER_CAPACITY:", "");
   if (message.startsWith("RESOURCE_BUSY:")) {
     const [, resource, patient] = message.split(":");
@@ -116,7 +117,7 @@ export default function LiveChamberBoard({ initial }: { initial: ChamberSnapshot
           <div>
             <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-300">Live chamber</p>
             <h2 className="mt-1 text-lg font-semibold">4 Beds + Traction</h2>
-            <p className="mt-1 text-xs text-slate-300">Receive → auto safe bed → tap bed/machine → complete</p>
+            <p className="mt-1 text-xs text-slate-300">Receive → tap preferred bed → Start → tap machine/step → complete</p>
           </div>
           <div className="text-right">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 ring-1 ring-emerald-400/20">
@@ -175,7 +176,7 @@ export default function LiveChamberBoard({ initial }: { initial: ChamberSnapshot
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${genderTone(item.gender)}`}>{item.gender || "Gender needed"}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(item.sessionStatus || item.appointmentStatus)}`}>{item.sessionStatus || item.appointmentStatus}</span>
-                  {item.recommendedStationId && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Suggested {item.recommendedStationId}</span>}
+                  {item.recommendedStationId && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Preferred {item.recommendedStationId}</span>}
                 </div>
                 {item.allocationWarning && <p className="mt-2 text-[11px] text-amber-700">{item.allocationWarning}</p>}
               </div>
@@ -186,12 +187,16 @@ export default function LiveChamberBoard({ initial }: { initial: ChamberSnapshot
                   </button>
                 )}
                 {item.sessionId && item.sessionStatus === "Waiting" && snapshot.permissions.run && (
-                  <button type="button" disabled={action.key === `start:${item.sessionId}`} onClick={() => post(`start:${item.sessionId}`, { action: "start", sessionId: item.sessionId })} className="min-h-10 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50">
+                  <button type="button" disabled={action.key === `start:${item.sessionId}` || action.key.startsWith(`prefer:${item.appointmentId}:`)} onClick={() => post(`start:${item.sessionId}`, { action: "start", sessionId: item.sessionId })} className="min-h-10 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50">
                     {action.key === `start:${item.sessionId}` ? "…" : "Start"}
                   </button>
                 )}
               </div>
             </div>
+
+            {item.sessionId && item.sessionStatus === "Waiting" && snapshot.permissions.run && (
+              <WaitingBedPicker item={item} snapshot={snapshot} busyKey={action.key} onPost={post} />
+            )}
           </div>
         )) : <p className="border-t border-slate-100 px-4 py-7 text-center text-sm text-slate-400">Waiting patient নেই।</p>}
       </section>
@@ -221,6 +226,64 @@ export default function LiveChamberBoard({ initial }: { initial: ChamberSnapshot
           })}
         </div>
       </section>
+    </div>
+  );
+}
+
+function WaitingBedPicker({
+  item,
+  snapshot,
+  busyKey,
+  onPost,
+}: {
+  item: ChamberSnapshot["queue"][number];
+  snapshot: ChamberSnapshot;
+  busyKey: string;
+  onPost: (key: string, body: Record<string, unknown>) => Promise<void>;
+}) {
+  const options = snapshot.stations.map((station) => {
+    const occupiedByOther = Boolean(station.session && station.session.sessionId !== item.sessionId);
+    const isTraction = station.resource.resourceId === "TRACTION-BED";
+    const wrongGender = !isTraction && Boolean(station.roomGender && station.roomGender !== item.gender);
+    const missingGender = !isTraction && !item.gender;
+    const disabled = occupiedByOther || wrongGender || missingGender;
+    const subtitle = occupiedByOther
+      ? `Busy · ${station.session?.patientName || "patient"}`
+      : wrongGender
+        ? `${station.roomGender} room`
+        : missingGender
+          ? "Gender needed"
+          : station.resource.roomId;
+    return {
+      value: station.resource.resourceId,
+      label: station.resource.resourceName,
+      subtitle,
+      disabled,
+      tone: isTraction ? "amber" as const : "emerald" as const,
+    };
+  });
+
+  return (
+    <div className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-semibold text-slate-700">Preferred bed · tap before Start</p>
+        {busyKey.startsWith(`prefer:${item.appointmentId}:`) && <span className="text-[10px] font-medium text-blue-700">Saving…</span>}
+      </div>
+      <TapChoice
+        value={item.recommendedStationId}
+        options={options}
+        columns={options.length >= 4 ? 4 : 2}
+        compact
+        onChange={(stationId) => {
+          if (!stationId || stationId === item.recommendedStationId) return;
+          void onPost(`prefer:${item.appointmentId}:${stationId}`, {
+            action: "prefer_station",
+            appointmentId: item.appointmentId,
+            stationId,
+          });
+        }}
+      />
+      <p className="mt-2 text-[10px] leading-4 text-slate-400">Preference is not a force override. Start re-checks live gender, occupancy and capacity; an unsafe bed will not be used.</p>
     </div>
   );
 }

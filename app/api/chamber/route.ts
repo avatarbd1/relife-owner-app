@@ -8,6 +8,7 @@ import {
   updateChamberStep,
 } from "@/lib/webos/chamber";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
+import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
@@ -17,9 +18,9 @@ function statusFor(message: string): number {
   if (
     message.startsWith("CHAMBER_CAPACITY:") ||
     message.startsWith("RESOURCE_BUSY:") ||
-    ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING"].includes(message)
+    ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING"].includes(message)
   ) return 409;
-  if (["CHAMBER_STEP_REQUIRED", "INVALID_STEP_DURATION", "INVALID_ACTION"].includes(message)) return 400;
+  if (["CHAMBER_STEP_REQUIRED", "INVALID_STEP_DURATION", "INVALID_ACTION", "SCHEMA_MISMATCH"].includes(message)) return 400;
   return 500;
 }
 
@@ -51,6 +52,10 @@ export async function POST(request: NextRequest) {
     const action = String(body.action || "");
     if (action === "receive") {
       const result = await receiveChamberPatient(context, body.appointmentId);
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "prefer_station") {
+      const result = await setChamberBedPreference(context, body.appointmentId, body.stationId);
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "start") {
