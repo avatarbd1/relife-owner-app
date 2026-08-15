@@ -3,6 +3,7 @@ import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { getPatientReportForContext } from "@/lib/webos/reports";
+import { downloadReportFromDrive } from "@/lib/webos/reportDrive";
 
 const DEFAULT_BRIDGE_URL = "https://relife-clinic-os.onrender.com";
 
@@ -13,6 +14,10 @@ function bridgeConfig(): { baseUrl: string; secret: string } | null {
     process.env.BOT_MEDIA_BRIDGE_URL?.trim() || DEFAULT_BRIDGE_URL
   ).replace(/\/+$/, "");
   return { baseUrl, secret };
+}
+
+function safeFilename(value: string, fallback: string): string {
+  return (value || fallback).replace(/[\r\n"]/g, "_").slice(0, 180) || fallback;
 }
 
 export async function GET(
@@ -29,7 +34,7 @@ export async function GET(
     if (!patient || patient.department === "All") {
       return new NextResponse("Not found", { status: 404 });
     }
-    if (!canPerform(context, "clinical.read", patient.department)) {
+    if (!canPerform(context, "patient.report.read", patient.department)) {
       return new NextResponse("Not found", { status: 404 });
     }
 
@@ -39,6 +44,23 @@ export async function GET(
       decodeURIComponent(reportId)
     );
     if (!report) return new NextResponse("Not found", { status: 404 });
+
+    if (report.driveLink) {
+      try {
+        const drive = await downloadReportFromDrive(report.driveLink);
+        return new NextResponse(drive.body, {
+          status: 200,
+          headers: {
+            "Content-Type": drive.contentType || report.fileType || "application/octet-stream",
+            "Content-Disposition": `inline; filename="${safeFilename(report.fileName, report.reportId)}"`,
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      } catch (error) {
+        console.error("Drive report fetch failed; trying legacy bridge", report.reportId, error);
+      }
+    }
 
     const bridge = bridgeConfig();
     if (!bridge) {
@@ -71,7 +93,7 @@ export async function GET(
       upstream.headers.get("content-type") || "application/octet-stream";
     const disposition =
       upstream.headers.get("content-disposition") ||
-      `inline; filename="${report.fileName || report.reportId}"`;
+      `inline; filename="${safeFilename(report.fileName, report.reportId)}"`;
 
     return new NextResponse(body, {
       status: 200,
