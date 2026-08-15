@@ -1,22 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import {
   beginPasskeyAuthentication,
   WEBAUTHN_CHALLENGE_COOKIE,
   WEBAUTHN_CHALLENGE_MAX_AGE,
 } from "@/lib/webauthn";
 
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isAllowedWebAuthnRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {

@@ -5,21 +5,12 @@ import {
   SESSION_MAX_AGE,
   createSessionToken,
 } from "@/lib/auth";
+import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import {
   finishPasskeyAuthentication,
   readChallengeState,
   WEBAUTHN_CHALLENGE_COOKIE,
 } from "@/lib/webauthn";
-
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
-}
 
 function clearChallenge(response: NextResponse) {
   response.cookies.set(WEBAUTHN_CHALLENGE_COOKIE, "", {
@@ -32,7 +23,7 @@ function clearChallenge(response: NextResponse) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isAllowedWebAuthnRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
