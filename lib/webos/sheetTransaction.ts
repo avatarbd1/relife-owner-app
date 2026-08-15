@@ -9,6 +9,13 @@ import {
 
 export type SheetCellValue = string | number | boolean;
 
+export interface SheetCellUpdate {
+  sheet: string;
+  rowNumber: number;
+  columnNumber: number;
+  value: SheetCellValue;
+}
+
 function cellValue(value: SheetCellValue): Record<string, unknown> {
   if (typeof value === "boolean") {
     return { userEnteredValue: { boolValue: value } };
@@ -60,6 +67,28 @@ function replaceRowRequest(
   };
 }
 
+function updateCellRequest(
+  sheetId: number,
+  rowNumber: number,
+  columnNumber: number,
+  value: SheetCellValue
+): SpreadsheetBatchRequest {
+  if (rowNumber < 1 || columnNumber < 1) throw new Error("SCHEMA_MISMATCH");
+  return {
+    updateCells: {
+      range: {
+        sheetId,
+        startRowIndex: rowNumber - 1,
+        endRowIndex: rowNumber,
+        startColumnIndex: columnNumber - 1,
+        endColumnIndex: columnNumber,
+      },
+      rows: [{ values: [cellValue(value)] }],
+      fields: "userEnteredValue",
+    },
+  };
+}
+
 export async function appendEntityWithAudit(
   workbook: Workbook,
   entitySheet: string,
@@ -71,6 +100,31 @@ export async function appendEntityWithAudit(
     appendRowRequest(requireSheetId(ids, entitySheet), entityRow),
     appendRowRequest(requireSheetId(ids, "20_Data_Audit"), auditRow),
   ]);
+}
+
+export async function appendEntityWithCellUpdatesAndAudit(
+  workbook: Workbook,
+  entitySheet: string,
+  entityRow: SheetCellValue[],
+  updates: SheetCellUpdate[],
+  auditRow: SheetCellValue[]
+): Promise<void> {
+  const ids = await sheetIdMap(workbook);
+  const requests: SpreadsheetBatchRequest[] = [
+    appendRowRequest(requireSheetId(ids, entitySheet), entityRow),
+  ];
+  for (const update of updates) {
+    requests.push(
+      updateCellRequest(
+        requireSheetId(ids, update.sheet),
+        update.rowNumber,
+        update.columnNumber,
+        update.value
+      )
+    );
+  }
+  requests.push(appendRowRequest(requireSheetId(ids, "20_Data_Audit"), auditRow));
+  await batchUpdateSpreadsheet(workbook, requests);
 }
 
 export async function replaceEntityRowWithAudit(
