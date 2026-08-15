@@ -52,8 +52,8 @@ const actionLabel: Record<Action, string> = {
 
 const errorText: Record<string, string> = {
   ATTENDANCE_LOCATION_NOT_CONFIGURED: "Clinic location config এখনও Web app-এ সেট করা হয়নি।",
-  ATTENDANCE_LOCATION_INVALID: "Location পাওয়া যায়নি। GPS চালু করে আবার চেষ্টা করুন।",
-  ATTENDANCE_LOCATION_ACCURACY: "GPS accuracy যথেষ্ট ভালো নয়। একটু অপেক্ষা করে আবার চেষ্টা করুন।",
+  ATTENDANCE_LOCATION_INVALID: "Location পাওয়া যায়নি। GPS ও Precise location চালু করে আবার চেষ্টা করুন।",
+  ATTENDANCE_LOCATION_ACCURACY: "GPS accuracy যথেষ্ট ভালো নয়। App এখন ভালো GPS fix-এর জন্য অপেক্ষা করবে—খোলা জায়গায় আবার চেষ্টা করুন।",
   ATTENDANCE_OUTSIDE_CLINIC: "Clinic attendance radius-এর বাইরে আছেন।",
   ATTENDANCE_ALREADY_CHECKED_IN: "আজ ইতিমধ্যে Check In করা হয়েছে।",
   ATTENDANCE_ALREADY_ON_BREAK: "Break ইতিমধ্যে শুরু হয়েছে।",
@@ -73,18 +73,54 @@ function nextActions(self: AttendanceRecord | null): Action[] {
   return ["check_out"];
 }
 
-function location(): Promise<{ latitude: number; longitude: number; accuracy: number }> {
+function location(maxAccuracyMeters: number): Promise<{ latitude: number; longitude: number; accuracy: number }> {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error("ATTENDANCE_LOCATION_INVALID"));
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-      }),
-      () => reject(new Error("ATTENDANCE_LOCATION_INVALID")),
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+
+    let best: { latitude: number; longitude: number; accuracy: number } | null = null;
+    let watchId: number | null = null;
+    let timerId: number | null = null;
+    let settled = false;
+
+    const cleanup = () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
+
+    const accept = (point: { latitude: number; longitude: number; accuracy: number }) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(point);
+    };
+
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("ATTENDANCE_LOCATION_INVALID"));
+    };
+
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const point = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        };
+        if (!best || point.accuracy < best.accuracy) best = point;
+        if (point.accuracy <= maxAccuracyMeters) accept(point);
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) fail();
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
+
+    timerId = window.setTimeout(() => {
+      if (best) accept(best);
+      else fail();
+    }, 25000);
   });
 }
 
@@ -112,7 +148,9 @@ export default function DailyOperationsClient({ snapshot }: { snapshot: Snapshot
     setMessage(null);
     try {
       let position: Awaited<ReturnType<typeof location>> | undefined;
-      if (action === "check_in") position = await location();
+      if (action === "check_in") {
+        position = await location(snapshot.attendance.location.maxAccuracyMeters);
+      }
       const response = await fetch("/api/attendance/action", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -164,7 +202,7 @@ export default function DailyOperationsClient({ snapshot }: { snapshot: Snapshot
                   onClick={() => act(action)}
                   className="min-h-12 select-none rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  {busy === action ? "Saving…" : actionLabel[action]}
+                  {busy === action ? (isCheckIn ? "Getting GPS…" : "Saving…") : actionLabel[action]}
                 </button>
               );
             })}
@@ -193,7 +231,7 @@ export default function DailyOperationsClient({ snapshot }: { snapshot: Snapshot
         <div className="mt-3 grid grid-cols-3 gap-2">
           <div className="rounded-xl bg-slate-50 p-3"><p className="text-lg font-bold text-slate-900">{snapshot.appointmentCounts.open}</p><p className="text-[10px] text-slate-500">Open</p></div>
           <div className="rounded-xl bg-emerald-50 p-3"><p className="text-lg font-bold text-emerald-700">{snapshot.appointmentCounts.completed}</p><p className="text-[10px] text-emerald-600">Completed</p></div>
-          <div className="rounded-xl bg-red-50 p-3"><p className="text-lg font-bold text-red-700">{snapshot.appointmentCounts.missed}</p><p className="text-[10px] text-red-600">Missed</p></div>
+          <div className="rounded-xl bg-red-50 p-3"><p className="text-lg font-bold text-red-700">{snapshot.appointmentCounts.missed}</p><p className="text-[10px] text-red-500">Missed</p></div>
         </div>
         <div className="mt-3 space-y-2">
           {snapshot.appointments.slice(0, 40).map((item) => (
