@@ -542,7 +542,7 @@ export async function getChamberSnapshot(context: AccessContext): Promise<Chambe
     });
 
   const sessionByAppointment = new Map(todaySessions.map((session) => [session.appointmentId, session]));
-  const queue = appointments.flatMap((appointment) => {
+  const queue: ChamberQueueItem[] = appointments.flatMap((appointment) => {
     if (!ACTIVE_APPOINTMENT_STATUSES.has(normalized(appointment.status))) return [];
     const session = sessionByAppointment.get(appointment.appointmentId);
     if (session?.status === "In Treatment" || session?.status === "Completed") return [];
@@ -554,12 +554,12 @@ export async function getChamberSnapshot(context: AccessContext): Promise<Chambe
       appointmentId: appointment.appointmentId,
       patientId: appointment.patientId,
       patientName: appointment.patientName,
-      gender: session?.gender || "",
+      gender: (session?.gender || "") as ChamberQueueItem["gender"],
       therapist: appointment.therapist,
       time: appointment.time,
       appointmentStatus: appointment.status,
       sessionId: session?.sessionId || "",
-      sessionStatus: session?.status || "",
+      sessionStatus: (session?.status || "") as ChamberQueueItem["sessionStatus"],
       recommendedStationId: allocation.station?.resourceId || "",
       allocationWarning: allocation.warning,
     }];
