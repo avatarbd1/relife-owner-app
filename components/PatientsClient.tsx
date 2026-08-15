@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import TapChoice from "@/components/TapChoice";
 
 type PatientDepartment = "Physio" | "Dental" | "All";
 type FilterDepartment = "All" | "Physio" | "Dental";
@@ -74,6 +75,12 @@ export default function PatientsClient({
     { id: "Dental", label: "Dental", count: counts.dental },
   ];
 
+  const sortOptions: Array<{ value: SortMode; label: string }> = [
+    { value: "recent", label: "Newest" },
+    { value: "name", label: "Name A–Z" },
+    ...(showMoney ? [{ value: "due" as const, label: "Highest due" }] : []),
+  ];
+
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="p-4">
@@ -88,13 +95,12 @@ export default function PatientsClient({
           ))}
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-          <span className="text-xs text-slate-500">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span>
-          <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} aria-label="Sort patients" className="min-h-10 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 outline-none focus:border-blue-700">
-            <option value="recent">Newest registered</option>
-            <option value="name">Name A–Z</option>
-            {showMoney && <option value="due">Highest due</option>}
-          </select>
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-xs text-slate-500">{filtered.length} result{filtered.length === 1 ? "" : "s"}</span>
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Sort</span>
+          </div>
+          <TapChoice value={sort} options={sortOptions} columns={sortOptions.length === 3 ? 3 : 2} compact onChange={(value) => value && setSort(value)} />
         </div>
       </div>
 
