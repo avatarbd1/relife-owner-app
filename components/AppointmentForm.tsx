@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Spinner } from "@/components/FeedbackUI";
+import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
 
 type Department = "Physio" | "Dental";
@@ -176,21 +177,22 @@ export default function AppointmentForm({
         </label>
       </div>
 
-      <label className="block text-xs font-semibold text-slate-700">
-        {selectedPatient?.department === "Dental" ? "Dentist" : "Therapist"} *
-        <select
-          required
-          value={therapist}
-          onChange={(event) => setTherapist(event.target.value)}
-          disabled={!selectedPatient}
-          className={inputClass}
-        >
-          <option value="">Select clinician</option>
-          {departmentClinicians.map((item) => (
-            <option key={item.staffId} value={item.fullName}>{item.fullName}</option>
-          ))}
-        </select>
-      </label>
+      <TapChoice
+        label={`${selectedPatient?.department === "Dental" ? "Dentist" : "Therapist"} *`}
+        value={therapist}
+        disabled={!selectedPatient}
+        columns={departmentClinicians.length >= 3 ? 3 : 2}
+        tone={selectedPatient?.department === "Dental" ? "emerald" : "blue"}
+        options={departmentClinicians.map((item) => ({
+          value: item.fullName,
+          label: item.fullName,
+          subtitle: item.staffId,
+        }))}
+        onChange={setTherapist}
+      />
+      {selectedPatient && departmentClinicians.length === 0 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">এই department-এ active clinician option পাওয়া যায়নি।</p>
+      )}
 
       <label className="block text-xs font-semibold text-slate-700">
         Remarks
@@ -199,7 +201,7 @@ export default function AppointmentForm({
 
       {selectedPatient?.department === "Physio" && (
         <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-[11px] leading-4 text-blue-800">
-          Room/bed/traction allocation is calculated from the live slot, patient gender and active treatment plan. If gender is missing, the booking is marked Waiting for allocation.
+          Booking-time room/bed recommendation is calculated from the live slot, patient gender and active treatment plan. Final bed can be tapped in Live Chamber before treatment starts.
         </div>
       )}
 
