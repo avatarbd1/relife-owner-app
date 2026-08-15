@@ -38,7 +38,7 @@ export async function getPatientReportsForContext(
 ): Promise<PatientReport[]> {
   if (patient.department !== "Physio" && patient.department !== "Dental") return [];
   const department: "Physio" | "Dental" = patient.department;
-  if (!canPerform(context, "clinical.read", department)) return [];
+  if (!canPerform(context, "patient.report.read", department)) return [];
 
   const workbook = workbookForDepartment(department);
   const data = await fetchSheetRanges(workbook, ["14_Reports"]);

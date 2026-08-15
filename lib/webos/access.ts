@@ -14,6 +14,8 @@ export type WebAction =
   | "patient.read"
   | "patient.create"
   | "patient.update"
+  | "patient.report.read"
+  | "patient.report.upload"
   | "appointment.read"
   | "appointment.create"
   | "appointment.update"
@@ -68,6 +70,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "patient.read",
     "patient.create",
     "patient.update",
+    "patient.report.read",
+    "patient.report.upload",
     "appointment.read",
     "appointment.create",
     "appointment.update",
@@ -103,6 +107,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "patient.read",
     "patient.create",
     "patient.update",
+    "patient.report.read",
     "appointment.read",
     "appointment.create",
     "appointment.update",
@@ -126,6 +131,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "patient.read",
     "patient.create",
     "patient.update",
+    "patient.report.read",
+    "patient.report.upload",
     "appointment.read",
     "appointment.create",
     "appointment.update",
@@ -133,12 +140,10 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "payment.create",
     "payment.correct_own_today",
     "report.read_operational",
-    "expense.read",
     "expense.request",
     "expense.pay",
     "cash.read",
     "cash.request",
-    "salary.read",
     "attendance.self",
     "inventory.read",
     "inventory.write",
@@ -147,6 +152,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
   ]),
   Therapist: new Set<WebAction>([
     "patient.read",
+    "patient.report.read",
+    "patient.report.upload",
     "appointment.read",
     "appointment.create",
     "attendance.self",
@@ -159,6 +166,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
   ]),
   Dentist: new Set<WebAction>([
     "patient.read",
+    "patient.report.read",
+    "patient.report.upload",
     "appointment.read",
     "appointment.create",
     "attendance.self",

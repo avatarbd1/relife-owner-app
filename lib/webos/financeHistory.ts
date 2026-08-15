@@ -2,7 +2,7 @@ import "server-only";
 
 import { getCashMovements, getExpenses, getSalaryPayments } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
-import { canPerform, type AccessContext } from "@/lib/webos/access";
+import { canPerform, type AccessContext, type WebAction } from "@/lib/webos/access";
 
 type ClinicDepartment = "Physio" | "Dental";
 
@@ -15,14 +15,36 @@ function scopeAllows(scope: Scope, department: ClinicDepartment): boolean {
   return department === (scope === "physio" ? "Physio" : "Dental");
 }
 
+function normalize(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isReceptionFinanceLimited(context: AccessContext): boolean {
+  return (
+    context.roles.includes("Receptionist") &&
+    !context.roles.some((role) => ["Owner", "Manager", "Auditor"].includes(role))
+  );
+}
+
+function canAny(context: AccessContext, scope: Scope, action: WebAction): boolean {
+  return (["Physio", "Dental"] as ClinicDepartment[]).some(
+    (department) => scopeAllows(scope, department) && canPerform(context, action, department)
+  );
+}
+
 export async function getFinanceHistorySnapshot(
   context: AccessContext,
   scope: Scope
 ) {
+  const receptionLimited = isReceptionFinanceLimited(context);
+  const needsExpenses = receptionLimited || canAny(context, scope, "expense.read");
+  const needsCash = canAny(context, scope, "cash.read");
+  const needsSalary = !receptionLimited && canAny(context, scope, "salary.read");
+
   const [expenses, cashMovements, salaryPayments] = await Promise.all([
-    getExpenses(),
-    getCashMovements(),
-    getSalaryPayments(),
+    needsExpenses ? getExpenses() : Promise.resolve([]),
+    needsCash ? getCashMovements() : Promise.resolve([]),
+    needsSalary ? getSalaryPayments() : Promise.resolve([]),
   ]);
 
   const visibleExpenses = expenses
@@ -30,7 +52,15 @@ export async function getFinanceHistorySnapshot(
       const department = asClinicDepartment(row.department);
       if (!department) return [];
       if (!scopeAllows(scope, department)) return [];
-      if (!canPerform(context, "expense.read", department)) return [];
+
+      if (receptionLimited) {
+        if (!canPerform(context, "cash.read", department)) return [];
+        const paidFrom = normalize(row.paidFrom || row.paymentMethod);
+        if (paidFrom !== "reception") return [];
+      } else if (!canPerform(context, "expense.read", department)) {
+        return [];
+      }
+
       return [{
         expenseId: row.expenseId,
         date: row.date,
@@ -54,6 +84,7 @@ export async function getFinanceHistorySnapshot(
       if (!department) return [];
       if (!scopeAllows(scope, department)) return [];
       if (!canPerform(context, "cash.read", department)) return [];
+      if (receptionLimited && normalize(row.fromCustodian) !== "reception") return [];
       return [{
         id: row.id,
         date: row.date,
@@ -68,45 +99,45 @@ export async function getFinanceHistorySnapshot(
     })
     .sort((a, b) => `${b.date}|${b.id}`.localeCompare(`${a.date}|${a.id}`));
 
-  const visibleSalary = salaryPayments
-    .flatMap((row) => {
-      const department = asClinicDepartment(row.department);
-      if (!department) return [];
-      if (!scopeAllows(scope, department)) return [];
-      if (!canPerform(context, "salary.read", department)) return [];
-      return [{
-        id: row.id,
-        date: row.date,
-        department,
-        staffId: row.staffId,
-        staffName: row.staffName || "",
-        amount: row.amount,
-        type: row.type,
-        paidFrom: row.paidFrom || "",
-        status: row.status || "Recorded",
-        paidAt: row.paidAt || "",
-      }];
-    })
-    .sort((a, b) => `${b.date}|${b.id}`.localeCompare(`${a.date}|${a.id}`));
+  const visibleSalary = receptionLimited
+    ? []
+    : salaryPayments
+        .flatMap((row) => {
+          const department = asClinicDepartment(row.department);
+          if (!department) return [];
+          if (!scopeAllows(scope, department)) return [];
+          if (!canPerform(context, "salary.read", department)) return [];
+          return [{
+            id: row.id,
+            date: row.date,
+            department,
+            staffId: row.staffId,
+            staffName: row.staffName || "",
+            amount: row.amount,
+            type: row.type,
+            paidFrom: row.paidFrom || "",
+            status: row.status || "Recorded",
+            paidAt: row.paidAt || "",
+          }];
+        })
+        .sort((a, b) => `${b.date}|${b.id}`.localeCompare(`${a.date}|${a.id}`));
 
   return {
     expenses: visibleExpenses,
-    rejectedExpenses: visibleExpenses.filter((row) => row.status.toLowerCase() === "rejected"),
+    rejectedExpenses: receptionLimited
+      ? []
+      : visibleExpenses.filter((row) => row.status.toLowerCase() === "rejected"),
     cashMovements: visibleCash,
     salaryPayments: visibleSalary,
     capabilities: {
-      expenseHistory: visibleExpenses.length > 0 || ["Physio", "Dental"].some((d) =>
-        scopeAllows(scope, d as ClinicDepartment) &&
-        canPerform(context, "expense.read", d as ClinicDepartment)
-      ),
-      cashHistory: visibleCash.length > 0 || ["Physio", "Dental"].some((d) =>
-        scopeAllows(scope, d as ClinicDepartment) &&
-        canPerform(context, "cash.read", d as ClinicDepartment)
-      ),
-      salaryHistory: visibleSalary.length > 0 || ["Physio", "Dental"].some((d) =>
-        scopeAllows(scope, d as ClinicDepartment) &&
-        canPerform(context, "salary.read", d as ClinicDepartment)
-      ),
+      receptionLimited,
+      expenseHistory: receptionLimited
+        ? true
+        : visibleExpenses.length > 0 || canAny(context, scope, "expense.read"),
+      cashHistory: visibleCash.length > 0 || canAny(context, scope, "cash.read"),
+      salaryHistory: receptionLimited
+        ? false
+        : visibleSalary.length > 0 || canAny(context, scope, "salary.read"),
     },
   };
 }
