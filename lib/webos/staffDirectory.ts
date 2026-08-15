@@ -53,7 +53,24 @@ function parseDepartment(value: string): Department | null {
 }
 
 function parseRole(value: string): WebRole | null {
-  const exact = normalize(value) as WebRole;
+  const raw = normalize(value);
+  if (!raw) return null;
+  const aliases: Record<string, WebRole> = {
+    owner: "Owner",
+    manager: "Manager",
+    receptionist: "Receptionist",
+    therapist: "Therapist",
+    physiotherapist: "Therapist",
+    dentist: "Dentist",
+    dental_assistant: "Dental_Assistant",
+    "dental assistant": "Dental_Assistant",
+    auditor: "Auditor",
+    "system admin": "System Admin",
+    system_admin: "System Admin",
+  };
+  const alias = aliases[raw.toLowerCase()];
+  if (alias) return alias;
+  const exact = raw as WebRole;
   return KNOWN_ROLES.has(exact) ? exact : null;
 }
 
@@ -115,6 +132,7 @@ function parseStaff(rows: string[][]): StaffBase[] {
 interface DepartmentAccessRow {
   staffId: string;
   department: Department;
+  role: WebRole | null;
   status: string;
 }
 
@@ -123,14 +141,16 @@ function parseDepartmentAccess(rows: string[][]): DepartmentAccessRow[] {
   const headers = rows[0];
   const staffIdIdx = headerIndex(headers, "Staff_ID");
   const departmentIdx = headerIndex(headers, "Department");
+  const roleIdx = headerIndex(headers, "Role");
   const statusIdx = headerIndex(headers, "Status");
 
   return rows.slice(1).flatMap((row) => {
     const staffId = at(row, staffIdIdx);
     const department = parseDepartment(at(row, departmentIdx));
+    const role = parseRole(at(row, roleIdx));
     const status = at(row, statusIdx) || "Active";
     if (!staffId || !department || status.toLowerCase() !== "active") return [];
-    return [{ staffId, department, status }];
+    return [{ staffId, department, role, status }];
   });
 }
 
@@ -155,14 +175,24 @@ export async function getWebStaffDirectory(): Promise<WebStaffIdentity[]> {
   const staff = parseStaff(staffSnapshot["08_Staff"] || []);
   const mapping = parseDepartmentAccess(accessRows);
   const departmentsByStaff = new Map<string, Department[]>();
+  const rolesByStaff = new Map<string, WebRole[]>();
+
   for (const row of mapping) {
-    const existing = departmentsByStaff.get(row.staffId) || [];
-    if (!existing.includes(row.department)) existing.push(row.department);
-    departmentsByStaff.set(row.staffId, existing);
+    const departments = departmentsByStaff.get(row.staffId) || [];
+    if (!departments.includes(row.department)) departments.push(row.department);
+    departmentsByStaff.set(row.staffId, departments);
+
+    if (row.role) {
+      const roles = rolesByStaff.get(row.staffId) || [];
+      if (!roles.includes(row.role)) roles.push(row.role);
+      rolesByStaff.set(row.staffId, roles);
+    }
   }
 
   return staff.map((item) => {
     const mappedDepartments = departmentsByStaff.get(item.staffId);
+    const mappedRoles = rolesByStaff.get(item.staffId) || [];
+    const roles = [...new Set([...(item.role ? [item.role] : []), ...mappedRoles])];
     return {
       staffId: item.staffId,
       fullName: item.fullName,
@@ -170,7 +200,7 @@ export async function getWebStaffDirectory(): Promise<WebStaffIdentity[]> {
       telegramId: item.telegramId,
       status: item.status,
       primaryDepartment: item.primaryDepartment,
-      roles: item.role ? [item.role] : [],
+      roles,
       departmentAccess:
         mappedDepartments && mappedDepartments.length > 0
           ? mappedDepartments
