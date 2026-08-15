@@ -22,6 +22,9 @@ export default async function OperationsPage() {
   const context = await requireCurrentAccessContext();
   const snapshot = await getFinanceOperationsSnapshot(context, scope);
   const isOwner = context.roles.includes("Owner");
+  const safeSnapshot = snapshot.capabilities.salaryPay
+    ? snapshot
+    : { ...snapshot, staff: [] };
 
   return (
     <div>
@@ -39,7 +42,7 @@ export default async function OperationsPage() {
         )}
       </div>
 
-      <FinanceOperationsClient snapshot={snapshot} />
+      <FinanceOperationsClient snapshot={safeSnapshot} />
     </div>
   );
 }
