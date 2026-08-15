@@ -47,6 +47,9 @@ export interface AccessContext {
   primaryDepartment: Department;
   /** Explicit authorization scope. Never infer All from a missing value. */
   departmentAccess: Department[];
+  /** Live 08_Staff policy flags; optional for owner/system compatibility. */
+  clinicalWriteScope?: string;
+  financialAccess?: string;
 }
 
 export interface AccessConditions {
@@ -183,6 +186,17 @@ function roleAllows(roles: WebRole[], action: WebAction): boolean {
   return roles.some((role) => ROLE_ACTIONS[role]?.has(action));
 }
 
+function hasTemporaryDentalDataEntry(context: AccessContext): boolean {
+  const departments = uniqueKnownDepartments(context.departmentAccess);
+  return Boolean(
+    context.roles.includes("Receptionist") &&
+      context.clinicalWriteScope?.trim() === "Dental_Temporary_Data_Entry" &&
+      departments.length === 1 &&
+      departments[0] === "Dental" &&
+      context.primaryDepartment === "Dental"
+  );
+}
+
 export function canPerform(
   context: AccessContext,
   action: WebAction,
@@ -190,6 +204,18 @@ export function canPerform(
   conditions: AccessConditions = {}
 ): boolean {
   if (!canAccessDepartment(context, recordDepartment)) return false;
+
+  // Production Telegram parity: an explicitly provisioned Dental-only
+  // Receptionist may temporarily enter Dental clinical data. This is NOT a
+  // general Receptionist permission and fails closed for All/mixed/Physio.
+  if (
+    action === "clinical.write" &&
+    recordDepartment === "Dental" &&
+    hasTemporaryDentalDataEntry(context)
+  ) {
+    return true;
+  }
+
   if (!roleAllows(context.roles, action)) return false;
 
   if (action === "clinical.write") {
