@@ -3,9 +3,9 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Relife Owner",
+    name: "Relife Clinic OS",
     short_name: "Relife",
-    description: "Relife Clinic Owner Dashboard",
+    description: "Relife Clinic Web App",
     start_url: "/home",
     scope: "/",
     display: "standalone",
