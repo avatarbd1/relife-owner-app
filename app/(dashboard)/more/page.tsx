@@ -41,6 +41,18 @@ export default async function MorePage() {
         </div>
         <span aria-hidden="true" className="text-slate-400">›</span>
       </Link>
+
+      <Link
+        href="/security/staff-access"
+        className="flex min-h-14 items-center justify-between rounded-2xl bg-white px-4 py-3 text-slate-900 shadow-sm ring-1 ring-slate-200 transition duration-150 active:scale-[0.99] motion-reduce:transition-none"
+      >
+        <div>
+          <p className="text-sm font-semibold">👥 Staff Web Access</p>
+          <p className="mt-0.5 text-xs text-slate-500">Create secure first-time setup links</p>
+        </div>
+        <span aria-hidden="true" className="text-slate-400">›</span>
+      </Link>
+
       <OwnerControlsClient snapshot={scopedSnapshot} />
     </div>
   );
