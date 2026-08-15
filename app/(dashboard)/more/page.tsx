@@ -1,71 +1,125 @@
-import Link from "next/link";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import OwnerControlsClient from "@/components/OwnerControlsClient";
+import {
+  PageHeading,
+  Section,
+  ActionRow,
+} from "@/components/WorkspaceUI";
 import { getOwnerControlSnapshot } from "@/lib/controls";
-import type { Scope } from "@/lib/types";
-import { canPerform } from "@/lib/webos/access";
+import { actionsForRoles } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-
-function readScope(value: string | undefined): Scope {
-  if (value === "physio" || value === "dental" || value === "combined") {
-    return value;
-  }
-  return "combined";
-}
 
 export default async function MorePage() {
   const context = await requireCurrentAccessContext();
-  if (!context.roles.includes("Owner")) {
-    const canAcceptCash = ["Physio", "Dental"].some((department) =>
-      canPerform(context, "cash.accept", department as "Physio" | "Dental")
-    );
-    if (canAcceptCash) redirect("/finance/cash-receive");
-    redirect("/home");
-  }
+  const actionSet = new Set(actionsForRoles(context.roles));
+  const isOwner = context.roles.includes("Owner");
+  const canClinical = actionSet.has("clinical.read") || actionSet.has("clinical.write");
+  const canInventory = canClinical || actionSet.has("audit.read");
+  const canCorrect = actionSet.has("payment.void");
+  const canAcceptCash = actionSet.has("cash.accept");
+  const canReadRegister =
+    actionSet.has("patient.read") ||
+    actionSet.has("appointment.read") ||
+    actionSet.has("report.read_operational");
 
-  const cookieStore = await cookies();
-  const scope = readScope(cookieStore.get("relife_scope")?.value);
-  const snapshot = await getOwnerControlSnapshot();
-
-  const scopedSnapshot =
-    scope === "combined"
-      ? snapshot
-      : {
-          ...snapshot,
-          pendingExpenses: snapshot.pendingExpenses.filter(
-            (item) => item.workbook === scope
-          ),
-          pendingCashMovements: snapshot.pendingCashMovements.filter(
-            (item) => item.workbook === scope
-          ),
-        };
+  const snapshot = isOwner ? await getOwnerControlSnapshot() : null;
+  const pendingTotal = snapshot
+    ? snapshot.pendingExpenses.length + snapshot.pendingCashMovements.length
+    : 0;
 
   return (
-    <div className="space-y-4">
-      <Link
-        href="/security/passkeys"
-        className="flex min-h-14 items-center justify-between rounded-2xl bg-slate-900 px-4 py-3 text-white shadow-sm transition duration-150 active:scale-[0.99] motion-reduce:transition-none"
-      >
-        <div>
-          <p className="text-sm font-semibold">🔐 Fingerprint / Face ID</p>
-          <p className="mt-0.5 text-xs text-slate-400">Add or remove secure device passkeys</p>
-        </div>
-        <span aria-hidden="true" className="text-slate-400">›</span>
-      </Link>
+    <div>
+      <PageHeading
+        title="More"
+        subtitle="Operations, clinical tools and administration"
+      />
 
-      <Link
-        href="/security/staff-access"
-        className="flex min-h-14 items-center justify-between rounded-2xl bg-white px-4 py-3 text-slate-900 shadow-sm ring-1 ring-slate-200 transition duration-150 active:scale-[0.99] motion-reduce:transition-none"
-      >
-        <div>
-          <p className="text-sm font-semibold">👥 Staff Web Access</p>
-          <p className="mt-0.5 text-xs text-slate-500">Create secure first-time setup links</p>
-        </div>
-        <span aria-hidden="true" className="text-slate-400">›</span>
-      </Link>
+      <Section title="Operations">
+        <ActionRow
+          href="/daily"
+          icon="attendance"
+          title="Attendance"
+          subtitle="Check in, break and check out"
+        />
+        {canReadRegister && (
+          <ActionRow
+            href="/register"
+            icon="register"
+            title="Daily register"
+            subtitle="Department-safe operational register"
+          />
+        )}
+        {canAcceptCash && !isOwner && (
+          <ActionRow
+            href="/finance/cash-receive"
+            icon="cash"
+            title="Receive cash handover"
+            subtitle="Confirm actual amount received"
+          />
+        )}
+        {canInventory && (
+          <ActionRow
+            href="/tools"
+            icon="inventory"
+            title="Inventory"
+            subtitle="Authorized stock and inventory log"
+          />
+        )}
+      </Section>
 
-      <OwnerControlsClient snapshot={scopedSnapshot} />
+      {(canClinical || actionSet.has("audit.read")) && (
+        <Section title="Clinical & learning">
+          {canClinical && (
+            <ActionRow
+              href="/tools"
+              icon="clinical"
+              title="Clinical tools"
+              subtitle="Clinical AI, Staff AI and case study"
+            />
+          )}
+          {canCorrect && (
+            <ActionRow
+              href="/corrections"
+              icon="correction"
+              title="Same-day correction"
+              subtitle="Own eligible entries with audit trail"
+            />
+          )}
+        </Section>
+      )}
+
+      <Section title="Account & access">
+        <ActionRow
+          href="/security/passkeys"
+          icon="security"
+          title="Security"
+          subtitle="Fingerprint, Face ID and device passkeys"
+        />
+        {isOwner && (
+          <ActionRow
+            href="/security/staff-access"
+            icon="staff"
+            title="Staff web access"
+            subtitle="Secure first-time setup links"
+          />
+        )}
+      </Section>
+
+      {isOwner && snapshot && (
+        <section className="mb-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Approvals</h2>
+              <p className="mt-0.5 text-[11px] text-slate-500">Protected owner actions only</p>
+            </div>
+            {pendingTotal > 0 && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                {pendingTotal} pending
+              </span>
+            )}
+          </div>
+          <OwnerControlsClient snapshot={snapshot} />
+        </section>
+      )}
     </div>
   );
 }
