@@ -7,6 +7,7 @@ import {
   startChamberSession,
   updateChamberStep,
 } from "@/lib/webos/chamber";
+import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
@@ -26,7 +27,8 @@ export async function GET() {
   try {
     const context = await requireCurrentAccessContext();
     const snapshot = await getChamberSnapshot(context);
-    return NextResponse.json({ ok: true, snapshot });
+    const enriched = await enrichChamberSnapshotWithPatientProfiles(context, snapshot);
+    return NextResponse.json({ ok: true, snapshot: enriched });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CHAMBER_READ_FAILED";
     const status = statusFor(message);
