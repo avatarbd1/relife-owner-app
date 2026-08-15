@@ -16,6 +16,7 @@ export default async function MorePage() {
   const canInventory = canClinical || actionSet.has("audit.read");
   const canCorrect = actionSet.has("payment.void");
   const canAcceptCash = actionSet.has("cash.accept");
+  const canChamber = actionSet.has("chamber.read");
   const canReadRegister =
     actionSet.has("patient.read") ||
     actionSet.has("appointment.read") ||
@@ -34,6 +35,14 @@ export default async function MorePage() {
       />
 
       <Section title="Operations">
+        {canChamber && (
+          <ActionRow
+            href="/chamber"
+            icon="clinical"
+            title="Live chamber"
+            subtitle="4 beds, traction, machine availability and timers"
+          />
+        )}
         <ActionRow
           href="/daily"
           icon="attendance"
