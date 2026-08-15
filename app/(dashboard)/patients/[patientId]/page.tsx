@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Row } from "@/components/Card";
+import PatientEditForm from "@/components/PatientEditForm";
 import PatientMediaGallery from "@/components/PatientMediaGallery";
 import PatientReportUpload from "@/components/PatientReportUpload";
 import { formatBDT } from "@/lib/format";
@@ -28,6 +29,7 @@ export default async function PatientFilePage({
   const patient = await getPatientForContext(context, decodeURIComponent(patientId));
   if (!patient || patient.department === "All") notFound();
 
+  const canEditPatient = canPerform(context, "patient.update", patient.department);
   const canSeeMoney = canPerform(context, "payment.read_amount", patient.department);
   const canCreateAppointment = canPerform(context, "appointment.create", patient.department);
   const canSeeClinical = canPerform(context, "clinical.read", patient.department);
@@ -76,6 +78,22 @@ export default async function PatientFilePage({
           </>
         )}
       </Card>
+
+      {canEditPatient && (
+        <PatientEditForm
+          patientId={patient.patientId}
+          initial={{
+            fullName: patient.fullName,
+            phone: patient.phone.replace(/^'/, ""),
+            age: patient.age,
+            gender: patient.gender,
+            address: patient.address,
+            diagnosis: patient.diagnosis,
+            therapist: patient.therapist,
+            status: patient.status || "Active",
+          }}
+        />
+      )}
 
       <Card title={patient.department === "Dental" ? "Complaint / diagnosis" : "Diagnosis / complaint"}>
         <p className="text-sm leading-6 text-slate-700">{patient.diagnosis || "No diagnosis recorded."}</p>
