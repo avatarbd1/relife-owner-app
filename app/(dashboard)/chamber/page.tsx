@@ -1,7 +1,9 @@
 import ChamberPatientEditPanel from "@/components/ChamberPatientEditPanel";
+import ChamberReservationPanel from "@/components/ChamberReservationPanel";
 import LiveChamberBoard from "@/components/LiveChamberBoard";
 import { ProgressBar, StatusBadge } from "@/components/FeedbackUI";
 import { canPerform } from "@/lib/webos/access";
+import { getChamberBookingPlans } from "@/lib/webos/appointmentScheduling";
 import { getChamberSnapshot } from "@/lib/webos/chamber";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -13,7 +15,10 @@ export default async function ChamberPage() {
     getChamberSnapshot(context),
     getWebStaffDirectory(),
   ]);
-  const snapshot = await enrichChamberSnapshotWithPatientProfiles(context, rawSnapshot);
+  const [snapshot, bookingPlan] = await Promise.all([
+    enrichChamberSnapshotWithPatientProfiles(context, rawSnapshot),
+    getChamberBookingPlans(context, rawSnapshot.date),
+  ]);
   const canEditPatient = canPerform(context, "patient.update", "Physio");
   const canAssignTherapist = canPerform(context, "chamber.run", "Physio");
   const therapists = staffDirectory
@@ -80,7 +85,7 @@ export default async function ChamberPage() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Physio operations</p>
             <h1 className="mt-1 text-2xl font-bold">Live chamber</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">Beds, traction, patient timing, therapist assignment, machine locks and allocation safety.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-300">Beds, traction, patient timing, therapist assignment, machine reservations, live locks and allocation safety.</p>
           </div>
           <StatusBadge tone={conflictCount ? "warning" : "success"} className="border-white/10">
             {conflictCount ? `${conflictCount} warnings` : "Live healthy"}
@@ -93,6 +98,8 @@ export default async function ChamberPage() {
           <div className={`rounded-lg p-2 ${conflictCount ? "bg-red-400/10" : "bg-emerald-400/10"}`}><p className={`text-[10px] ${conflictCount ? "text-red-200" : "text-emerald-200"}`}>Conflicts</p><p className={`mt-1 text-lg font-bold ${conflictCount ? "text-red-100" : "text-emerald-100"}`}>{conflictCount}</p></div>
         </div>
       </section>
+
+      <ChamberReservationPanel plans={bookingPlan.plans} reservations={bookingPlan.reservations} />
 
       <ChamberPatientEditPanel
         initialItems={uniqueCorrectionItems}

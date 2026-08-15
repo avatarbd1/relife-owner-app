@@ -16,6 +16,11 @@ export interface SheetCellUpdate {
   value: SheetCellValue;
 }
 
+export interface SheetRowAppend {
+  sheet: string;
+  row: SheetCellValue[];
+}
+
 function cellValue(value: SheetCellValue): Record<string, unknown> {
   if (typeof value === "boolean") {
     return { userEnteredValue: { boolValue: value } };
@@ -100,6 +105,20 @@ export async function appendEntityWithAudit(
     appendRowRequest(requireSheetId(ids, entitySheet), entityRow),
     appendRowRequest(requireSheetId(ids, "20_Data_Audit"), auditRow),
   ]);
+}
+
+export async function appendRowsWithAudit(
+  workbook: Workbook,
+  appends: SheetRowAppend[],
+  auditRow: SheetCellValue[]
+): Promise<void> {
+  if (appends.length === 0) throw new Error("SCHEMA_MISMATCH");
+  const ids = await sheetIdMap(workbook);
+  const requests: SpreadsheetBatchRequest[] = appends.map((item) =>
+    appendRowRequest(requireSheetId(ids, item.sheet), item.row)
+  );
+  requests.push(appendRowRequest(requireSheetId(ids, "20_Data_Audit"), auditRow));
+  await batchUpdateSpreadsheet(workbook, requests);
 }
 
 export async function appendEntityWithCellUpdatesAndAudit(

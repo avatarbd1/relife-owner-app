@@ -2,6 +2,8 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import AppointmentForm from "@/components/AppointmentForm";
 import type { Scope } from "@/lib/types";
+import { canPerform } from "@/lib/webos/access";
+import { getBookingModalityOptions } from "@/lib/webos/appointmentScheduling";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import {
   getClinicianOptions,
@@ -30,9 +32,12 @@ export default async function NewAppointmentPage({
   const scope = readScope(cookieStore.get("relife_scope")?.value);
   const { patientId, department: departmentParam } = await searchParams;
   const defaultDepartment = department(departmentParam);
-  const [visiblePatients, clinicians] = await Promise.all([
+  const [visiblePatients, clinicians, modalityOptions] = await Promise.all([
     getVisiblePatients(context, scope),
     getClinicianOptions(context),
+    canPerform(context, "appointment.create", "Physio")
+      ? getBookingModalityOptions(context)
+      : Promise.resolve([]),
   ]);
 
   let patients = visiblePatients;
@@ -47,7 +52,7 @@ export default async function NewAppointmentPage({
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">Appointments</p>
           <h1 className="mt-0.5 text-xl font-bold text-slate-950">New appointment</h1>
-          <p className="mt-1 text-xs text-slate-500">Select patient, time and assigned clinician</p>
+          <p className="mt-1 text-xs text-slate-500">Patient → clinician → modalities → safe bed & machine slot</p>
         </div>
         <Link href="/appointments" className="relife-interactive rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600">
           Back
@@ -58,6 +63,7 @@ export default async function NewAppointmentPage({
         <AppointmentForm
           patients={patients}
           clinicians={clinicians}
+          modalityOptions={modalityOptions}
           defaultPatientId={patientId}
           defaultDate={todayDhaka()}
           defaultDepartment={defaultDepartment}
