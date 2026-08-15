@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
+import {
+  SESSION_COOKIE,
+  SESSION_MAX_AGE,
+  createSessionToken,
+} from "@/lib/auth";
+import { STAFF_ENROLL_COOKIE } from "@/lib/staffEnrollment";
 import { getCurrentStaffIdentity } from "@/lib/webos/currentUser";
+import { getEnrollmentIdentity } from "@/lib/webos/enrollmentIdentity";
 import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import {
   finishPasskeyRegistration,
@@ -18,12 +25,25 @@ function clearChallenge(response: NextResponse) {
   });
 }
 
+function clearEnrollment(response: NextResponse) {
+  response.cookies.set(STAFF_ENROLL_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/api/auth/webauthn",
+    maxAge: 0,
+  });
+}
+
 export async function POST(request: NextRequest) {
   if (!isAllowedWebAuthnRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const identity = await getCurrentStaffIdentity();
+    const enrollment = await getEnrollmentIdentity(
+      request.cookies.get(STAFF_ENROLL_COOKIE)?.value
+    );
+    const identity = enrollment?.identity || (await getCurrentStaffIdentity());
     if (!identity) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -50,11 +70,24 @@ export async function POST(request: NextRequest) {
     );
     const response = NextResponse.json({ ok: true, passkey });
     clearChallenge(response);
+
+    if (enrollment) {
+      response.cookies.set(SESSION_COOKIE, createSessionToken(identity.staffId), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: SESSION_MAX_AGE,
+      });
+      clearEnrollment(response);
+    }
+
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "WEBAUTHN_REGISTRATION_FAILED";
     console.error("WebAuthn registration verify failed", message);
-    const response = NextResponse.json({ ok: false, error: message }, { status: 400 });
+    const status = message.startsWith("STAFF_ENROLLMENT") ? 401 : 400;
+    const response = NextResponse.json({ ok: false, error: message }, { status });
     clearChallenge(response);
     return response;
   }
