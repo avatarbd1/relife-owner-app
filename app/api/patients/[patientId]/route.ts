@@ -1,55 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { withMutationLock } from "@/lib/webos/mutationLock";
-import { createAppointment } from "@/lib/webos/reception";
+import { updatePatientProfile } from "@/lib/webos/patientUpdate";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
-  const message = error instanceof Error ? error.message : "APPOINTMENT_CREATE_FAILED";
+  const message = error instanceof Error ? error.message : "PATIENT_UPDATE_FAILED";
   if (message === "ACCESS_DENIED") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
   if (message === "PATIENT_NOT_FOUND") {
     return NextResponse.json({ ok: false, error: message }, { status: 404 });
   }
-  if (message === "APPOINTMENT_DUPLICATE") {
+  if (message === "DUPLICATE_PHONE") {
     return NextResponse.json({ ok: false, error: message }, { status: 409 });
   }
-  if (message.startsWith("APPOINTMENT_CAPACITY:")) {
-    return NextResponse.json(
-      { ok: false, error: "APPOINTMENT_CAPACITY", detail: message.split(":").slice(1).join(":") },
-      { status: 409 }
-    );
-  }
-  if (["INVALID_DATE", "INVALID_TIME", "INVALID_THERAPIST"].includes(message)) {
+  if (["INVALID_PATIENT_NAME", "NO_CHANGES"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
   if (message === "SCHEMA_MISMATCH") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
-  console.error("Appointment creation failed:", message);
+  console.error("Patient update failed", error);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
-export async function POST(request: NextRequest) {
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ patientId: string }> }
+) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
+
   try {
     const context = await requireCurrentAccessContext();
+    const { patientId } = await params;
+    const decodedPatientId = decodeURIComponent(patientId);
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
-    const lockKey = `appointment-create:${String(body.date || "")}:${String(body.time || "")}`;
-    const result = await withMutationLock(lockKey, () =>
-      createAppointment(context, {
-        patientId: body.patientId,
-        date: body.date,
-        time: body.time,
+    const result = await withMutationLock(`patient-update:${decodedPatientId}`, () =>
+      updatePatientProfile(context, decodedPatientId, {
+        fullName: body.fullName,
+        phone: body.phone,
+        age: body.age,
+        gender: body.gender,
+        address: body.address,
+        diagnosis: body.diagnosis,
         therapist: body.therapist,
-        remarks: body.remarks,
+        status: body.status,
       })
     );
     return NextResponse.json({ ok: true, ...result });

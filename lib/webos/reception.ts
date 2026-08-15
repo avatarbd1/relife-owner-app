@@ -2,17 +2,17 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import {
-  appendSheetValues,
   fetchSheetRanges,
   type Workbook,
 } from "@/lib/data/googleSheets";
 import { getPatients, type PatientRecord } from "@/lib/patients";
-import type { Department, Scope } from "@/lib/types";
+import type { Scope } from "@/lib/types";
 import {
   assertCanPerform,
   canPerform,
   type AccessContext,
 } from "@/lib/webos/access";
+import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 type ClinicDepartment = "Physio" | "Dental";
@@ -188,50 +188,42 @@ function generateWebId(prefix: "PT" | "DT" | "AP", existing: Set<string>): strin
   throw new Error("ID_ALLOCATION_FAILED");
 }
 
-async function appendAudit(
-  workbook: Workbook,
+function auditRow(
   context: AccessContext,
   action: string,
   entityType: string,
   entityId: string,
   patientId: string,
   department: ClinicDepartment,
-  afterValue: string
-): Promise<void> {
-  const now = dhakaParts();
-  try {
-    await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [
-      [
-        `AUD-${randomUUID()}`,
-        now.timestamp,
-        context.staffId,
-        action,
-        entityType,
-        entityId,
-        patientId,
-        "",
-        afterValue,
-        "Web OS W2 reception action",
-        "RELIFE",
-        clinicId(department),
-        "AMTALI-01",
-        `${clinicId(department)}:${entityId}`,
-        "",
-        context.staffId,
-        "web_pwa",
-        "human_entry",
-        false,
-        true,
-        "relife-uda-v1",
-        now.provenance,
-        department,
-      ],
-    ]);
-  } catch (error) {
-    // Entity creation must not be duplicated because a secondary audit append
-    // failed. The production log still records the audit failure for repair.
-    console.error("W2 audit append failed:", error);
-  }
+  afterValue: string,
+  now: ReturnType<typeof dhakaParts>
+): SheetValue[] {
+  const clinic = clinicId(department);
+  return [
+    `AUD-${randomUUID()}`,
+    now.timestamp,
+    context.staffId,
+    action,
+    entityType,
+    entityId,
+    patientId,
+    "",
+    afterValue,
+    "Web OS W2 reception action",
+    "RELIFE",
+    clinic,
+    "AMTALI-01",
+    `${clinic}:${entityId}`,
+    "",
+    context.staffId,
+    "web_pwa",
+    "human_entry",
+    false,
+    true,
+    "relife-uda-v1",
+    now.provenance,
+    department,
+  ];
 }
 
 function scopeAllows(scope: Scope, department: ClinicDepartment): boolean {
@@ -348,18 +340,20 @@ export async function registerPatient(
     Provenance_Timestamp: now.provenance,
   };
 
-  await appendSheetValues(workbook, "'02_Patients'!A:BN", [
-    rowForHeaders(headers, values),
-  ]);
-  await appendAudit(
+  await appendEntityWithAudit(
     workbook,
-    context,
-    "patient.create",
-    "Patient",
-    patientId,
-    patientId,
-    department,
-    JSON.stringify({ patientId, fullName, department })
+    "02_Patients",
+    rowForHeaders(headers, values),
+    auditRow(
+      context,
+      "patient.create",
+      "Patient",
+      patientId,
+      patientId,
+      department,
+      JSON.stringify({ patientId, fullName, department }),
+      now
+    )
   );
   return { patientId };
 }
@@ -675,18 +669,20 @@ export async function createAppointment(
     Received_By: context.staffId,
   };
 
-  await appendSheetValues(workbook, "'04_Appointments'!A:AL", [
-    rowForHeaders(headers, values),
-  ]);
-  await appendAudit(
+  await appendEntityWithAudit(
     workbook,
-    context,
-    "appointment.create",
-    "Appointment",
-    appointmentId,
-    patient.patientId,
-    department,
-    JSON.stringify({ appointmentId, patientId: patient.patientId, date, time, therapist })
+    "04_Appointments",
+    rowForHeaders(headers, values),
+    auditRow(
+      context,
+      "appointment.create",
+      "Appointment",
+      appointmentId,
+      patient.patientId,
+      department,
+      JSON.stringify({ appointmentId, patientId: patient.patientId, date, time, therapist }),
+      now
+    )
   );
   return { appointmentId };
 }

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { appendSheetValues, fetchSheetRanges } from "@/lib/data/googleSheets";
+import { fetchSheetRanges } from "@/lib/data/googleSheets";
 import type { PatientRecord } from "@/lib/patients";
 import {
   assertCanPerform,
@@ -15,6 +15,7 @@ import {
   getPatientForContext,
   todayDhaka,
 } from "@/lib/webos/reception";
+import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 
 type SheetValue = string | number | boolean;
 
@@ -177,42 +178,38 @@ function parseTreatments(rows: string[][], patientId: string): DentalTreatmentRe
     .reverse();
 }
 
-async function appendAudit(
+function auditRow(
   context: AccessContext,
   treatmentId: string,
   patientId: string,
-  summary: string
-): Promise<void> {
-  const now = dhakaNow();
-  try {
-    await appendSheetValues("dental", "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      context.staffId,
-      "clinical.dental_note.create",
-      "Treatment",
-      treatmentId,
-      patientId,
-      "",
-      summary,
-      "Telegram → Web Dental clinical parity",
-      "RELIFE",
-      "RELIFE-DENTAL",
-      "AMTALI-01",
-      `RELIFE-DENTAL:${treatmentId}`,
-      "",
-      context.staffId,
-      "web_pwa",
-      "human_entry",
-      false,
-      true,
-      "relife-uda-v1",
-      now.provenance,
-      "Dental",
-    ]]);
-  } catch (error) {
-    console.error("Dental clinical audit append failed", error);
-  }
+  summary: string,
+  now: ReturnType<typeof dhakaNow>
+): SheetValue[] {
+  return [
+    `AUD-${randomUUID()}`,
+    now.timestamp,
+    context.staffId,
+    "clinical.dental_note.create",
+    "Treatment",
+    treatmentId,
+    patientId,
+    "",
+    summary,
+    "Telegram → Web Dental clinical parity",
+    "RELIFE",
+    "RELIFE-DENTAL",
+    "AMTALI-01",
+    `RELIFE-DENTAL:${treatmentId}`,
+    "",
+    context.staffId,
+    "web_pwa",
+    "human_entry",
+    false,
+    true,
+    "relife-uda-v1",
+    now.provenance,
+    "Dental",
+  ];
 }
 
 export async function getDentalClinicalWorkspace(
@@ -310,14 +307,12 @@ export async function addDentalTreatmentNote(
     Provenance_Timestamp: now.provenance,
   };
 
-  await appendSheetValues("dental", "'05_Treatments'!A:BN", [
+  const summary = JSON.stringify({ procedure, toothArea, clinicalNote, status });
+  await appendEntityWithAudit(
+    "dental",
+    "05_Treatments",
     rowForHeaders(headers, values),
-  ]);
-  await appendAudit(
-    context,
-    treatmentId,
-    patient.patientId,
-    JSON.stringify({ procedure, toothArea, clinicalNote, status })
+    auditRow(context, treatmentId, patient.patientId, summary, now)
   );
   return { treatmentId };
 }

@@ -10,14 +10,17 @@ export interface SessionClaims {
   staffId: string;
 }
 
+function isProduction(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
 function getSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) {
-    // Fallback so local `npm run dev` still works out of the box.
-    // Set SESSION_SECRET in your real deployment env.
-    return "relife-dev-secret-change-me";
+  const secret = process.env.SESSION_SECRET?.trim();
+  if (secret) return secret;
+  if (isProduction()) {
+    throw new Error("SESSION_SECRET_NOT_CONFIGURED");
   }
-  return secret;
+  return "relife-dev-secret-change-me";
 }
 
 function sign(value: string): string {
@@ -25,7 +28,12 @@ function sign(value: string): string {
 }
 
 function signaturesMatch(payload: string, signature: string): boolean {
-  const expected = sign(payload);
+  let expected: string;
+  try {
+    expected = sign(payload);
+  } catch {
+    return false;
+  }
   return (
     expected.length === signature.length &&
     crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
@@ -108,7 +116,11 @@ export function getSessionStaffId(
 }
 
 export function checkOwnerPin(pin: string): boolean {
-  const expected = process.env.OWNER_PIN || "1234";
+  const expected = process.env.OWNER_PIN?.trim();
+  if (!expected) {
+    if (isProduction()) return false;
+    return pin === "1234";
+  }
   if (pin.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(pin), Buffer.from(expected));
 }

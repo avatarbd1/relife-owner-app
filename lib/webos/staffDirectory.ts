@@ -157,10 +157,16 @@ function parseDepartmentAccess(rows: string[][]): DepartmentAccessRow[] {
 async function readDepartmentAccessRows(): Promise<string[][]> {
   try {
     const snapshot = await fetchSheetRanges("physio", ["Staff_Department_Access"]);
-    return snapshot["Staff_Department_Access"] || [];
+    const rows = snapshot["Staff_Department_Access"] || [];
+    if (process.env.NODE_ENV === "production" && rows.length < 2) {
+      throw new Error("STAFF_ACCESS_MAPPING_UNAVAILABLE");
+    }
+    return rows;
   } catch (error) {
-    // Transitional fallback only. Once all environments have the mapping tab,
-    // missing mapping must become a hard failure before staff web login is enabled.
+    if (process.env.NODE_ENV === "production") {
+      console.error("Staff_Department_Access unavailable; denying staff access", error);
+      throw new Error("STAFF_ACCESS_MAPPING_UNAVAILABLE");
+    }
     console.warn("Staff_Department_Access unavailable; using 08_Staff fallback", error);
     return [];
   }
@@ -189,6 +195,8 @@ export async function getWebStaffDirectory(): Promise<WebStaffIdentity[]> {
     }
   }
 
+  const allowLegacyDepartmentFallback = process.env.NODE_ENV !== "production";
+
   return staff.map((item) => {
     const mappedDepartments = departmentsByStaff.get(item.staffId);
     const mappedRoles = rolesByStaff.get(item.staffId) || [];
@@ -204,7 +212,9 @@ export async function getWebStaffDirectory(): Promise<WebStaffIdentity[]> {
       departmentAccess:
         mappedDepartments && mappedDepartments.length > 0
           ? mappedDepartments
-          : item.fallbackDepartmentAccess,
+          : allowLegacyDepartmentFallback
+            ? item.fallbackDepartmentAccess
+            : [],
       clinicalWriteScope: item.clinicalWriteScope,
       financialAccess: item.financialAccess,
     };

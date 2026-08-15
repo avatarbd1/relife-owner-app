@@ -26,6 +26,12 @@ export interface WebOsModule {
   parityGate: string;
 }
 
+/**
+ * Runtime status, not a historical rollout checklist. Keep this list aligned
+ * with routes that are actually wired and protected in the current Web/PWA.
+ * "partial" means the module exists but a broader Telegram/admin parity gate
+ * is intentionally still open.
+ */
 export const WEB_OS_MODULES: readonly WebOsModule[] = [
   {
     id: "owner-dashboard",
@@ -39,31 +45,31 @@ export const WEB_OS_MODULES: readonly WebOsModule[] = [
     id: "staff-auth",
     label: "Staff authentication",
     phase: "W1",
-    state: "foundation",
-    source: "Telegram staff identity + 08_Staff",
-    parityGate: "Every active staff role can authenticate with mapped identity",
+    state: "live",
+    source: "WebAuthn/passkey + live 08_Staff identity",
+    parityGate: "Active staff authenticate with live mapped identity",
   },
   {
     id: "authorization",
     label: "Role + department authorization",
     phase: "W1",
-    state: "foundation",
-    source: "roles.py + department-access-final-spec",
-    parityGate: "All server reads/writes fail closed by role and department",
+    state: "live",
+    source: "Web role actions + Staff_Department_Access",
+    parityGate: "Server reads/writes fail closed by role and department",
   },
   {
     id: "patients",
     label: "Patient registration and files",
     phase: "W2",
-    state: "partial",
-    source: "Patient registration/search/history",
+    state: "live",
+    source: "Patient registration/search/update/history",
     parityGate: "Duplicate-safe create/update and scoped direct-ID lookup",
   },
   {
     id: "appointments",
     label: "Appointments and today schedule",
     phase: "W2",
-    state: "partial",
+    state: "live",
     source: "Appointment/today schedule workflows",
     parityGate: "Collision-safe create/update and department-scoped schedule",
   },
@@ -101,50 +107,50 @@ export const WEB_OS_MODULES: readonly WebOsModule[] = [
   },
   {
     id: "attendance",
-    label: "Attendance and location",
+    label: "Attendance",
     phase: "W4",
-    state: "not_migrated",
-    source: "Attendance/location bot workflow",
-    parityGate: "Location check, duplicate guards and break state verified",
+    state: "live",
+    source: "Web attendance state workflow",
+    parityGate: "Duplicate guards, break state, checkout and audit verified",
   },
   {
     id: "daily-register",
     label: "Daily register",
     phase: "W4",
-    state: "partial",
+    state: "live",
     source: "Daily register and operational reports",
-    parityGate: "Role-scoped operational parity",
+    parityGate: "Role-scoped operational parity with amount visibility separated",
   },
   {
     id: "physio-clinical",
     label: "Physio clinical",
     phase: "W5",
-    state: "not_migrated",
+    state: "live",
     source: "Assessment/plan/treatment/history",
-    parityGate: "Append-only notes plus assignment/cross-cover authorization",
+    parityGate: "Clinical writes plus assignment/cross-cover authorization and audit",
   },
   {
     id: "dental-clinical",
     label: "Dental clinical",
     phase: "W6",
-    state: "not_migrated",
+    state: "live",
     source: "Dental clinical records",
-    parityGate: "Dentist workflow plus approved Dental Assistant allowlist",
+    parityGate: "Dentist workflow plus explicit temporary Dental-entry policy",
   },
   {
     id: "clinical-ai",
     label: "Clinical AI and case study",
     phase: "W7",
-    state: "not_migrated",
-    source: "clinical_ai.py + case_study_ai.py",
+    state: "partial",
+    source: "Web clinical AI + case study",
     parityGate: "Minimum-necessary scoped data and external-AI privacy checks",
   },
   {
     id: "inventory",
     label: "Inventory",
     phase: "W8",
-    state: "not_migrated",
-    source: "Inventory workflows",
+    state: "live",
+    source: "Inventory + inventory audit workflows",
     parityGate: "Stock mutations and audit history verified",
   },
   {
