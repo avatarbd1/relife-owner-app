@@ -82,8 +82,11 @@ export default function CashAcceptanceClient({ movements }: { movements: Movemen
       {movements.map((item) => {
         const actual = Number(received[item.movementId] ?? item.requestedAmount);
         const difference = Number.isFinite(actual) ? actual - item.requestedAmount : 0;
+        const variance = item.requestedAmount > 0 ? Math.abs(difference) / item.requestedAmount : 0;
+        const major = variance > 0.05;
+        const matches = Math.abs(difference) <= 0.009;
         return (
-          <section key={`${item.department}-${item.movementId}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section key={`${item.department}-${item.movementId}`} className={`rounded-xl border bg-white p-4 shadow-sm ${major ? "border-red-300" : matches ? "border-emerald-200" : "border-amber-200"}`}>
             <div className="flex items-start justify-between gap-3">
               <div><p className="text-sm font-semibold text-slate-900">{item.fromCustodian} → {item.toCustodian}</p><p className="mt-0.5 text-[11px] text-slate-500">{item.movementId} · {item.department} · {item.date}</p></div>
               <div className="text-right"><p className="text-base font-bold tabular-nums text-slate-900">{bdt(item.requestedAmount)}</p><div className="mt-1"><StatusBadge tone="warning">Pending</StatusBadge></div></div>
@@ -93,13 +96,17 @@ export default function CashAcceptanceClient({ movements }: { movements: Movemen
 
             <div className="mt-3">
               <label className="mb-1.5 block text-xs font-semibold text-slate-700">Actual received amount</label>
-              <input type="number" min="0" step="1" value={received[item.movementId] ?? String(item.requestedAmount)} onChange={(event) => setReceived((current) => ({ ...current, [item.movementId]: event.target.value }))} className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-100" />
-              {Math.abs(difference) > 0.009 ? <div className="mt-2"><InlineNotice tone="warning">Difference: {difference > 0 ? "+" : ""}{bdt(difference)}. Accepted amount will drive the cash effect.</InlineNotice></div> : <p className="mt-1 text-[10px] text-slate-400">Matches requested amount.</p>}
+              <input type="number" min="0" step="1" value={received[item.movementId] ?? String(item.requestedAmount)} onChange={(event) => setReceived((current) => ({ ...current, [item.movementId]: event.target.value }))} className={`min-h-11 w-full rounded-lg border bg-white px-3 text-sm text-slate-900 outline-none focus:ring-2 ${major ? "border-red-400 focus:border-red-600 focus:ring-red-100" : matches ? "border-emerald-300 focus:border-emerald-600 focus:ring-emerald-100" : "border-amber-300 focus:border-amber-600 focus:ring-amber-100"}`} />
+              {matches ? (
+                <div className="mt-2"><InlineNotice tone="success">Matches ✓ · actual amount equals the requested amount.</InlineNotice></div>
+              ) : (
+                <div className="mt-2"><InlineNotice tone={major ? "error" : "warning"}>{difference < 0 ? "Shortfall" : "Excess"}: {bdt(Math.abs(difference))} · {(variance * 100).toFixed(1)}% variance. Accepted amount will drive the cash effect.</InlineNotice></div>
+              )}
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" disabled={!isOnline || busy !== null} onClick={() => decide(item, "Rejected")} className="min-h-11 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>
-              <button type="button" disabled={!isOnline || busy !== null} onClick={() => decide(item, "Accepted")} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:shadow-none">{busy === item.movementId && <Spinner size="sm" className="border-white/30 border-t-white" label="Accepting handover" />}{busy === item.movementId ? "Saving…" : "Accept received"}</button>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button type="button" disabled={!isOnline || busy !== null} onClick={() => decide(item, "Rejected")} className="min-h-11 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50">Reject discrepancy</button>
+              <button type="button" disabled={!isOnline || busy !== null} onClick={() => decide(item, "Accepted")} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:shadow-none">{busy === item.movementId && <Spinner size="sm" className="border-white/30 border-t-white" label="Accepting handover" />}{busy === item.movementId ? "Saving…" : matches ? "Accept matched amount" : "Accept with discrepancy"}</button>
             </div>
           </section>
         );
