@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { updatePatientProfile } from "@/lib/webos/patientUpdate";
+import { syncActiveChamberPatientProfile } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -54,7 +55,19 @@ export async function PATCH(
         status: body.status,
       })
     );
-    return NextResponse.json({ ok: true, ...result });
+
+    let chamberSynced = true;
+    try {
+      chamberSynced = await syncActiveChamberPatientProfile(context.staffId, decodedPatientId, {
+        fullName: body.fullName,
+        gender: body.gender,
+      });
+    } catch (error) {
+      chamberSynced = false;
+      console.error("Patient updated but active chamber profile sync failed", error);
+    }
+
+    return NextResponse.json({ ok: true, ...result, chamberSynced });
   } catch (error) {
     return errorResponse(error);
   }
