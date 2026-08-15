@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       identity.staffId,
       identity.fullName
     );
-    const response = NextResponse.json({ {"ok":true} });
+    const response = NextResponse.json({ ok: true, options });
     response.cookies.set(WEBAUTHN_CHALLENGE_COOKIE, stateToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -37,7 +37,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "WEBAUTHN_REGISTRATION_START_FAILED";
     console.error("WebAuthn registration start failed", message);
-    const status = message.startsWith("STAFF_ENROLLMENT") ? 401 : message.startsWith("WEBAUTHN_SCHEMA") ? 503 : 400;
+    const status = message.startsWith("STAFF_ENROLLMENT")
+      ? 401
+      : message.startsWith("WEBAUTHN_SCHEMA")
+        ? 503
+        : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
