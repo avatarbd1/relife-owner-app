@@ -1,11 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import {
-  appendSheetValues,
-  fetchSheetRanges,
-  updateSheetValues,
-} from "@/lib/data/googleSheets";
+import { fetchSheetRanges } from "@/lib/data/googleSheets";
 import type { PatientRecord } from "@/lib/patients";
 import { assertCanPerform, canPerform, type AccessConditions, type AccessContext } from "@/lib/webos/access";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
@@ -14,6 +10,11 @@ import {
   getPatientForContext,
   todayDhaka,
 } from "@/lib/webos/reception";
+import {
+  appendEntityWithAudit,
+  appendEntityWithCellUpdatesAndAudit,
+  type SheetCellUpdate,
+} from "@/lib/webos/sheetTransaction";
 
 type SheetValue = string | number | boolean;
 
@@ -88,17 +89,6 @@ function rowForHeaders(headers: string[], values: Record<string, SheetValue>): S
   return headers.map((header) => map.get(normalized(header)) ?? "");
 }
 
-function columnLetter(index: number): string {
-  let n = index + 1;
-  let result = "";
-  while (n > 0) {
-    n -= 1;
-    result = String.fromCharCode(65 + (n % 26)) + result;
-    n = Math.floor(n / 26);
-  }
-  return result;
-}
-
 function dhakaNow(ref = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Dhaka",
@@ -118,44 +108,40 @@ function webId(prefix: "AS" | "PL" | "TR"): string {
   return `${prefix}W${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
 }
 
-async function appendAudit(
+function auditRow(
   context: AccessContext,
   action: string,
   entityType: string,
   entityId: string,
   patientId: string,
-  afterValue: string
-) {
-  const now = dhakaNow();
-  try {
-    await appendSheetValues("physio", "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      context.staffId,
-      action,
-      entityType,
-      entityId,
-      patientId,
-      "",
-      afterValue,
-      "Web OS W5 clinical action",
-      "RELIFE",
-      "RELIFE-PHYSIO",
-      "AMTALI-01",
-      `RELIFE-PHYSIO:${entityId}`,
-      "",
-      context.staffId,
-      "web_pwa",
-      "human_entry",
-      false,
-      true,
-      "relife-uda-v1",
-      now.provenance,
-      "Physio",
-    ]]);
-  } catch (error) {
-    console.error("Clinical audit append failed", error);
-  }
+  afterValue: string,
+  now: ReturnType<typeof dhakaNow>
+): SheetValue[] {
+  return [
+    `AUD-${randomUUID()}`,
+    now.timestamp,
+    context.staffId,
+    action,
+    entityType,
+    entityId,
+    patientId,
+    "",
+    afterValue,
+    "Web OS W5 clinical action",
+    "RELIFE",
+    "RELIFE-PHYSIO",
+    "AMTALI-01",
+    `RELIFE-PHYSIO:${entityId}`,
+    "",
+    context.staffId,
+    "web_pwa",
+    "human_entry",
+    false,
+    true,
+    "relife-uda-v1",
+    now.provenance,
+    "Physio",
+  ];
 }
 
 function nameMatches(value: string, staffId: string, fullName: string): boolean {
@@ -309,7 +295,7 @@ export async function addQuickAssessment(
   const headers = rows[0];
   const now = dhakaNow();
   const assessmentId = webId("AS");
-  await appendSheetValues("physio", "'10_Assessments'!A:AZ", [rowForHeaders(headers, {
+  const assessmentRow = rowForHeaders(headers, {
     Assessment_ID: assessmentId,
     Patient_ID: patient.patientId,
     Category: category,
@@ -329,8 +315,13 @@ export async function addQuickAssessment(
     Schema_Version: "relife-uda-v1",
     Provenance_Timestamp: now.provenance,
     Department: "Physio",
-  })]);
-  await appendAudit(context, "clinical.assessment.create", "Assessment", assessmentId, patient.patientId, findings);
+  });
+  await appendEntityWithAudit(
+    "physio",
+    "10_Assessments",
+    assessmentRow,
+    auditRow(context, "clinical.assessment.create", "Assessment", assessmentId, patient.patientId, findings, now)
+  );
   return { assessmentId };
 }
 
@@ -355,7 +346,7 @@ export async function createTreatmentPlan(
   const headers = rows[0];
   const now = dhakaNow();
   const planId = webId("PL");
-  await appendSheetValues("physio", "'12_Treatment_Plans'!A:AZ", [rowForHeaders(headers, {
+  const planRow = rowForHeaders(headers, {
     Plan_ID: planId,
     Patient_ID: patient.patientId,
     Patient_Name: patient.fullName,
@@ -381,28 +372,42 @@ export async function createTreatmentPlan(
     Schema_Version: "relife-uda-v1",
     Provenance_Timestamp: now.provenance,
     Department: "Physio",
-  })]);
+  });
 
   const patientIdx = headerIndex(headers, "Patient_ID");
   const statusIdx = headerIndex(headers, "Status");
-  const idIdx = headerIndex(headers, "Plan_ID");
-  if (patientIdx >= 0 && statusIdx >= 0 && idIdx >= 0) {
-    const statusCol = columnLetter(statusIdx);
+  const updates: SheetCellUpdate[] = [];
+  if (patientIdx >= 0 && statusIdx >= 0) {
     for (let i = 1; i < rows.length; i += 1) {
       if (
         at(rows[i], patientIdx) === patient.patientId &&
-        at(rows[i], statusIdx).toLowerCase() === "active" &&
-        at(rows[i], idIdx) !== planId
+        at(rows[i], statusIdx).toLowerCase() === "active"
       ) {
-        try {
-          await updateSheetValues("physio", `'12_Treatment_Plans'!${statusCol}${i + 1}`, [["Superseded"]]);
-        } catch (error) {
-          console.error("Unable to supersede older treatment plan", error);
-        }
+        updates.push({
+          sheet: "12_Treatment_Plans",
+          rowNumber: i + 1,
+          columnNumber: statusIdx + 1,
+          value: "Superseded",
+        });
       }
     }
   }
-  await appendAudit(context, "clinical.plan.create", "TreatmentPlan", planId, patient.patientId, `Total sessions: ${totalSessions}`);
+
+  await appendEntityWithCellUpdatesAndAudit(
+    "physio",
+    "12_Treatment_Plans",
+    planRow,
+    updates,
+    auditRow(
+      context,
+      "clinical.plan.create",
+      "TreatmentPlan",
+      planId,
+      patient.patientId,
+      `Total sessions: ${totalSessions}`,
+      now
+    )
+  );
   return { planId };
 }
 
@@ -438,7 +443,7 @@ export async function recordTreatmentSession(
     activePlan.electrotherapyPlan && `Electrotherapy: ${activePlan.electrotherapyPlan}`,
     activePlan.manualTherapyPlan && `Manual: ${activePlan.manualTherapyPlan}`,
   ].filter(Boolean).join("; ");
-  await appendSheetValues("physio", "'05_Treatments'!A:AZ", [rowForHeaders(headers, {
+  const treatmentRow = rowForHeaders(headers, {
     Treatment_ID: treatmentId,
     Date: now.date,
     Patient_ID: patient.patientId,
@@ -470,23 +475,36 @@ export async function recordTreatmentSession(
     Pain_After: normalize(input.painAfter),
     Response: normalize(input.response),
     Modification: normalize(input.modification),
-  })]);
+  });
 
   const planHeaders = planRows[0];
   const planIdIdx = headerIndex(planHeaders, "Plan_ID");
   const sessionsDoneIdx = headerIndex(planHeaders, "Sessions_Done");
   const planRowOffset = planRows.slice(1).findIndex((row) => at(row, planIdIdx) === activePlan.planId);
+  const updates: SheetCellUpdate[] = [];
   if (planRowOffset >= 0 && sessionsDoneIdx >= 0) {
-    try {
-      await updateSheetValues(
-        "physio",
-        `'12_Treatment_Plans'!${columnLetter(sessionsDoneIdx)}${planRowOffset + 2}`,
-        [[sessionNo]]
-      );
-    } catch (error) {
-      console.error("Treatment session saved but Sessions_Done sync failed", error);
-    }
+    updates.push({
+      sheet: "12_Treatment_Plans",
+      rowNumber: planRowOffset + 2,
+      columnNumber: sessionsDoneIdx + 1,
+      value: sessionNo,
+    });
   }
-  await appendAudit(context, "clinical.session.create", "Treatment", treatmentId, patient.patientId, `Session ${sessionNo}; plan ${activePlan.planId}`);
+
+  await appendEntityWithCellUpdatesAndAudit(
+    "physio",
+    "05_Treatments",
+    treatmentRow,
+    updates,
+    auditRow(
+      context,
+      "clinical.session.create",
+      "Treatment",
+      treatmentId,
+      patient.patientId,
+      `Session ${sessionNo}; plan ${activePlan.planId}`,
+      now
+    )
+  );
   return { treatmentId, sessionNo };
 }
