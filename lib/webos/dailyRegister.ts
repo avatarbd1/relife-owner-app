@@ -120,7 +120,7 @@ async function readDepartment(
   department: ClinicDepartment,
   date: string
 ): Promise<WebDailyRegisterRow[]> {
-  if (!canPerform(context, "report.read_operational", department)) return [];
+  if (!canPerform(context, "register.read", department)) return [];
   const workbook: Workbook = department === "Dental" ? "dental" : "physio";
   const snapshot = await fetchSheetRanges(workbook, ["06_Payments"]);
   return parseRows(snapshot["06_Payments"] || [], department, date);
@@ -135,7 +135,7 @@ export async function getDailyRegisterSnapshot(
   const departments = (["Physio", "Dental"] as ClinicDepartment[]).filter(
     (department) =>
       scopeAllows(scope, department) &&
-      canPerform(context, "report.read_operational", department)
+      canPerform(context, "register.read", department)
   );
 
   const groups = await Promise.all(
