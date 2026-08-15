@@ -2,9 +2,9 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import PatientsClient from "@/components/PatientsClient";
 import { formatBDT } from "@/lib/format";
-import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { resolveAuthorizedScope } from "@/lib/webos/scope";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
 import {
   allowedPatientCreateDepartments,
@@ -18,11 +18,6 @@ import {
   Section,
   ActionRow,
 } from "@/components/WorkspaceUI";
-
-function readScope(value: string | undefined): Scope {
-  if (value === "physio" || value === "dental" || value === "combined") return value;
-  return "combined";
-}
 
 function bdMonthKey(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -53,7 +48,7 @@ export default async function PatientsPage({
   const params = searchParams ? await searchParams : {};
   const scope = context.roles.includes("Owner")
     ? "combined"
-    : readScope(cookieStore.get("relife_scope")?.value);
+    : resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const clinician = context.roles.includes("Therapist") || context.roles.includes("Dentist");
   const todayView = clinician && params.view === "today";
 
