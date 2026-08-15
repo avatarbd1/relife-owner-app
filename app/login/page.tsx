@@ -115,8 +115,8 @@ function LoginForm() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-7 text-center">
-          <h1 className="text-2xl font-semibold text-white">Relife Owner</h1>
-          <p className="mt-1 text-sm text-slate-400">PIN বা device biometric দিয়ে লগইন করুন</p>
+          <h1 className="text-2xl font-semibold text-white">Relife Clinic</h1>
+          <p className="mt-1 text-sm text-slate-400">Staff: Fingerprint / Face ID · Owner: PIN</p>
         </div>
 
         <div className="mb-5 space-y-3">
@@ -127,7 +127,7 @@ function LoginForm() {
           />
           <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.14em] text-slate-500">
             <span className="h-px flex-1 bg-slate-800" />
-            <span>or use PIN</span>
+            <span>Owner PIN</span>
             <span className="h-px flex-1 bg-slate-800" />
           </div>
         </div>
