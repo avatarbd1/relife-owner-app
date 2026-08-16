@@ -16,6 +16,14 @@ import {
   getSalaryPayments,
   getCashMovements,
 } from "@/lib/data";
+import {
+  FIXED_MONTHLY_OVERHEAD,
+  isAcceptedCashMovementStatus,
+  isPaidLedgerStatus,
+  isSalaryCommitmentStaff,
+  isVariableClinicExpense,
+  type FinanceDepartment,
+} from "@/lib/domain/finance/policy";
 
 function inScope<T extends { department: Department }>(
   rows: T[],
@@ -53,48 +61,12 @@ function isSameDay(dateStr: string, ref: Date): boolean {
   return normalizedDate(dateStr) === bdDateKey(ref);
 }
 
-function isPaid(status: string | undefined): boolean {
-  const value = String(status || "").trim().toLowerCase();
-  return value === "" || value === "paid";
-}
-
 function effectivePaidDate(row: { date: string; paidAt?: string }): string {
   return normalizedDate(row.paidAt || row.date);
 }
 
-type ClinicDepartment = "Physio" | "Dental";
-
-// Mirrors the confirmed production-bot finance contract. Matching paid expense
-// rows replace these commitments rather than being added again; if actual paid
-// for a fixed category exceeds its commitment, the higher actual amount wins.
-const FIXED_MONTHLY_OVERHEAD: Record<
-  ClinicDepartment,
-  Record<string, number>
-> = {
-  Physio: {
-    "চেম্বার ভাড়া": 13_000,
-  },
-  Dental: {
-    Receptionist: 6_000,
-    "চেম্বার ভাড়া": 10_000,
-    "ক্লিনার বেতন": 3_000,
-  },
-};
-
-function fixedCategoryCommitment(
-  department: Department,
-  category: string
-): number | undefined {
-  if (department !== "Physio" && department !== "Dental") return undefined;
-  return FIXED_MONTHLY_OVERHEAD[department][String(category || "").trim()];
-}
-
-function isFixedOverheadExpense(expense: Expense): boolean {
-  return fixedCategoryCommitment(expense.department, expense.category) !== undefined;
-}
-
 function fixedOverheadForDepartment(
-  department: ClinicDepartment,
+  department: FinanceDepartment,
   expenses: Expense[],
   now: Date
 ): number {
@@ -108,7 +80,7 @@ function fixedOverheadForDepartment(
           expense.department === department &&
           expense.category.trim() === category &&
           isSameMonth(expense.date, now) &&
-          isPaid(expense.status) &&
+          isPaidLedgerStatus(expense.status) &&
           !expense.isHouseholdWithdrawal &&
           String(expense.expenseType || "Clinic Expense").trim() ===
             "Clinic Expense"
@@ -138,7 +110,6 @@ function normalizeCustodian(value: string | undefined): Custodian | null {
 
 // ---------------------------------------------------------------------
 // Current Cash Position — current month, carried from every cash effect.
-// Mirrors the production bot custody rules:
 // payment -> Reception or Digital/Bank; paid expense/salary -> subtract from
 // Paid_From; accepted transfer -> subtract source and add destination.
 // ---------------------------------------------------------------------
@@ -161,8 +132,7 @@ export async function getCashPosition(
 
   const movements = await getCashMovements();
 
-  // Preserve the old seed-only development behavior. Production does not use
-  // these bucket-delta seed rows once private Sheets credentials are active.
+  // Preserve seed-only development behavior. Production live data is fail-closed.
   if (!IS_LIVE_DATA) {
     for (const movement of movements as unknown as Array<{
       bucket?: string;
@@ -197,7 +167,8 @@ export async function getCashPosition(
   }
 
   for (const expense of expenses) {
-    if (!inCurrentMonthToDate(expense.date) || !isPaid(expense.status)) continue;
+    if (!inCurrentMonthToDate(expense.date) || !isPaidLedgerStatus(expense.status))
+      continue;
     if (expense.department === "All") continue;
     const source = normalizeCustodian(expense.paidFrom || expense.paymentMethod);
     if (source === "Reception") position.reception -= expense.amount;
@@ -206,7 +177,10 @@ export async function getCashPosition(
   }
 
   for (const salary of salaryPayments) {
-    if (!inCurrentMonthToDate(effectivePaidDate(salary)) || !isPaid(salary.status))
+    if (
+      !inCurrentMonthToDate(effectivePaidDate(salary)) ||
+      !isPaidLedgerStatus(salary.status)
+    )
       continue;
     if (salary.department === "All") continue;
     const source = normalizeCustodian(salary.paidFrom);
@@ -218,8 +192,7 @@ export async function getCashPosition(
   for (const movement of movements) {
     if (!inCurrentMonthToDate(movement.date)) continue;
     if (movement.department === "All") continue;
-    if (String(movement.status || "").trim().toLowerCase() !== "accepted")
-      continue;
+    if (!isAcceptedCashMovementStatus(movement.status)) continue;
     const amount = movement.receivedAmount ?? movement.amount;
     const source = normalizeCustodian(movement.fromCustodian);
     const target = normalizeCustodian(movement.toCustodian);
@@ -309,18 +282,11 @@ export async function getMonthBusinessPosition(
     .reduce((sum, p) => sum + p.amount, 0);
 
   const variableClinicExpense = inScope(expenses, scope)
-    .filter(
-      (e) =>
-        isSameMonth(e.date, now) &&
-        isPaid(e.status) &&
-        !e.isHouseholdWithdrawal &&
-        String(e.expenseType || "Clinic Expense").trim() === "Clinic Expense" &&
-        !isFixedOverheadExpense(e)
-    )
+    .filter((e) => isSameMonth(e.date, now) && isVariableClinicExpense(e))
     .reduce((sum, e) => sum + e.amount, 0);
 
   const fixedSalaryCommitment = inScope(staff, scope)
-    .filter((s) => s.status === "Active")
+    .filter(isSalaryCommitmentStaff)
     .reduce((sum, s) => sum + s.salary, 0);
 
   const fixedOverhead = await getFixedOverhead(scope, expenses, now);
@@ -339,7 +305,7 @@ export async function getMonthBusinessPosition(
 
 // ---------------------------------------------------------------------
 // Salary card
-// Fixed commitment: 08_Staff.Salary (single master staff sheet)
+// Fixed commitment: 08_Staff.Salary, excluding Owner.
 // Paid/advance: department-specific 13_Salary rows.
 // ---------------------------------------------------------------------
 export interface SalaryStatus {
@@ -358,12 +324,14 @@ export async function getSalaryStatus(
   ]);
 
   const fixedCommitment = inScope(staff, scope)
-    .filter((s) => s.status === "Active")
+    .filter(isSalaryCommitmentStaff)
     .reduce((sum, s) => sum + s.salary, 0);
 
   const paidOrAdvance = inScope(salaryPayments, scope)
     .filter(
-      (sp) => isSameMonth(effectivePaidDate(sp), now) && isPaid(sp.status)
+      (sp) =>
+        isSameMonth(effectivePaidDate(sp), now) &&
+        isPaidLedgerStatus(sp.status)
     )
     .reduce((sum, sp) => sum + sp.amount, 0);
 
