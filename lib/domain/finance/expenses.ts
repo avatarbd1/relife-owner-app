@@ -2,6 +2,14 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import {
+  RELIFE_SYSTEM,
+  departmentForWorkbook,
+  dhakaClockParts,
+  ledgerClinicId,
+  relifeRecordId,
+  workbookForDepartment,
+} from "@/lib/config/relifeSystem";
+import {
   appendSheetValues,
   batchUpdateSpreadsheet,
   fetchSheetRanges,
@@ -89,40 +97,6 @@ function rowForHeaders(
   return headers.map((header) => mapped.get(normalized(header)) ?? "");
 }
 
-function workbookForDepartment(department: ClinicDepartment): Workbook {
-  return department === "Dental" ? "dental" : "physio";
-}
-
-function departmentForWorkbook(workbook: Workbook): ClinicDepartment {
-  return workbook === "dental" ? "Dental" : "Physio";
-}
-
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
-function dhakaParts(ref = new Date()): {
-  date: string;
-  timestamp: string;
-  provenance: string;
-} {
-  const dateParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(ref);
-  const values = Object.fromEntries(dateParts.map((part) => [part.type, part.value]));
-  const date = `${values.year}-${values.month}-${values.day}`;
-  const time = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Dhaka",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(ref);
-  return { date, timestamp: `${date} ${time}`, provenance: ref.toISOString() };
-}
-
 function validateRequestId(value: string): string {
   const requestId = normalize(value);
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(requestId)) {
@@ -193,8 +167,8 @@ async function appendExpenseAudit(input: {
   afterValue?: string;
   reason?: string;
 }): Promise<void> {
-  const now = dhakaParts();
-  const clinic = clinicId(input.department);
+  const now = dhakaClockParts();
+  const clinic = ledgerClinicId(input.department);
   try {
     await appendSheetValues(input.workbook, "'20_Data_Audit'!A:W", [[
       `AUD-${randomUUID()}`,
@@ -207,23 +181,21 @@ async function appendExpenseAudit(input: {
       input.beforeValue || "",
       input.afterValue || "",
       input.reason || "Finance domain action",
-      "RELIFE",
+      RELIFE_SYSTEM.organizationId,
       clinic,
-      "AMTALI-01",
-      `${clinic}:${input.expenseId}`,
+      RELIFE_SYSTEM.branchId,
+      relifeRecordId(input.department, input.expenseId),
       "",
       input.actorId,
-      "web_pwa",
-      "human_entry",
+      RELIFE_SYSTEM.sourceSystem,
+      RELIFE_SYSTEM.sourceType,
       false,
       true,
-      "relife-uda-v1",
+      RELIFE_SYSTEM.schemaVersion,
       now.provenance,
       input.department,
     ]]);
   } catch (error) {
-    // The ledger write remains authoritative. Audit failure is surfaced in logs
-    // and must be addressed by monitoring/repair without replaying the money action.
     console.error("Finance expense audit append failed:", error);
   }
 }
@@ -273,7 +245,7 @@ export async function requestExpense(
 
   const existingIds = new Set(rows.slice(1).map((row) => at(row, idIdx)).filter(Boolean));
   const expenseId = nextEntityId("EX", existingIds);
-  const now = dhakaParts();
+  const now = dhakaClockParts();
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
   const row = rowForHeaders(headers, {
     Expense_ID: expenseId,
@@ -283,16 +255,16 @@ export async function requestExpense(
     Added_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
-    Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${expenseId}`,
+    Organization_ID: RELIFE_SYSTEM.organizationId,
+    Clinic_ID: ledgerClinicId(department),
+    Branch_ID: RELIFE_SYSTEM.branchId,
+    Record_ID: relifeRecordId(department, expenseId),
     Provider_ID: context.staffId,
-    Source_System: "web_pwa",
-    Source_Type: "human_entry",
+    Source_System: RELIFE_SYSTEM.sourceSystem,
+    Source_Type: RELIFE_SYSTEM.sourceType,
     AI_Generated: false,
     Human_Verified: true,
-    Schema_Version: "relife-uda-v1",
+    Schema_Version: RELIFE_SYSTEM.schemaVersion,
     Provenance_Timestamp: now.provenance,
     Type: expenseType,
     Status: "Pending",
@@ -389,7 +361,7 @@ export async function decideExpense(input: {
 
   const rowNumber = dataIndex + 2;
   const nextStatus = decision === "approve" ? "Approved" : "Rejected";
-  const now = dhakaParts();
+  const now = dhakaClockParts();
   const sheetId = await expenseSheetId(workbook);
   await batchUpdateSpreadsheet(workbook, [
     updateCellRequest(sheetId, rowNumber, statusIdx + 1, nextStatus),
@@ -451,7 +423,7 @@ export async function payApprovedExpense(
   if (status !== "approved") throw new Error("EXPENSE_NOT_APPROVED");
 
   const rowNumber = dataIndex + 2;
-  const now = dhakaParts();
+  const now = dhakaClockParts();
   const sheetId = await expenseSheetId(workbook);
   await batchUpdateSpreadsheet(workbook, [
     updateCellRequest(sheetId, rowNumber, paidFromIdx + 1, input.paidFrom),
