@@ -4,13 +4,13 @@ import ChamberHourlyBedBoard from "@/components/ChamberHourlyBedBoard";
 import ChamberWorkspaceTabs from "@/components/ChamberWorkspaceTabs";
 import LiveChamberBoard from "@/components/LiveChamberBoard";
 import { StatusBadge } from "@/components/FeedbackUI";
-import { canPerform } from "@/lib/webos/access";
-import { getChamberSnapshot } from "@/lib/webos/chamber";
-import { getChamberCommsSnapshot } from "@/lib/webos/chamberComms";
 import {
   chamberHourSlots,
   getHourlyBedBoard,
-} from "@/lib/webos/chamberHourlyBooking";
+} from "@/lib/domain/chamber/board";
+import { canPerform } from "@/lib/webos/access";
+import { getChamberSnapshot } from "@/lib/webos/chamber";
+import { getChamberCommsSnapshot } from "@/lib/webos/chamberComms";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getVisiblePatients, todayDhaka } from "@/lib/webos/reception";
