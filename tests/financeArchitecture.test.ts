@@ -6,7 +6,7 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("expense request, payment and owner decision routes use the Finance domain", () => {
+test("expense routes use the central Finance expense lifecycle", () => {
   const routes = [
     "app/api/finance/expense/request/route.ts",
     "app/api/finance/expense/pay/route.ts",
@@ -17,6 +17,20 @@ test("expense request, payment and owner decision routes use the Finance domain"
       source(route),
       /@\/lib\/domain\/finance\/expenses/,
       `${route} must use the central Finance expense lifecycle`
+    );
+  }
+});
+
+test("cash routes use the central Finance cash lifecycle", () => {
+  const routes = [
+    "app/api/finance/cash/request/route.ts",
+    "app/api/control/cash-movement/route.ts",
+  ];
+  for (const route of routes) {
+    assert.match(
+      source(route),
+      /@\/lib\/domain\/finance\/cash/,
+      `${route} must use the central Finance cash lifecycle`
     );
   }
 });
@@ -32,8 +46,10 @@ test("duplicate expense writers are removed", () => {
   );
 });
 
-test("owner approval snapshot delegates expense parsing to Finance domain", () => {
+test("owner approval snapshot delegates finance parsing to domain modules", () => {
   const controls = source("lib/controls.ts");
   assert.match(controls, /listPendingExpenses/);
+  assert.match(controls, /listPendingCashMovements/);
   assert.doesNotMatch(controls, /function parsePendingExpenses/);
+  assert.doesNotMatch(controls, /function parsePendingCash/);
 });
