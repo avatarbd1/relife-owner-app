@@ -2,19 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type EquipmentAlert = {
-  requestId: string;
-  createdAt: string;
-  requestedById: string;
-  requestedByName: string;
-  resourceName: string;
-  fromLocation: string;
-  toLocation: string;
-  patientName: string;
-  bedId: string;
-  status: string;
-};
-
 type MessageAlert = {
   messageId: string;
   createdAt: string;
@@ -24,6 +11,8 @@ type MessageAlert = {
   priority: string;
   body: string;
   bedId: string;
+  roomId: string;
+  status: string;
 };
 
 type AlertItem = {
@@ -37,18 +26,22 @@ type AlertItem = {
 type CommsResponse = {
   ok: boolean;
   pendingUrgentCount?: number;
-  equipmentRequests?: EquipmentAlert[];
   messages?: MessageAlert[];
 };
 
-const SEEN_KEY = "relife_chamber_seen_alerts_v1";
+const SEEN_KEY = "relife_chamber_seen_alerts_v2";
 const SOUND_KEY = "relife_chamber_sound_enabled";
 const MAX_SEEN = 120;
+const CALL_PREFIX = "CALL:";
+const ALERT_START_HOUR = 9;
+const ALERT_END_HOUR = 21;
 
 function readSeen(): string[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(SEEN_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string").slice(-MAX_SEEN) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => typeof item === "string").slice(-MAX_SEEN)
+      : [];
   } catch {
     return [];
   }
@@ -58,17 +51,66 @@ function soundEnabled(): boolean {
   return localStorage.getItem(SOUND_KEY) !== "off";
 }
 
-export default function ChamberAlertListener({ currentStaffId }: { currentStaffId: string }) {
+function dhakaHour(ref = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Dhaka",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(ref);
+  return Number(parts.find((part) => part.type === "hour")?.value || -1);
+}
+
+function withinChamberAlertHours(ref = new Date()): boolean {
+  const hour = dhakaHour(ref);
+  return hour >= ALERT_START_HOUR && hour < ALERT_END_HOUR;
+}
+
+function targetMatches(
+  marker: string,
+  currentStaffId: string,
+  currentRoles: string[]
+): boolean {
+  const value = marker.trim();
+  if (!value.startsWith(CALL_PREFIX)) return false;
+  if (value.startsWith("CALL:STAFF:")) {
+    return value.slice("CALL:STAFF:".length) === currentStaffId;
+  }
+  if (value.startsWith("CALL:ROLE:")) {
+    const role = value.slice("CALL:ROLE:".length).trim().toLowerCase();
+    return currentRoles.some((item) => item.trim().toLowerCase() === role);
+  }
+  return false;
+}
+
+export default function ChamberAlertListener({
+  currentStaffId,
+  currentRoles,
+}: {
+  currentStaffId: string;
+  currentRoles: string[];
+}) {
   const [alert, setAlert] = useState<AlertItem | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const stopRingRef = useRef<(() => void) | null>(null);
+  const autoDismissRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
 
   const stopRing = useCallback(() => {
     stopRingRef.current?.();
     stopRingRef.current = null;
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate(0);
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate(0);
+    }
   }, []);
+
+  const dismissAlert = useCallback(() => {
+    stopRing();
+    if (autoDismissRef.current !== null) {
+      window.clearTimeout(autoDismissRef.current);
+      autoDismissRef.current = null;
+    }
+    setAlert(null);
+  }, [stopRing]);
 
   const ensureAudioContext = useCallback(async (): Promise<AudioContext | null> => {
     if (audioContextRef.current) {
@@ -125,7 +167,11 @@ export default function ChamberAlertListener({ currentStaffId }: { currentStaffI
     gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 10);
 
     const timeout = window.setTimeout(() => {
-      gain.disconnect();
+      try {
+        gain.disconnect();
+      } catch {
+        // already disconnected
+      }
       stopRingRef.current = null;
     }, 10_100);
 
@@ -151,53 +197,70 @@ export default function ChamberAlertListener({ currentStaffId }: { currentStaffI
     if (Notification.permission !== "granted" || !("serviceWorker" in navigator)) return;
     const registration = await navigator.serviceWorker.ready.catch(() => null);
     if (!registration) return;
-    await registration.showNotification(item.title, {
-      body: item.body,
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      tag: item.id,
-      requireInteraction: true,
-      data: { url: item.href },
-    }).catch(() => undefined);
+    await registration
+      .showNotification(item.title, {
+        body: item.body,
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        tag: item.id,
+        requireInteraction: false,
+        data: { url: item.href },
+      })
+      .catch(() => undefined);
   }, []);
 
   const processSnapshot = useCallback(async (payload: CommsResponse) => {
     const pendingCount = Number(payload.pendingUrgentCount || 0);
-    window.dispatchEvent(new CustomEvent("relife-chamber-pending", { detail: pendingCount }));
+    window.dispatchEvent(
+      new CustomEvent("relife-chamber-pending", { detail: pendingCount })
+    );
 
+    // Ring only explicitly targeted calls. Ordinary urgent Team messages and
+    // equipment requests remain visible in Team, but never broadcast a phone call.
     const candidates: AlertItem[] = [];
-    for (const request of payload.equipmentRequests || []) {
-      if (request.status !== "Requested" || request.requestedById === currentStaffId) continue;
-      candidates.push({
-        id: `equipment:${request.requestId}`,
-        createdAt: request.createdAt,
-        title: `Equipment call · ${request.resourceName}`,
-        body: `${request.fromLocation} → ${request.toLocation}${request.patientName ? ` · ${request.patientName}` : ""}${request.bedId ? ` · ${request.bedId}` : ""}`,
-        href: "/chamber/chat?tab=equipment",
-      });
-    }
     for (const message of payload.messages || []) {
-      if (message.priority !== "Urgent" || message.messageType === "Equipment" || message.senderId === currentStaffId) continue;
+      if (
+        message.priority !== "Urgent" ||
+        message.messageType === "Equipment" ||
+        message.senderId === currentStaffId ||
+        String(message.status || "Active").toLowerCase() !== "active" ||
+        !targetMatches(message.roomId || "", currentStaffId, currentRoles)
+      ) {
+        continue;
+      }
       candidates.push({
         id: `message:${message.messageId}`,
         createdAt: message.createdAt,
-        title: `Urgent Chamber call · ${message.senderName || "Team"}`,
+        title: `Chamber call · ${message.senderName || "Team"}`,
         body: `${message.body}${message.bedId ? ` · ${message.bedId}` : ""}`,
         href: "/chamber/chat",
       });
     }
+
     candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const seen = new Set(readSeen());
     const unseen = candidates.filter((item) => !seen.has(item.id));
     if (unseen.length === 0) return;
 
+    // Calls created outside chamber hours are recorded in Team but deliberately
+    // consumed silently so they do not ring later at 09:00.
     for (const item of unseen) seen.add(item.id);
     localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-MAX_SEEN)));
+    if (!withinChamberAlertHours()) return;
+
     const newest = unseen[0];
     if (!mountedRef.current) return;
+    if (autoDismissRef.current !== null) {
+      window.clearTimeout(autoDismissRef.current);
+    }
     setAlert(newest);
+    autoDismissRef.current = window.setTimeout(() => {
+      stopRing();
+      setAlert(null);
+      autoDismissRef.current = null;
+    }, 10_500);
     await Promise.allSettled([playTenSecondCall(), showSystemNotification(newest)]);
-  }, [currentStaffId, playTenSecondCall, showSystemNotification]);
+  }, [currentRoles, currentStaffId, playTenSecondCall, showSystemNotification, stopRing]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -209,6 +272,10 @@ export default function ChamberAlertListener({ currentStaffId }: { currentStaffI
       mountedRef.current = false;
       window.removeEventListener("pointerdown", prime);
       stopRing();
+      if (autoDismissRef.current !== null) {
+        window.clearTimeout(autoDismissRef.current);
+        autoDismissRef.current = null;
+      }
       void audioContextRef.current?.close().catch(() => undefined);
       audioContextRef.current = null;
     };
@@ -239,17 +306,21 @@ export default function ChamberAlertListener({ currentStaffId }: { currentStaffI
   return (
     <div className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+4.25rem)] z-[70] mx-auto max-w-md overflow-hidden rounded-2xl border border-red-300 bg-white shadow-2xl">
       <div className="bg-red-600 px-4 py-2.5 text-white">
-        <p className="text-[10px] font-bold uppercase tracking-[0.16em]">Urgent Chamber call</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em]">
+          Direct Chamber call
+        </p>
         <p className="mt-0.5 text-sm font-bold">{alert.title}</p>
       </div>
       <div className="p-4">
         <p className="text-sm leading-5 text-slate-700">{alert.body}</p>
-        <p className="mt-1 text-[10px] font-semibold text-red-600">10-second call alert · tap an action to stop</p>
+        <p className="mt-1 text-[10px] font-semibold text-red-600">
+          10-second call · auto closes
+        </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => {
-              stopRing();
+              dismissAlert();
               window.location.href = alert.href;
             }}
             className="min-h-11 rounded-xl bg-red-600 px-3 text-xs font-bold text-white"
@@ -258,10 +329,7 @@ export default function ChamberAlertListener({ currentStaffId }: { currentStaffI
           </button>
           <button
             type="button"
-            onClick={() => {
-              stopRing();
-              setAlert(null);
-            }}
+            onClick={dismissAlert}
             className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600"
           >
             Dismiss
