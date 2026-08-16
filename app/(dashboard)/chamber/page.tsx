@@ -1,3 +1,4 @@
+import ChamberHourlyBedBoard from "@/components/ChamberHourlyBedBoard";
 import ChamberNav from "@/components/ChamberNav";
 import ChamberPatientEditPanel from "@/components/ChamberPatientEditPanel";
 import ChamberReservationPanel from "@/components/ChamberReservationPanel";
@@ -7,16 +8,31 @@ import { canPerform } from "@/lib/webos/access";
 import { getChamberBookingPlans } from "@/lib/webos/appointmentScheduling";
 import { getChamberSnapshot } from "@/lib/webos/chamber";
 import { getChamberCommsSnapshot } from "@/lib/webos/chamberComms";
+import { chamberHourSlots, getHourlyBedBoard } from "@/lib/webos/chamberHourlyBooking";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getVisiblePatients, todayDhaka } from "@/lib/webos/reception";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
-export default async function ChamberPage() {
+function validDate(value: string | undefined): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+export default async function ChamberPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ date?: string }>;
+}) {
   const context = await requireCurrentAccessContext();
-  const [rawSnapshot, staffDirectory, comms] = await Promise.all([
+  const params = searchParams ? await searchParams : {};
+  const today = todayDhaka();
+  const selectedDate = validDate(params.date) ? params.date : today;
+  const [rawSnapshot, staffDirectory, comms, hourlyAppointments, visiblePatients] = await Promise.all([
     getChamberSnapshot(context),
     getWebStaffDirectory(),
     getChamberCommsSnapshot(context),
+    getHourlyBedBoard(context, selectedDate),
+    getVisiblePatients(context, "physio"),
   ]);
   const [snapshot, bookingPlan] = await Promise.all([
     enrichChamberSnapshotWithPatientProfiles(context, rawSnapshot),
@@ -24,6 +40,7 @@ export default async function ChamberPage() {
   ]);
   const canEditPatient = canPerform(context, "patient.update", "Physio");
   const canAssignTherapist = canPerform(context, "chamber.run", "Physio");
+  const canBook = canPerform(context, "appointment.create", "Physio");
   const therapists = staffDirectory
     .filter(
       (staff) =>
@@ -32,6 +49,14 @@ export default async function ChamberPage() {
         (staff.departmentAccess.includes("Physio") || staff.departmentAccess.includes("All"))
     )
     .map((staff) => ({ staffId: staff.staffId, fullName: staff.fullName }));
+  const bookingPatients = visiblePatients
+    .filter((patient) => patient.department === "Physio" && patient.status !== "Inactive")
+    .map((patient) => ({
+      patientId: patient.patientId,
+      fullName: patient.fullName,
+      gender: patient.gender,
+      defaultTherapist: patient.therapist,
+    }));
 
   const occupiedStations = snapshot.stations.filter((item) => Boolean(item.session)).length;
   const totalStations = snapshot.stations.length;
@@ -88,7 +113,7 @@ export default async function ChamberPage() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Physio operations</p>
             <h1 className="mt-1 text-2xl font-bold">Live chamber</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">Beds, patient flow, machines, team chat and treatment safety in one workspace.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-300">Book by bed and hour, then run patient flow, machines and team communication here.</p>
           </div>
           <StatusBadge tone={conflictCount ? "warning" : "success"} className="border-white/10">
             {conflictCount ? `${conflictCount} warnings` : "Live healthy"}
@@ -104,10 +129,20 @@ export default async function ChamberPage() {
 
       <ChamberNav pending={comms.pendingUrgentCount} />
 
-      <div id="beds" className="scroll-mt-28">
+      <div id="beds" className="scroll-mt-28 space-y-4">
+        <ChamberHourlyBedBoard
+          date={selectedDate}
+          today={today}
+          appointments={hourlyAppointments}
+          slots={chamberHourSlots()}
+          patients={bookingPatients}
+          clinicians={therapists}
+          canBook={canBook}
+        />
+
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
-            <div><h2 className="text-base font-semibold text-slate-950">Beds now</h2><p className="mt-0.5 text-xs text-slate-500">Bed 1–4 + traction live status</p></div>
+            <div><h2 className="text-base font-semibold text-slate-950">Live beds now</h2><p className="mt-0.5 text-xs text-slate-500">Current physical Bed 1–4 + traction status</p></div>
             <StatusBadge tone={stationUtilization >= 100 ? "warning" : stationUtilization >= 50 ? "info" : "success"}>{Math.round(stationUtilization)}%</StatusBadge>
           </div>
           <ProgressBar value={stationUtilization} label={`${occupiedStations} occupied · ${Math.max(0, totalStations - occupiedStations)} free`} className="mt-4" />
@@ -152,7 +187,9 @@ export default async function ChamberPage() {
         )}
       </div>
 
-      <LiveChamberBoard initial={snapshot} />
+      <div id="live-treatment" className="scroll-mt-28">
+        <LiveChamberBoard initial={snapshot} />
+      </div>
     </div>
   );
 }
