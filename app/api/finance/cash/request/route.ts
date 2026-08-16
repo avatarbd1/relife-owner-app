@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requestCashMovement } from "@/lib/domain/finance/cash";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requestCashMovement } from "@/lib/webos/financeOps";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -11,10 +11,10 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "SCHEMA_MISMATCH") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
-  if (["INVALID_AMOUNT", "INVALID_CUSTODIAN", "INVALID_REQUEST_ID"].includes(message)) {
+  if (["INVALID_DEPARTMENT", "INVALID_AMOUNT", "INVALID_CUSTODIAN", "INVALID_REQUEST_ID"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  console.error("W3 cash request failed:", message);
+  console.error("Finance cash request failed:", message);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
