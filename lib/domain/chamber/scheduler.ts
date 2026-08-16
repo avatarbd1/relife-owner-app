@@ -21,12 +21,6 @@ import { withMutationLock } from "@/lib/webos/mutationLock";
 export type ChamberScheduleInput = FixedHourInput & { requestId?: string };
 export type ChamberScheduleValidation = FixedHourValidation;
 
-function stableRequestId(value: unknown): string {
-  const text = String(value ?? "").trim();
-  if (!/^[A-Za-z0-9_-]{8,120}$/.test(text)) throw new Error("INVALID_REQUEST_ID");
-  return text;
-}
-
 async function warmSupabaseReference(
   context: AccessContext,
   input: ChamberScheduleInput,
@@ -148,6 +142,11 @@ export async function validateChamberSchedule(
  * Sheets remains the default writer. When RELIFE_CHAMBER_DB_MODE=supabase is
  * deliberately enabled, the final write is one Postgres transaction. During
  * the transition validation still checks both stores to protect legacy rows.
+ *
+ * Fixed-hour retries are semantically idempotent in the database transaction:
+ * the same active patient + hour + therapist + bed returns the existing booking.
+ * A requestId is forwarded when supplied, but the current fixed-hour UI does
+ * not need a client nonce for retry safety.
  */
 export async function createChamberScheduleBooking(
   context: AccessContext,
@@ -162,7 +161,6 @@ export async function createChamberScheduleBooking(
     );
   }
   if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
-  const requestId = stableRequestId(input.requestId);
 
   const validation = await validateChamberSchedule(context, input);
   if (!validation.isValid) {
@@ -192,7 +190,7 @@ export async function createChamberScheduleBooking(
       })),
       remarks: input.remarks || "",
       actorId: context.staffId,
-      requestId,
+      requestId: input.requestId || undefined,
     });
     return { appointmentId: result.appointmentId, validation };
   } catch (error) {
