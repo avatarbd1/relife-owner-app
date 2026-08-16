@@ -33,13 +33,19 @@ export default function TapChoice<T extends string>({
   value: T | "";
   options: Array<TapChoiceOption<T>>;
   onChange: (value: T | "") => void;
-  columns?: 2 | 3 | 4;
+  columns?: 1 | 2 | 3 | 4;
   allowClear?: boolean;
   disabled?: boolean;
   compact?: boolean;
   tone?: TapChoiceOption<T>["tone"];
 }) {
-  const grid = columns === 4 ? "grid-cols-2 sm:grid-cols-4" : columns === 3 ? "grid-cols-3" : "grid-cols-2";
+  const grid = columns === 4
+    ? "grid-cols-2 sm:grid-cols-4"
+    : columns === 3
+      ? "grid-cols-3"
+      : columns === 1
+        ? "grid-cols-1"
+        : "grid-cols-2";
   return (
     <fieldset disabled={disabled}>
       {label && <legend className="mb-2 text-xs font-semibold text-slate-700">{label}</legend>}
