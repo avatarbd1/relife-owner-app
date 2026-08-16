@@ -56,7 +56,12 @@ export default async function DashboardLayout({
       </main>
 
       <InteractionLayer />
-      {canChamber && <ChamberAlertListener currentStaffId={context.staffId} />}
+      {canChamber && (
+        <ChamberAlertListener
+          currentStaffId={context.staffId}
+          currentRoles={context.roles}
+        />
+      )}
       <BottomNav
         roles={context.roles}
         actions={actions}
