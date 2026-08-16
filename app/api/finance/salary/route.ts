@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkOwnerPin } from "@/lib/auth";
+import { paySalary } from "@/lib/domain/finance/salary";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { paySalary } from "@/lib/webos/financeOps";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -15,10 +15,16 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "SCHEMA_MISMATCH") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
-  if (["INVALID_AMOUNT", "INVALID_CUSTODIAN", "INVALID_REQUEST_ID"].includes(message)) {
+  if ([
+    "INVALID_AMOUNT",
+    "INVALID_CUSTODIAN",
+    "INVALID_REQUEST_ID",
+    "OWNER_SALARY_FORBIDDEN",
+    "STAFF_DEPARTMENT_UNSUPPORTED",
+  ].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  console.error("W3 salary pay failed:", message);
+  console.error("Finance salary pay failed:", message);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
