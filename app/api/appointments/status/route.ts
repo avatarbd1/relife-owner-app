@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { updateUnifiedAppointmentStatus } from "@/lib/domain/appointments/status";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { updateAppointmentStatus } from "@/lib/webos/appointmentStatus";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function code(message: string): number {
   if (message === "ACCESS_DENIED") return 403;
   if (message === "APPOINTMENT_NOT_FOUND") return 404;
-  if (message === "SCHEMA_MISMATCH") return 503;
+  if (["SCHEMA_MISMATCH", "SUPABASE_EDGE_SECRET_MISSING", "TENANT_NOT_FOUND"].includes(message)) {
+    return 503;
+  }
   if (["INVALID_DEPARTMENT", "INVALID_APPOINTMENT_STATUS", "DEPARTMENT_MISMATCH"].includes(message)) {
     return 400;
   }
@@ -23,7 +25,7 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await updateAppointmentStatus(context, {
+    const result = await updateUnifiedAppointmentStatus(context, {
       appointmentId: body.appointmentId,
       department: body.department,
       status: body.status,
