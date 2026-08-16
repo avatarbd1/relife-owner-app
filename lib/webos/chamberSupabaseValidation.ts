@@ -92,7 +92,7 @@ function overlaps(startA: number, endA: number, startB: number, endB: number): b
 }
 
 function modalityOptions(snapshot: SupabaseChamberBootstrap): FixedModalityOption[] {
-  const options = snapshot.resources.flatMap((resource) => {
+  const options: FixedModalityOption[] = snapshot.resources.flatMap((resource) => {
     const durationMin = Number(resource.default_duration_min || 0);
     if (normalized(resource.resource_type) !== "machine" || !resource.enabled || durationMin <= 0) return [];
     return [{
