@@ -2,6 +2,14 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import {
+  RELIFE_SYSTEM,
+  departmentForWorkbook,
+  dhakaClockParts,
+  ledgerClinicId,
+  relifeRecordId,
+  workbookForDepartment,
+} from "@/lib/config/relifeSystem";
+import {
   appendSheetValues,
   batchUpdateSpreadsheet,
   fetchSheetRanges,
@@ -9,8 +17,8 @@ import {
   type SpreadsheetBatchRequest,
   type Workbook,
 } from "@/lib/data/googleSheets";
-import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import type { ClinicDepartment } from "@/lib/domain/finance/expenses";
+import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
 type SheetValue = string | number | boolean;
 export type CashDestination = "Home Treasury" | "Bank";
@@ -87,40 +95,6 @@ function rowForHeaders(
   return headers.map((header) => mapped.get(normalized(header)) ?? "");
 }
 
-function workbookForDepartment(department: ClinicDepartment): Workbook {
-  return department === "Dental" ? "dental" : "physio";
-}
-
-function departmentForWorkbook(workbook: Workbook): ClinicDepartment {
-  return workbook === "dental" ? "Dental" : "Physio";
-}
-
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
-function dhakaParts(ref = new Date()): {
-  date: string;
-  timestamp: string;
-  provenance: string;
-} {
-  const dateParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(ref);
-  const values = Object.fromEntries(dateParts.map((part) => [part.type, part.value]));
-  const date = `${values.year}-${values.month}-${values.day}`;
-  const time = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Dhaka",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(ref);
-  return { date, timestamp: `${date} ${time}`, provenance: ref.toISOString() };
-}
-
 function validateRequestId(value: string): string {
   const requestId = normalize(value);
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(requestId)) {
@@ -190,8 +164,8 @@ async function appendCashAudit(input: {
   beforeValue?: string;
   afterValue?: string;
 }): Promise<void> {
-  const now = dhakaParts();
-  const clinic = clinicId(input.department);
+  const now = dhakaClockParts();
+  const clinic = ledgerClinicId(input.department);
   try {
     await appendSheetValues(input.workbook, "'20_Data_Audit'!A:W", [[
       `AUD-${randomUUID()}`,
@@ -204,17 +178,17 @@ async function appendCashAudit(input: {
       input.beforeValue || "",
       input.afterValue || "",
       "Finance domain action",
-      "RELIFE",
+      RELIFE_SYSTEM.organizationId,
       clinic,
-      "AMTALI-01",
-      `${clinic}:${input.movementId}`,
+      RELIFE_SYSTEM.branchId,
+      relifeRecordId(input.department, input.movementId),
       "",
       input.actorId,
-      "web_pwa",
-      "human_entry",
+      RELIFE_SYSTEM.sourceSystem,
+      RELIFE_SYSTEM.sourceType,
       false,
       true,
-      "relife-uda-v1",
+      RELIFE_SYSTEM.schemaVersion,
       now.provenance,
       input.department,
     ]]);
@@ -262,7 +236,7 @@ export async function requestCashMovement(
 
   const existingIds = new Set(rows.slice(1).map((row) => at(row, idIdx)).filter(Boolean));
   const movementId = nextEntityId(existingIds);
-  const now = dhakaParts();
+  const now = dhakaClockParts();
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
   const row = rowForHeaders(headers, {
     Movement_ID: movementId,
@@ -273,16 +247,16 @@ export async function requestCashMovement(
     Moved_By: context.staffId,
     Note: note,
     Timestamp: now.timestamp,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
-    Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${movementId}`,
+    Organization_ID: RELIFE_SYSTEM.organizationId,
+    Clinic_ID: ledgerClinicId(department),
+    Branch_ID: RELIFE_SYSTEM.branchId,
+    Record_ID: relifeRecordId(department, movementId),
     Provider_ID: context.staffId,
-    Source_System: "web_pwa",
-    Source_Type: "human_entry",
+    Source_System: RELIFE_SYSTEM.sourceSystem,
+    Source_Type: RELIFE_SYSTEM.sourceType,
     AI_Generated: false,
     Human_Verified: true,
-    Schema_Version: "relife-uda-v1",
+    Schema_Version: RELIFE_SYSTEM.schemaVersion,
     Provenance_Timestamp: now.provenance,
     Status: "Pending",
     Department: department,
@@ -406,7 +380,7 @@ export async function decideCashMovement(input: {
 
   const requested = money(at(row, amountIdx));
   const rowNumber = dataIndex + 2;
-  const now = dhakaParts();
+  const now = dhakaClockParts();
   const sheetId = await movementSheetId(workbook);
   const requests: SpreadsheetBatchRequest[] = [
     updateCellRequest(sheetId, rowNumber, statusIdx + 1, decision === "accept" ? "Accepted" : "Rejected"),

@@ -2,6 +2,13 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import {
+  RELIFE_SYSTEM,
+  dhakaClockParts,
+  ledgerClinicId,
+  relifeRecordId,
+  workbookForDepartment,
+} from "@/lib/config/relifeSystem";
+import {
   appendSheetValues,
   batchUpdateSpreadsheet,
   fetchSheetRanges,
@@ -9,9 +16,9 @@ import {
   type SpreadsheetBatchRequest,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import type { ClinicDepartment, ExpensePaidFrom } from "@/lib/domain/finance/expenses";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
-import type { ClinicDepartment, ExpensePaidFrom } from "@/lib/domain/finance/expenses";
 
 type SheetValue = string | number | boolean;
 
@@ -61,42 +68,6 @@ function rowForHeaders(
   return headers.map((header) => mapped.get(normalized(header)) ?? "");
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
-function workbookForDepartment(department: ClinicDepartment): Workbook {
-  return department === "Dental" ? "dental" : "physio";
-}
-
-function dhakaParts(ref = new Date()): {
-  date: string;
-  month: string;
-  timestamp: string;
-  provenance: string;
-} {
-  const dateParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(ref);
-  const values = Object.fromEntries(dateParts.map((part) => [part.type, part.value]));
-  const date = `${values.year}-${values.month}-${values.day}`;
-  const time = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Dhaka",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(ref);
-  return {
-    date,
-    month: `${values.year}-${values.month}`,
-    timestamp: `${date} ${time}`,
-    provenance: ref.toISOString(),
-  };
-}
-
 function validateRequestId(value: string): string {
   const requestId = normalize(value);
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(requestId)) throw new Error("INVALID_REQUEST_ID");
@@ -143,8 +114,8 @@ async function appendSalaryAudit(input: {
   amount: number;
   paidFrom: string;
 }): Promise<void> {
-  const now = dhakaParts();
-  const clinic = clinicId(input.department);
+  const now = dhakaClockParts();
+  const clinic = ledgerClinicId(input.department);
   try {
     await appendSheetValues(input.workbook, "'20_Data_Audit'!A:W", [[
       `AUD-${randomUUID()}`,
@@ -157,17 +128,17 @@ async function appendSalaryAudit(input: {
       "",
       JSON.stringify({ staffId: input.staffId, amount: input.amount, paidFrom: input.paidFrom }),
       "Finance domain action",
-      "RELIFE",
+      RELIFE_SYSTEM.organizationId,
       clinic,
-      "AMTALI-01",
-      `${clinic}:${input.paymentId}`,
+      RELIFE_SYSTEM.branchId,
+      relifeRecordId(input.department, input.paymentId),
       "",
       input.actorId,
-      "web_pwa",
-      "human_entry",
+      RELIFE_SYSTEM.sourceSystem,
+      RELIFE_SYSTEM.sourceType,
       false,
       true,
-      "relife-uda-v1",
+      RELIFE_SYSTEM.schemaVersion,
       now.provenance,
       input.department,
     ]]);
@@ -226,27 +197,28 @@ export async function paySalary(
 
   const existingIds = new Set(rows.slice(1).map((row) => at(row, idIdx)).filter(Boolean));
   const paymentId = nextPaymentId(existingIds);
-  const now = dhakaParts();
+  const now = dhakaClockParts();
+  const month = now.date.slice(0, 7);
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
   const row = rowForHeaders(headers, {
     Payment_ID: paymentId,
     Date: now.date,
-    Month: now.month,
+    Month: month,
     Staff_ID: staff.staffId,
     Amount: amount,
     Paid_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
-    Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${paymentId}`,
+    Organization_ID: RELIFE_SYSTEM.organizationId,
+    Clinic_ID: ledgerClinicId(department),
+    Branch_ID: RELIFE_SYSTEM.branchId,
+    Record_ID: relifeRecordId(department, paymentId),
     Provider_ID: context.staffId,
-    Source_System: "web_pwa",
-    Source_Type: "human_entry",
+    Source_System: RELIFE_SYSTEM.sourceSystem,
+    Source_Type: RELIFE_SYSTEM.sourceType,
     AI_Generated: false,
     Human_Verified: true,
-    Schema_Version: "relife-uda-v1",
+    Schema_Version: RELIFE_SYSTEM.schemaVersion,
     Provenance_Timestamp: now.provenance,
     Department: department,
     Paid_From: input.paidFrom,
