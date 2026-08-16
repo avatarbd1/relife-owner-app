@@ -17,7 +17,11 @@ test("appointment workspace and patient history use the cutover read model", () 
   assert.match(readModel, /chamberDbMode\(\) === "supabase"/);
   assert.match(readModel, /querySupabaseChamberAppointments/);
   assert.match(readModel, /merged\.set\(`Physio:/);
-  assert.doesNotMatch(readModel, /catch\s*\([^)]*\)\s*\{[^}]*return sheetRows/s);
+  assert.doesNotMatch(
+    readModel,
+    /catch\s*\([^)]*\)\s*\{[\s\S]*?return sheetRows/
+  );
+  assert.match(readModel, /SUPABASE_EDGE_SECRET_MISSING/);
 });
 
 test("appointment status keeps legacy Sheets writer and falls through to Supabase only for cutover Physio rows", () => {
@@ -34,6 +38,7 @@ test("appointment status keeps legacy Sheets writer and falls through to Supabas
   assert.match(command, /department !== "Physio"/);
   assert.match(command, /chamberDbMode\(\) !== "supabase"/);
   assert.match(command, /updateSupabaseChamberAppointmentStatus/);
+  assert.match(command, /SUPABASE_EDGE_SECRET_MISSING/);
 
   assert.match(edge, /action === "appointments_query"/);
   assert.match(edge, /APPOINTMENT_FILTER_REQUIRED/);
