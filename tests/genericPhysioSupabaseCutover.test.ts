@@ -58,12 +58,18 @@ test("generic appointment transaction writes audit atomically and does not activ
   assert.match(data, /RELIFE_CHAMBER_DB_MODE \|\| "sheets"/);
 });
 
-test("fixed-hour cutover also requires an explicit stable request ID", () => {
+test("fixed-hour cutover uses database semantic retry idempotency without requiring a client nonce", () => {
   const scheduler = source("lib/domain/chamber/scheduler.ts");
-  const handler = source("app/api/chamber/schedule/handler.ts");
+  const edge = source("supabase/functions/relife-chamber-api/index.ts");
 
   assert.match(scheduler, /FixedHourInput & \{ requestId\?: string \}/);
-  assert.match(scheduler, /stableRequestId\(input\.requestId\)/);
+  assert.doesNotMatch(scheduler, /stableRequestId\(input\.requestId\)/);
+  assert.match(scheduler, /requestId: input\.requestId \|\| undefined/);
+  assert.match(scheduler, /same active patient \+ hour \+ therapist \+ bed returns the existing booking/);
   assert.match(scheduler, /if \(!chamberSupabaseConfigured\(\)\) throw new Error\("SUPABASE_EDGE_SECRET_MISSING"\)/);
-  assert.match(handler, /requestId: String\(body\.requestId \|\| ""\)/);
+
+  assert.match(edge, /otherStart === startMinute/);
+  assert.match(edge, /norm\(row\.therapist\)\.toLowerCase\(\) === therapist\.toLowerCase\(\)/);
+  assert.match(edge, /norm\(row\.bed_id\) === bedId/);
+  assert.match(edge, /duplicate: true/);
 });
