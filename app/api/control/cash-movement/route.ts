@@ -4,14 +4,14 @@ import {
   checkOwnerPin,
   verifySessionToken,
 } from "@/lib/auth";
-import { decideCashMovement } from "@/lib/domain/finance/cash";
+import { decideCashMovement } from "@/lib/domain/finance/production";
 import type { Workbook } from "@/lib/data/googleSheets";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
 function statusForError(message: string): number {
   if (message === "CONTROL_NOT_FOUND") return 404;
   if (message === "CONTROL_ALREADY_DECIDED") return 409;
-  if (message === "SCHEMA_MISMATCH") return 503;
+  if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") return 503;
   if (["INVALID_WORKBOOK", "INVALID_DECISION", "INVALID_RECEIVED_AMOUNT"].includes(message)) return 400;
   return 500;
 }
