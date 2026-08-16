@@ -44,6 +44,18 @@ test("Home quick actions route to semantic workspaces", () => {
   assert.match(home, /href="\/finance#approvals"/);
 });
 
+test("Legacy finance routes are redirect-only compatibility adapters", () => {
+  const operations = source("app/(dashboard)/operations/page.tsx");
+  const expenses = source("app/(dashboard)/expenses/page.tsx");
+  const canonical = source("app/(dashboard)/finance/operations/page.tsx");
+
+  assert.match(operations, /redirect\(/);
+  assert.match(operations, /\/finance\/operations/);
+  assert.doesNotMatch(operations, /FinanceOperationsClient/);
+  assert.match(expenses, /\/finance\/operations\?tab=expenses/);
+  assert.match(canonical, /FinanceOperationsClient/);
+});
+
 test("Chamber is organized around Schedule Live Team", () => {
   const chamber = source("app/(dashboard)/chamber/page.tsx");
   const tabs = source("components/ChamberWorkspaceTabs.tsx");
