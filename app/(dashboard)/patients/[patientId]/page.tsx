@@ -5,13 +5,11 @@ import PatientEditForm from "@/components/PatientEditForm";
 import PatientMediaGallery from "@/components/PatientMediaGallery";
 import PatientReportUpload from "@/components/PatientReportUpload";
 import { StatusBadge } from "@/components/FeedbackUI";
+import { getUnifiedPatientAppointmentsForContext } from "@/lib/domain/appointments/read";
 import { formatBDT } from "@/lib/format";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-import {
-  getPatientAppointmentsForContext,
-  getPatientForContext,
-} from "@/lib/webos/reception";
+import { getPatientForContext } from "@/lib/webos/reception";
 import { getPatientReportsForContext } from "@/lib/webos/reports";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
@@ -43,7 +41,7 @@ export default async function PatientFilePage({
   const canSeeReports = canPerform(context, "patient.report.read", patient.department);
   const canUploadReports = canPerform(context, "patient.report.upload", patient.department);
   const [appointments, reports, staffDirectory] = await Promise.all([
-    getPatientAppointmentsForContext(context, patient),
+    getUnifiedPatientAppointmentsForContext(context, patient),
     canSeeReports
       ? getPatientReportsForContext(context, patient)
       : Promise.resolve([]),
@@ -165,7 +163,7 @@ export default async function PatientFilePage({
         <div className="mb-3 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-800">Appointment history</h3>
-            <p className="mt-0.5 text-xs text-slate-400">04_Appointments · latest first</p>
+            <p className="mt-0.5 text-xs text-slate-400">Appointments · latest first</p>
           </div>
           <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{appointments.length}</span>
         </div>

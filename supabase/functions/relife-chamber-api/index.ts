@@ -11,6 +11,18 @@ const DEFAULT_ORGANIZATION_SLUG = "relife";
 const DEFAULT_CLINIC_SLUG = "amtali-main";
 const ACTIVE = ["scheduled", "received", "arrived", "waiting", "in treatment"];
 const BEDS = new Set(["BED-1", "BED-2", "BED-3", "BED-4", "TRACTION-BED"]);
+const APPOINTMENT_STATUSES = [
+  "Scheduled",
+  "Arrived",
+  "Waiting",
+  "In Treatment",
+  "Completed",
+  "No-show",
+  "Cancelled",
+] as const;
+const APPOINTMENT_STATUS_BY_KEY = new Map(
+  APPOINTMENT_STATUSES.map((status) => [status.toLowerCase(), status])
+);
 
 type SqlExecutor = typeof sql;
 type Tenant = { organizationId: string; clinicId: string };
@@ -33,6 +45,23 @@ function validDate(value: unknown) {
   const text = norm(value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error("INVALID_DATE");
   return text;
+}
+
+function optionalDate(value: unknown) {
+  const text = norm(value);
+  return text ? validDate(text) : "";
+}
+
+function validateRange(startDate: string, endDate: string) {
+  if (!startDate || !endDate) throw new Error("INVALID_DATE_RANGE");
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    throw new Error("INVALID_DATE_RANGE");
+  }
+  if (end - start > 62 * 24 * 60 * 60 * 1000) {
+    throw new Error("DATE_RANGE_TOO_LARGE");
+  }
 }
 
 function validRequestId(value: unknown) {
@@ -70,7 +99,10 @@ async function authorized(req: Request) {
   return (await sha256Hex(key)) === SERVER_KEY_HASH;
 }
 
-async function resolveTenant(executor: SqlExecutor, body: Record<string, unknown>): Promise<Tenant> {
+async function resolveTenant(
+  executor: SqlExecutor,
+  body: Record<string, unknown>
+): Promise<Tenant> {
   const organizationSlug = norm(body.organizationSlug || DEFAULT_ORGANIZATION_SLUG);
   const clinicSlug = norm(body.clinicSlug || DEFAULT_CLINIC_SLUG);
   const rows = await executor`
@@ -111,7 +143,17 @@ Deno.serve(async (req) => {
     if (action === "bootstrap") {
       const date = validDate(body.date);
       const tenant = await resolveTenant(sql, body);
-      const [patients, plans, resources, appointments, reservations, timeline, sessions, messages, equipment] = await Promise.all([
+      const [
+        patients,
+        plans,
+        resources,
+        appointments,
+        reservations,
+        timeline,
+        sessions,
+        messages,
+        equipment,
+      ] = await Promise.all([
         sql`select * from relife.patient_cache where clinic_id=${tenant.clinicId}::uuid and department='Physio' and lower(status) <> 'inactive' order by full_name`,
         sql`select * from relife.treatment_plan_cache where clinic_id=${tenant.clinicId}::uuid and lower(status)='active'`,
         sql`select * from relife.chamber_resources where clinic_id=${tenant.clinicId}::uuid and department='Physio' and enabled=true order by resource_id`,
@@ -122,7 +164,97 @@ Deno.serve(async (req) => {
         sql`select * from relife.chat_messages where clinic_id=${tenant.clinicId}::uuid and department='Physio' and created_at >= ${date}::date and created_at < (${date}::date + interval '1 day') order by created_at desc limit 200`,
         sql`select * from relife.equipment_requests where clinic_id=${tenant.clinicId}::uuid and department='Physio' and created_at >= ${date}::date and created_at < (${date}::date + interval '1 day') order by created_at desc limit 200`,
       ]);
-      return response({ ok: true, patients, plans, resources, appointments, reservations, timeline, sessions, messages, equipment });
+      return response({
+        ok: true,
+        patients,
+        plans,
+        resources,
+        appointments,
+        reservations,
+        timeline,
+        sessions,
+        messages,
+        equipment,
+      });
+    }
+
+    if (action === "appointments_query") {
+      const tenant = await resolveTenant(sql, body);
+      const patientId = norm(body.patientId);
+      const startDate = optionalDate(body.startDate);
+      const endDate = optionalDate(body.endDate);
+      if (!patientId && !startDate && !endDate) {
+        return response({ ok: false, error: "APPOINTMENT_FILTER_REQUIRED" }, 400);
+      }
+      if (startDate || endDate) validateRange(startDate, endDate);
+
+      let appointments;
+      if (patientId && startDate) {
+        appointments = await sql`
+          select * from relife.appointments
+          where clinic_id=${tenant.clinicId}::uuid
+            and department='Physio'
+            and patient_id=${patientId}
+            and date >= ${startDate}::date
+            and date <= ${endDate}::date
+          order by date desc, start_time desc
+          limit 1000
+        `;
+      } else if (patientId) {
+        appointments = await sql`
+          select * from relife.appointments
+          where clinic_id=${tenant.clinicId}::uuid
+            and department='Physio'
+            and patient_id=${patientId}
+          order by date desc, start_time desc
+          limit 500
+        `;
+      } else {
+        appointments = await sql`
+          select * from relife.appointments
+          where clinic_id=${tenant.clinicId}::uuid
+            and department='Physio'
+            and date >= ${startDate}::date
+            and date <= ${endDate}::date
+          order by date, start_time
+          limit 2000
+        `;
+      }
+      return response({ ok: true, appointments });
+    }
+
+    if (action === "update_booking_status") {
+      const tenant = await resolveTenant(sql, body);
+      const appointmentId = norm(body.appointmentId);
+      const actorId = norm(body.actorId);
+      const requestedStatus = norm(body.status);
+      const status = APPOINTMENT_STATUS_BY_KEY.get(requestedStatus.toLowerCase());
+      if (!appointmentId) {
+        return response({ ok: false, error: "APPOINTMENT_NOT_FOUND" }, 404);
+      }
+      if (!actorId) {
+        return response({ ok: false, error: "ACTOR_REQUIRED" }, 400);
+      }
+      if (!status) {
+        return response({ ok: false, error: "INVALID_APPOINTMENT_STATUS" }, 400);
+      }
+
+      const rows = await sql`
+        update relife.appointments
+        set status=${status}, updated_by=${actorId}, updated_at=now()
+        where clinic_id=${tenant.clinicId}::uuid
+          and department='Physio'
+          and id=${appointmentId}
+        returning id, status
+      `;
+      if (!rows[0]) {
+        return response({ ok: false, error: "APPOINTMENT_NOT_FOUND" }, 404);
+      }
+      return response({
+        ok: true,
+        appointmentId: norm(rows[0].id),
+        status: norm(rows[0].status),
+      });
     }
 
     if (action === "sync_cache") {
@@ -332,7 +464,9 @@ Deno.serve(async (req) => {
               overlaps(s, e, Number(r.start_minute), Number(r.end_minute))
           );
           if (busy) {
-            return { conflict: `${norm(step.name || resourceId)} is already reserved during this time.` };
+            return {
+              conflict: `${norm(step.name || resourceId)} is already reserved during this time.`,
+            };
           }
         }
 
@@ -422,7 +556,10 @@ Deno.serve(async (req) => {
             'Physio', ${tenant.organizationId}::uuid, ${tenant.clinicId}::uuid
           )
         `;
-        return response({ ok: false, error: "APPOINTMENT_CONFLICT", detail: conflict }, 409);
+        return response(
+          { ok: false, error: "APPOINTMENT_CONFLICT", detail: conflict },
+          409
+        );
       }
 
       return response({ ok: true, ...result });

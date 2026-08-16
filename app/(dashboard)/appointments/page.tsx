@@ -1,10 +1,11 @@
 import { cookies } from "next/headers";
 import AppointmentsWorkspaceClient from "@/components/AppointmentsWorkspaceClient";
+import { getUnifiedAppointmentsForContext } from "@/lib/domain/appointments/read";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
-import { getAppointmentsForContext, todayDhaka } from "@/lib/webos/reception";
+import { todayDhaka } from "@/lib/webos/reception";
 
 const SCOPE_LABEL: Record<Scope, string> = {
   combined: "Combined",
@@ -32,13 +33,18 @@ export default async function AppointmentsPage({
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const today = todayDhaka();
   const selectedDate = validDate(params.date) ? params.date : today;
-  const allAppointments = await getAppointmentsForContext(context, scope);
-  const appointments = allAppointments.filter((row) => row.date === selectedDate);
   const monthKey = selectedDate.slice(0, 7);
+  const monthDays = daysInMonth(monthKey);
+  const allAppointments = await getUnifiedAppointmentsForContext(
+    context,
+    scope,
+    `${monthKey}-01`,
+    `${monthKey}-${String(monthDays).padStart(2, "0")}`
+  );
+  const appointments = allAppointments.filter((row) => row.date === selectedDate);
 
   const monthCounts = new Map<string, { total: number; physio: number; dental: number }>();
   for (const row of allAppointments) {
-    if (!row.date.startsWith(monthKey)) continue;
     const current = monthCounts.get(row.date) || { total: 0, physio: 0, dental: 0 };
     current.total += 1;
     if (row.department === "Physio") current.physio += 1;
@@ -46,7 +52,7 @@ export default async function AppointmentsPage({
     monthCounts.set(row.date, current);
   }
 
-  const calendarDays = Array.from({ length: daysInMonth(monthKey) }, (_, index) => {
+  const calendarDays = Array.from({ length: monthDays }, (_, index) => {
     const date = `${monthKey}-${String(index + 1).padStart(2, "0")}`;
     const count = monthCounts.get(date) || { total: 0, physio: 0, dental: 0 };
     return { date, ...count };
