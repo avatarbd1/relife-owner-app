@@ -40,7 +40,13 @@ function errorResponse(error: unknown): NextResponse {
   ) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  if (message === "SCHEMA_MISMATCH") {
+  if (
+    [
+      "SCHEMA_MISMATCH",
+      "SUPABASE_EDGE_SECRET_MISSING",
+      "TENANT_NOT_FOUND",
+    ].includes(message)
+  ) {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
 
