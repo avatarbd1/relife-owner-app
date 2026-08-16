@@ -1,14 +1,16 @@
+import Link from "next/link";
+import ChamberCommsClient from "@/components/ChamberCommsClient";
 import ChamberHourlyBedBoard from "@/components/ChamberHourlyBedBoard";
-import ChamberNav from "@/components/ChamberNav";
-import ChamberPatientEditPanel from "@/components/ChamberPatientEditPanel";
-import ChamberReservationPanel from "@/components/ChamberReservationPanel";
+import ChamberWorkspaceTabs from "@/components/ChamberWorkspaceTabs";
 import LiveChamberBoard from "@/components/LiveChamberBoard";
-import { ProgressBar, StatusBadge } from "@/components/FeedbackUI";
+import { StatusBadge } from "@/components/FeedbackUI";
 import { canPerform } from "@/lib/webos/access";
-import { getChamberBookingPlans } from "@/lib/webos/appointmentScheduling";
 import { getChamberSnapshot } from "@/lib/webos/chamber";
 import { getChamberCommsSnapshot } from "@/lib/webos/chamberComms";
-import { chamberHourSlots, getHourlyBedBoard } from "@/lib/webos/chamberHourlyBooking";
+import {
+  chamberHourSlots,
+  getHourlyBedBoard,
+} from "@/lib/webos/chamberHourlyBooking";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getVisiblePatients, todayDhaka } from "@/lib/webos/reception";
@@ -21,36 +23,44 @@ function validDate(value: string | undefined): value is string {
 export default async function ChamberPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ date?: string }>;
+  searchParams?: Promise<{
+    date?: string;
+    tab?: string;
+    team?: string;
+  }>;
 }) {
   const context = await requireCurrentAccessContext();
   const params = searchParams ? await searchParams : {};
   const today = todayDhaka();
   const selectedDate = validDate(params.date) ? params.date : today;
-  const [rawSnapshot, staffDirectory, comms, hourlyAppointments, visiblePatients] = await Promise.all([
-    getChamberSnapshot(context),
-    getWebStaffDirectory(),
-    getChamberCommsSnapshot(context),
-    getHourlyBedBoard(context, selectedDate),
-    getVisiblePatients(context, "physio"),
-  ]);
-  const [snapshot, bookingPlan] = await Promise.all([
-    enrichChamberSnapshotWithPatientProfiles(context, rawSnapshot),
-    getChamberBookingPlans(context, rawSnapshot.date),
-  ]);
-  const canEditPatient = canPerform(context, "patient.update", "Physio");
-  const canAssignTherapist = canPerform(context, "chamber.run", "Physio");
+
+  const [rawSnapshot, staffDirectory, comms, hourlyAppointments, visiblePatients] =
+    await Promise.all([
+      getChamberSnapshot(context),
+      getWebStaffDirectory(),
+      getChamberCommsSnapshot(context),
+      getHourlyBedBoard(context, selectedDate),
+      getVisiblePatients(context, "physio"),
+    ]);
+  const snapshot = await enrichChamberSnapshotWithPatientProfiles(
+    context,
+    rawSnapshot
+  );
+
   const canBook = canPerform(context, "appointment.create", "Physio");
   const therapists = staffDirectory
     .filter(
       (staff) =>
         staff.status === "Active" &&
         staff.roles.includes("Therapist") &&
-        (staff.departmentAccess.includes("Physio") || staff.departmentAccess.includes("All"))
+        (staff.departmentAccess.includes("Physio") ||
+          staff.departmentAccess.includes("All"))
     )
     .map((staff) => ({ staffId: staff.staffId, fullName: staff.fullName }));
   const bookingPatients = visiblePatients
-    .filter((patient) => patient.department === "Physio" && patient.status !== "Inactive")
+    .filter(
+      (patient) => patient.department === "Physio" && patient.status !== "Inactive"
+    )
     .map((patient) => ({
       patientId: patient.patientId,
       fullName: patient.fullName,
@@ -58,138 +68,161 @@ export default async function ChamberPage({
       defaultTherapist: patient.therapist,
     }));
 
-  const occupiedStations = snapshot.stations.filter((item) => Boolean(item.session)).length;
-  const totalStations = snapshot.stations.length;
-  const stationUtilization = totalStations > 0 ? (occupiedStations / totalStations) * 100 : 0;
-  const busyMachines = snapshot.machines.filter((item) => Boolean(item.session)).length;
+  const occupiedStations = snapshot.stations.filter((item) => item.session).length;
+  const busyMachines = snapshot.machines.filter((item) => item.session).length;
+  const waiting = snapshot.queue.length;
   const warnings = snapshot.queue.filter((item) => Boolean(item.allocationWarning));
   const mixedRooms = snapshot.stations.filter((item) => item.roomGender === "Mixed");
   const conflictCount = warnings.length + mixedRooms.length;
 
-  const correctionItems = [
-    ...snapshot.queue.map((item) => {
-      const raw = rawSnapshot.queue.find((row) => row.appointmentId === item.appointmentId);
-      return {
-        appointmentId: item.appointmentId,
-        patientId: item.patientId,
-        patientName: item.patientName,
-        therapist: item.therapist,
-        gender: item.gender,
-        chamberGender: raw?.gender || "" as const,
-        state: "Waiting" as const,
-        station: item.recommendedStationId,
-        warning: item.allocationWarning,
-      };
-    }),
+  const activePatients = [
+    ...snapshot.queue.map((item) => ({
+      appointmentId: item.appointmentId,
+      patientId: item.patientId,
+      patientName: item.patientName,
+      bedId: item.recommendedStationId,
+      roomId: "",
+    })),
     ...snapshot.stations.flatMap((station) => {
       if (!station.session) return [];
-      const raw = rawSnapshot.stations.find(
-        (row) => row.resource.resourceId === station.resource.resourceId
-      )?.session;
-      return [{
-        appointmentId: station.session.appointmentId,
-        patientId: station.session.patientId,
-        patientName: station.session.patientName,
-        therapist: station.session.therapist,
-        gender: station.session.gender,
-        chamberGender: raw?.gender || "" as const,
-        state: "In Treatment" as const,
-        station: station.resource.resourceName,
-        warning: raw?.gender && raw.gender !== station.session.gender
-          ? "Patient master gender differs from the active chamber session."
-          : "",
-      }];
+      return [
+        {
+          appointmentId: station.session.appointmentId,
+          patientId: station.session.patientId,
+          patientName: station.session.patientName,
+          bedId: station.resource.resourceName,
+          roomId: station.resource.roomId,
+        },
+      ];
     }),
   ];
+  const uniquePatients = [
+    ...new Map(activePatients.map((item) => [item.appointmentId, item])).values(),
+  ];
 
-  const uniqueCorrectionItems = [...new Map(
-    correctionItems.map((item) => [item.patientId, item])
-  ).values()];
+  const defaultTab =
+    params.tab === "team" ? "team" : params.tab === "live" ? "live" : "schedule";
 
-  return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 p-5 text-white shadow-lg">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Physio operations</p>
-            <h1 className="mt-1 text-2xl font-bold">Live chamber</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">Book by bed and hour, then run patient flow, machines and team communication here.</p>
-          </div>
-          <StatusBadge tone={conflictCount ? "warning" : "success"} className="border-white/10">
-            {conflictCount ? `${conflictCount} warnings` : "Live healthy"}
-          </StatusBadge>
+  const schedulePanel = (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <div>
+          <h2 className="text-base font-bold text-slate-950">Bed schedule</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            One hour · Bed 1–4 + Traction · book in place
+          </p>
         </div>
-        <div className="mt-5 grid grid-cols-4 gap-2 text-center">
-          <div className="rounded-lg bg-white/10 p-2"><p className="text-[10px] text-slate-300">Occupied</p><p className="mt-1 text-lg font-bold">{occupiedStations}/{totalStations}</p></div>
-          <div className="rounded-lg bg-amber-400/10 p-2"><p className="text-[10px] text-amber-200">Waiting</p><p className="mt-1 text-lg font-bold text-amber-100">{snapshot.queue.length}</p></div>
-          <div className="rounded-lg bg-blue-400/10 p-2"><p className="text-[10px] text-blue-200">Machines busy</p><p className="mt-1 text-lg font-bold text-blue-100">{busyMachines}</p></div>
-          <div className={`rounded-lg p-2 ${conflictCount ? "bg-red-400/10" : "bg-emerald-400/10"}`}><p className={`text-[10px] ${conflictCount ? "text-red-200" : "text-emerald-200"}`}>Conflicts</p><p className={`mt-1 text-lg font-bold ${conflictCount ? "text-red-100" : "text-emerald-100"}`}>{conflictCount}</p></div>
+        <StatusBadge tone="info">{selectedDate === today ? "Today" : selectedDate}</StatusBadge>
+      </div>
+      <ChamberHourlyBedBoard
+        date={selectedDate}
+        today={today}
+        appointments={hourlyAppointments}
+        slots={chamberHourSlots()}
+        patients={bookingPatients}
+        clinicians={therapists}
+        canBook={canBook}
+      />
+      <p className="px-1 text-[10px] leading-4 text-slate-400">
+        Bed, therapist, room-gender and machine conflicts are checked by the
+        scheduling engine before a booking is saved.
+      </p>
+    </div>
+  );
+
+  const livePanel = (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-center">
+          <p className="text-lg font-bold text-blue-950">{occupiedStations}</p>
+          <p className="text-[10px] text-blue-700">In beds</p>
         </div>
-      </section>
+        <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-center">
+          <p className="text-lg font-bold text-amber-950">{waiting}</p>
+          <p className="text-[10px] text-amber-700">Waiting</p>
+        </div>
+        <div className="rounded-xl border border-violet-100 bg-violet-50 p-3 text-center">
+          <p className="text-lg font-bold text-violet-950">{busyMachines}</p>
+          <p className="text-[10px] text-violet-700">Machines</p>
+        </div>
+      </div>
 
-      <ChamberNav pending={comms.pendingUrgentCount} />
-
-      <div id="beds" className="scroll-mt-28 space-y-4">
-        <ChamberHourlyBedBoard
-          date={selectedDate}
-          today={today}
-          appointments={hourlyAppointments}
-          slots={chamberHourSlots()}
-          patients={bookingPatients}
-          clinicians={therapists}
-          canBook={canBook}
-        />
-
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div><h2 className="text-base font-semibold text-slate-950">Live beds now</h2><p className="mt-0.5 text-xs text-slate-500">Current physical Bed 1–4 + traction status</p></div>
-            <StatusBadge tone={stationUtilization >= 100 ? "warning" : stationUtilization >= 50 ? "info" : "success"}>{Math.round(stationUtilization)}%</StatusBadge>
+      {conflictCount > 0 && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-amber-950">
+                {conflictCount} item{conflictCount === 1 ? "" : "s"} need attention
+              </p>
+              <p className="mt-0.5 text-[10px] text-amber-800">
+                Resolve patient or room allocation before the next move.
+              </p>
+            </div>
+            <StatusBadge tone="warning">Check</StatusBadge>
           </div>
-          <ProgressBar value={stationUtilization} label={`${occupiedStations} occupied · ${Math.max(0, totalStations - occupiedStations)} free`} className="mt-4" />
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {snapshot.stations.map((station) => (
-              <div key={station.resource.resourceId} className={`rounded-lg border p-3 ${station.session ? "border-blue-200 bg-blue-50" : "border-emerald-200 bg-emerald-50"}`}>
-                <p className="truncate text-xs font-semibold text-slate-900">{station.resource.resourceName}</p>
-                <p className={`mt-1 text-[10px] font-semibold ${station.session ? "text-blue-700" : "text-emerald-700"}`}>{station.session ? `In use · ${station.session.patientName}` : "Free"}</p>
-                {station.roomGender && <p className={`mt-1 text-[10px] ${station.roomGender === "Mixed" ? "font-semibold text-red-700" : "text-slate-500"}`}>{station.roomGender} room</p>}
+          <div className="mt-2 space-y-1.5">
+            {warnings.slice(0, 3).map((item) => (
+              <Link
+                key={item.appointmentId}
+                href={`/patients/${encodeURIComponent(item.patientId)}?edit=1`}
+                className="block rounded-lg bg-white/80 px-3 py-2 text-[11px] font-medium text-amber-900 ring-1 ring-amber-100"
+              >
+                {item.patientName || item.patientId} · {item.allocationWarning}
+              </Link>
+            ))}
+            {mixedRooms.slice(0, 2).map((station) => (
+              <div
+                key={station.resource.resourceId}
+                className="rounded-lg bg-white/80 px-3 py-2 text-[11px] font-medium text-red-800 ring-1 ring-red-100"
+              >
+                {station.resource.resourceName} · mixed-gender room conflict
               </div>
             ))}
           </div>
         </section>
-      </div>
+      )}
 
-      <div id="waiting" className="scroll-mt-28">
-        <ChamberPatientEditPanel
-          initialItems={uniqueCorrectionItems}
-          canEdit={canEditPatient}
-          canAssignTherapist={canAssignTherapist}
-          therapists={therapists}
-        />
-      </div>
+      <LiveChamberBoard initial={snapshot} />
+    </div>
+  );
 
-      <div id="machines" className="scroll-mt-28">
-        <ChamberReservationPanel plans={bookingPlan.plans} reservations={bookingPlan.reservations} />
-      </div>
+  const teamPanel = (
+    <ChamberCommsClient
+      initial={comms}
+      activePatients={uniquePatients}
+      defaultTab={params.team === "equipment" ? "equipment" : "messages"}
+    />
+  );
 
-      <div id="conflicts" className="scroll-mt-28">
-        {conflictCount > 0 ? (
-          <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-amber-950">Allocation warnings</h2><p className="mt-0.5 text-xs text-amber-800">Resolve before assigning a station or resource.</p></div><StatusBadge tone="warning">{conflictCount}</StatusBadge></div>
-            <div className="mt-3 space-y-2">
-              {mixedRooms.map((station) => <div key={`mixed-${station.resource.resourceId}`} className="rounded-lg bg-white/70 p-3 text-xs font-medium text-red-800 ring-1 ring-red-100">{station.resource.resourceName}: mixed-gender occupancy conflict detected.</div>)}
-              {warnings.map((item) => <div key={`warning-${item.appointmentId}`} className="rounded-lg bg-white/70 p-3 text-xs text-amber-900 ring-1 ring-amber-100"><strong>{item.patientName || item.patientId}</strong> · {item.allocationWarning}</div>)}
-            </div>
-          </section>
-        ) : (
-          <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-800 shadow-sm">
-            <strong>No active allocation conflict.</strong> Gender and station safety checks are healthy.
-          </section>
-        )}
-      </div>
+  return (
+    <div className="mx-auto w-full max-w-5xl space-y-4">
+      <section className="overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 p-4 text-white shadow-lg">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-200">
+              Physio operations
+            </p>
+            <h1 className="mt-1 text-xl font-bold">Live Chamber</h1>
+            <p className="mt-1 text-xs leading-5 text-slate-300">
+              Schedule the hour, run the patient, call the team — one workspace.
+            </p>
+          </div>
+          <StatusBadge
+            tone={conflictCount ? "warning" : "success"}
+            className="border-white/10"
+          >
+            {conflictCount ? `${conflictCount} alert` : "Healthy"}
+          </StatusBadge>
+        </div>
+      </section>
 
-      <div id="live-treatment" className="scroll-mt-28">
-        <LiveChamberBoard initial={snapshot} />
-      </div>
+      <ChamberWorkspaceTabs
+        schedule={schedulePanel}
+        live={livePanel}
+        team={teamPanel}
+        pendingTeam={comms.pendingUrgentCount}
+        defaultTab={defaultTab}
+      />
     </div>
   );
 }
