@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { payApprovedExpense } from "@/lib/domain/finance/expenses";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { payApprovedExpense } from "@/lib/webos/financeOps";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -14,10 +14,10 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "SCHEMA_MISMATCH") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
-  if (["INVALID_CUSTODIAN", "DEPARTMENT_MISMATCH", "EXPENSE_NOT_APPROVED"].includes(message)) {
+  if (["INVALID_DEPARTMENT", "INVALID_CUSTODIAN", "DEPARTMENT_MISMATCH", "EXPENSE_NOT_APPROVED"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 409 });
   }
-  console.error("W3 expense pay failed:", message);
+  console.error("Finance expense pay failed:", message);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
