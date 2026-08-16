@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createPayment } from "@/lib/domain/finance/payments";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { createPayment } from "@/lib/webos/financeOps";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -26,7 +26,7 @@ function errorResponse(error: unknown): NextResponse {
   ) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  console.error("W3 payment create failed:", message);
+  console.error("Finance payment create failed:", message);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
