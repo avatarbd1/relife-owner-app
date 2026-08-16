@@ -6,33 +6,31 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("expense routes use the central Finance expense lifecycle", () => {
-  const routes = [
-    "app/api/finance/expense/request/route.ts",
-    "app/api/finance/expense/pay/route.ts",
-    "app/api/control/expense/route.ts",
-  ];
-  for (const route of routes) {
-    assert.match(
-      source(route),
-      /@\/lib\/domain\/finance\/expenses/,
-      `${route} must use the central Finance expense lifecycle`
-    );
-  }
+function assertDomainRoute(path: string, module: string): void {
+  assert.match(
+    source(path),
+    new RegExp(`@/lib/domain/finance/${module}`.replaceAll("/", "\\/")),
+    `${path} must use Finance domain ${module}`
+  );
+}
+
+test("payment writes use Finance domain", () => {
+  assertDomainRoute("app/api/finance/payment/route.ts", "payments");
 });
 
-test("cash routes use the central Finance cash lifecycle", () => {
-  const routes = [
-    "app/api/finance/cash/request/route.ts",
-    "app/api/control/cash-movement/route.ts",
-  ];
-  for (const route of routes) {
-    assert.match(
-      source(route),
-      /@\/lib\/domain\/finance\/cash/,
-      `${route} must use the central Finance cash lifecycle`
-    );
-  }
+test("expense lifecycle routes use Finance domain", () => {
+  assertDomainRoute("app/api/finance/expense/request/route.ts", "expenses");
+  assertDomainRoute("app/api/finance/expense/pay/route.ts", "expenses");
+  assertDomainRoute("app/api/control/expense/route.ts", "expenses");
+});
+
+test("cash lifecycle routes use Finance domain", () => {
+  assertDomainRoute("app/api/finance/cash/request/route.ts", "cash");
+  assertDomainRoute("app/api/control/cash-movement/route.ts", "cash");
+});
+
+test("salary writes use Finance domain", () => {
+  assertDomainRoute("app/api/finance/salary/route.ts", "salary");
 });
 
 test("duplicate expense writers are removed", () => {
