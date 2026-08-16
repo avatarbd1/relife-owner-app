@@ -54,10 +54,12 @@ export async function updateUnifiedAppointmentStatus(
     if (
       message !== "APPOINTMENT_NOT_FOUND" ||
       department !== "Physio" ||
-      chamberDbMode() !== "supabase" ||
-      !chamberSupabaseConfigured()
+      chamberDbMode() !== "supabase"
     ) {
       throw error;
+    }
+    if (!chamberSupabaseConfigured()) {
+      throw new Error("SUPABASE_EDGE_SECRET_MISSING");
     }
   }
 
