@@ -2,6 +2,7 @@ export type AppIconName =
   | "home"
   | "finance"
   | "patients"
+  | "chamber"
   | "reports"
   | "more"
   | "calendar"
@@ -39,6 +40,7 @@ export default function AppIcon({
     home: <><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10.5V20h13v-9.5" /><path d="M9.5 20v-5h5v5" /></>,
     finance: <><circle cx="12" cy="12" r="8.5" /><path d="M14.8 8.7c-.7-.6-1.7-.9-2.8-.9-1.6 0-2.8.8-2.8 2s1 1.7 2.9 2.1c2 .4 2.9 1 2.9 2.2 0 1.3-1.2 2.1-3 2.1-1.2 0-2.3-.4-3.1-1.1M12 6.5v11" /></>,
     patients: <><path d="M12 5.2a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Z" /><path d="M5.5 20c.7-4 2.9-6.2 6.5-6.2s5.8 2.2 6.5 6.2" /></>,
+    chamber: <><path d="M4 7v12M20 7v12M4 14h16" /><path d="M6 10h5v4H6zM13 10h5v4h-5z" /><path d="M7 7V5.5A1.5 1.5 0 0 1 8.5 4h7A1.5 1.5 0 0 1 17 5.5V7" /></>,
     reports: <><path d="M5 20V10" /><path d="M12 20V4" /><path d="M19 20v-7" /><path d="M3 20h18" /></>,
     more: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
     calendar: <><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M8 3.5v4M16 3.5v4M4 9.5h16" /></>,
