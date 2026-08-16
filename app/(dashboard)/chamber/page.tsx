@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ChamberCommsClient from "@/components/ChamberCommsClient";
+import ChamberDirectCall from "@/components/ChamberDirectCall";
 import ChamberHourlyBedBoard from "@/components/ChamberHourlyBedBoard";
 import ChamberWorkspaceTabs from "@/components/ChamberWorkspaceTabs";
 import LiveChamberBoard from "@/components/LiveChamberBoard";
@@ -179,9 +180,10 @@ export default async function ChamberPage({
       </div>
     );
   } else {
-    const [comms, chamber] = await Promise.all([
+    const [comms, chamber, staffDirectory] = await Promise.all([
       getChamberCommsSnapshot(context),
       getChamberSnapshot(context),
+      getWebStaffDirectory(),
     ]);
     pendingTeam = comms.pendingUrgentCount;
     statusLabel = pendingTeam ? `${pendingTeam} urgent` : "Team ready";
@@ -213,13 +215,31 @@ export default async function ChamberPage({
         activePatients.map((item) => [item.appointmentId, item])
       ).values(),
     ];
+    const callTargets = staffDirectory
+      .filter(
+        (staff) =>
+          staff.status === "Active" &&
+          staff.staffId !== context.staffId &&
+          (staff.departmentAccess.includes("Physio") || staff.departmentAccess.includes("All")) &&
+          staff.roles.some((role) =>
+            ["Owner", "Manager", "Receptionist", "Therapist"].includes(role)
+          )
+      )
+      .map((staff) => ({
+        staffId: staff.staffId,
+        fullName: staff.fullName,
+        roles: staff.roles,
+      }));
 
     panel = (
-      <ChamberCommsClient
-        initial={comms}
-        activePatients={uniquePatients}
-        defaultTab={params.team === "equipment" ? "equipment" : "messages"}
-      />
+      <div className="space-y-4">
+        <ChamberDirectCall targets={callTargets} />
+        <ChamberCommsClient
+          initial={comms}
+          activePatients={uniquePatients}
+          defaultTab={params.team === "equipment" ? "equipment" : "messages"}
+        />
+      </div>
     );
   }
 
