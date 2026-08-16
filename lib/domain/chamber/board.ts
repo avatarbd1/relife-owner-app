@@ -240,9 +240,9 @@ async function loadAppointmentRows(): Promise<string[][]> {
 
 /**
  * Canonical read model for the Chamber hourly bed board.
- *
- * During the Supabase cutover we merge legacy Sheets appointments with new
- * tenant-scoped Supabase rows. Supabase wins on matching appointment IDs.
+ * During exact Supabase cutover, legacy Sheets rows and Supabase rows are merged.
+ * Supabase wins on matching appointment IDs, and failures fail closed so a new
+ * Supabase-only booking can never silently disappear from the board.
  */
 export async function getHourlyBedBoard(
   context: AccessContext,
@@ -252,22 +252,16 @@ export async function getHourlyBedBoard(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("INVALID_DATE");
 
   const sheets = parseBoardAppointments(await loadAppointmentRows(), date);
-  if (chamberDbMode() !== "supabase" || !chamberSupabaseConfigured()) {
-    return sheets;
-  }
+  if (chamberDbMode() !== "supabase") return sheets;
+  if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
 
-  try {
-    const snapshot = await getSupabaseChamberBootstrap(date);
-    const merged = new Map(sheets.map((item) => [item.appointmentId, item]));
-    for (const row of snapshot.appointments) {
-      const appointment = parseSupabaseAppointment(row, date);
-      if (appointment?.appointmentId) merged.set(appointment.appointmentId, appointment);
-    }
-    return [...merged.values()].sort((a, b) => a.startMinute - b.startMinute);
-  } catch (error) {
-    console.warn("Supabase Chamber board fallback to Sheets", error);
-    return sheets;
+  const snapshot = await getSupabaseChamberBootstrap(date);
+  const merged = new Map(sheets.map((item) => [item.appointmentId, item]));
+  for (const row of snapshot.appointments) {
+    const appointment = parseSupabaseAppointment(row, date);
+    if (appointment?.appointmentId) merged.set(appointment.appointmentId, appointment);
   }
+  return [...merged.values()].sort((a, b) => a.startMinute - b.startMinute);
 }
 
 export function chamberHourSlots(): Array<{
