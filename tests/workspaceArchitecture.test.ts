@@ -86,3 +86,16 @@ test("Chamber loads only the active workspace data", () => {
   );
   assert.doesNotMatch(tabs, /useState/);
 });
+
+test("Chamber hourly board is owned by the Chamber domain", () => {
+  const chamber = source("app/(dashboard)/chamber/page.tsx");
+  const board = source("lib/domain/chamber/board.ts");
+  const legacy = source("lib/webos/chamberHourlyBooking.ts");
+
+  assert.match(chamber, /@\/lib\/domain\/chamber\/board/);
+  assert.doesNotMatch(chamber, /@\/lib\/webos\/chamberHourlyBooking/);
+  assert.match(board, /fetchSheetRanges/);
+  assert.match(board, /export async function getHourlyBedBoard/);
+  assert.match(legacy, /@\/lib\/domain\/chamber\/board/);
+  assert.doesNotMatch(legacy, /fetchSheetRanges/);
+});
