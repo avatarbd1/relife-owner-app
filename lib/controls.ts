@@ -7,18 +7,13 @@ import {
   updateSheetValues,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import {
+  decideExpense as decideExpenseInDomain,
+  listPendingExpenses,
+  type PendingExpense,
+} from "@/lib/domain/finance/expenses";
 
-export interface PendingExpenseControl {
-  workbook: Workbook;
-  id: string;
-  date: string;
-  category: string;
-  amount: number;
-  requestedBy: string;
-  paidFrom: string;
-  note: string;
-  department: string;
-}
+export type PendingExpenseControl = PendingExpense;
 
 export interface PendingCashControl {
   workbook: Workbook;
@@ -39,11 +34,6 @@ export interface OwnerControlSnapshot {
   pendingCashMovements: PendingCashControl[];
 }
 
-const PENDING_EXPENSE_STATUSES = new Set([
-  "pending",
-  "pending approval",
-  "requested",
-]);
 const PENDING_CASH_STATUSES = new Set([
   "pending",
   "pending approval",
@@ -112,10 +102,9 @@ function ensureWriteConfiguration(): void {
   }
 }
 
-async function appendAudit(
+async function appendCashAudit(
   workbook: Workbook,
   action: string,
-  entityType: string,
   entityId: string,
   beforeValue: string,
   afterValue: string,
@@ -130,7 +119,7 @@ async function appendAudit(
         timestamp,
         actorName(),
         action,
-        entityType,
+        "CashMovement",
         entityId,
         "",
         beforeValue,
@@ -152,43 +141,8 @@ async function appendAudit(
       ],
     ]);
   } catch (error) {
-    console.error("Owner control audit append failed:", error);
+    console.error("Owner cash control audit append failed:", error);
   }
-}
-
-function parsePendingExpenses(
-  workbook: Workbook,
-  rows: string[][]
-): PendingExpenseControl[] {
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  const idIdx = headerIndex(headers, "Expense_ID");
-  const dateIdx = headerIndex(headers, "Date");
-  const categoryIdx = headerIndex(headers, "Category");
-  const amountIdx = headerIndex(headers, "Amount");
-  const requestedByIdx = headerIndex(headers, "Requested_By", "Added_By");
-  const paidFromIdx = headerIndex(headers, "Paid_From");
-  const noteIdx = headerIndex(headers, "Note");
-  const departmentIdx = headerIndex(headers, "Department");
-  const statusIdx = headerIndex(headers, "Status");
-
-  return rows.slice(1).flatMap((row) => {
-    const id = at(row, idIdx);
-    if (!id || !PENDING_EXPENSE_STATUSES.has(normalize(at(row, statusIdx)))) return [];
-    return [
-      {
-        workbook,
-        id,
-        date: at(row, dateIdx),
-        category: at(row, categoryIdx),
-        amount: money(at(row, amountIdx)),
-        requestedBy: at(row, requestedByIdx),
-        paidFrom: at(row, paidFromIdx),
-        note: at(row, noteIdx),
-        department: at(row, departmentIdx) || workbookDepartment(workbook),
-      },
-    ];
-  });
 }
 
 function parsePendingCash(
@@ -243,17 +197,15 @@ export async function getOwnerControlSnapshot(): Promise<OwnerControlSnapshot> {
   }
 
   try {
-    const [physio, dental] = await Promise.all([
-      fetchSheetRanges("physio", ["07_Expenses", "21_Cash_Movement"]),
-      fetchSheetRanges("dental", ["07_Expenses", "21_Cash_Movement"]),
+    const [pendingExpenses, physio, dental] = await Promise.all([
+      listPendingExpenses(),
+      fetchSheetRanges("physio", ["21_Cash_Movement"]),
+      fetchSheetRanges("dental", ["21_Cash_Movement"]),
     ]);
     return {
       privateSheets,
       writeEnabled,
-      pendingExpenses: [
-        ...parsePendingExpenses("physio", physio["07_Expenses"] || []),
-        ...parsePendingExpenses("dental", dental["07_Expenses"] || []),
-      ],
+      pendingExpenses,
       pendingCashMovements: [
         ...parsePendingCash("physio", physio["21_Cash_Movement"] || []),
         ...parsePendingCash("dental", dental["21_Cash_Movement"] || []),
@@ -261,6 +213,9 @@ export async function getOwnerControlSnapshot(): Promise<OwnerControlSnapshot> {
     };
   } catch (error) {
     console.error("Owner control snapshot failed:", error);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("LIVE_DATA_UNAVAILABLE:owner_controls");
+    }
     return {
       privateSheets,
       writeEnabled: false,
@@ -270,54 +225,20 @@ export async function getOwnerControlSnapshot(): Promise<OwnerControlSnapshot> {
   }
 }
 
+/** @deprecated Use lib/domain/finance/expenses directly. */
 export async function decideExpense(
   workbook: Workbook,
   id: string,
   decision: "approve" | "reject"
 ): Promise<void> {
   ensureWriteConfiguration();
-  const snapshot = await fetchSheetRanges(workbook, ["07_Expenses"]);
-  const rows = snapshot["07_Expenses"] || [];
-  if (rows.length < 2) throw new Error("CONTROL_NOT_FOUND");
-
-  const headers = rows[0];
-  const idIdx = headerIndex(headers, "Expense_ID");
-  const statusIdx = headerIndex(headers, "Status");
-  const requestedByIdx = headerIndex(headers, "Requested_By");
-  const approvedByIdx = headerIndex(headers, "Approved_By");
-  const approvedAtIdx = headerIndex(headers, "Approved_At");
-  const departmentIdx = headerIndex(headers, "Department");
-
-  if ([idIdx, statusIdx, approvedByIdx, approvedAtIdx].some((index) => index < 0)) {
-    throw new Error("CONTROL_SCHEMA_MISMATCH");
-  }
-
-  const dataIndex = rows.slice(1).findIndex((row) => at(row, idIdx) === id);
-  if (dataIndex < 0) throw new Error("CONTROL_NOT_FOUND");
-  const row = rows[dataIndex + 1];
-  const currentStatus = at(row, statusIdx);
-  if (!PENDING_EXPENSE_STATUSES.has(normalize(currentStatus))) {
-    throw new Error("CONTROL_ALREADY_DECIDED");
-  }
-
-  const rowNumber = dataIndex + 2;
-  const nextStatus = decision === "approve" ? "Approved" : "Rejected";
-  const requestedBy = at(row, requestedByIdx);
-  const approvedBy = actorName();
-  const approvedAt = nowDhaka();
-
-  await updateSheetValues(workbook, `'07_Expenses'!V${rowNumber}:Y${rowNumber}`, [
-    [nextStatus, requestedBy, approvedBy, approvedAt],
-  ]);
-  await appendAudit(
+  await decideExpenseInDomain({
     workbook,
-    decision === "approve" ? "EXPENSE_APPROVED" : "EXPENSE_REJECTED",
-    "Expense",
-    id,
-    currentStatus,
-    nextStatus,
-    at(row, departmentIdx)
-  );
+    expenseId: id,
+    decision,
+    actorId: actorName(),
+    reason: decision === "reject" ? "Legacy rejection" : undefined,
+  });
 }
 
 export async function decideCashMovement(
@@ -383,10 +304,9 @@ export async function decideCashMovement(
     `'21_Cash_Movement'!U${rowNumber}:AI${rowNumber}`,
     [values]
   );
-  await appendAudit(
+  await appendCashAudit(
     workbook,
     decision === "accept" ? "CASH_MOVEMENT_ACCEPTED" : "CASH_MOVEMENT_REJECTED",
-    "CashMovement",
     id,
     currentStatus,
     decision === "accept" ? "Accepted" : "Rejected",
