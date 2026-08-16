@@ -2,6 +2,13 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import {
+  RELIFE_SYSTEM,
+  dhakaClockParts,
+  ledgerClinicId,
+  relifeRecordId,
+  workbookForDepartment,
+} from "@/lib/config/relifeSystem";
+import {
   appendSheetValues,
   batchUpdateSpreadsheet,
   fetchSheetRanges,
@@ -9,8 +16,8 @@ import {
   type SpreadsheetBatchRequest,
   type Workbook,
 } from "@/lib/data/googleSheets";
-import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import type { ClinicDepartment } from "@/lib/domain/finance/expenses";
+import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
 type SheetValue = string | number | boolean;
 export type PaymentMethod = "Cash" | "bKash" | "Nagad" | "Bank" | "Card";
@@ -74,37 +81,6 @@ function departmentFromPatientId(patientId: string): ClinicDepartment {
   if (id.startsWith("DT")) return "Dental";
   if (id.startsWith("PT")) return "Physio";
   throw new Error("INVALID_PATIENT_ID");
-}
-
-function workbookForDepartment(department: ClinicDepartment): Workbook {
-  return department === "Dental" ? "dental" : "physio";
-}
-
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
-function dhakaParts(ref = new Date()): {
-  date: string;
-  time: string;
-  timestamp: string;
-  provenance: string;
-} {
-  const dateParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(ref);
-  const values = Object.fromEntries(dateParts.map((part) => [part.type, part.value]));
-  const date = `${values.year}-${values.month}-${values.day}`;
-  const time = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Dhaka",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(ref);
-  return { date, time, timestamp: `${date} ${time}`, provenance: ref.toISOString() };
 }
 
 function validateRequestId(value: string): string {
@@ -180,8 +156,8 @@ async function appendPaymentAudit(input: {
   due: number;
   paymentMethod: string;
 }): Promise<void> {
-  const now = dhakaParts();
-  const clinic = clinicId(input.department);
+  const now = dhakaClockParts();
+  const clinic = ledgerClinicId(input.department);
   try {
     await appendSheetValues(input.workbook, "'20_Data_Audit'!A:W", [[
       `AUD-${randomUUID()}`,
@@ -199,17 +175,17 @@ async function appendPaymentAudit(input: {
         paymentMethod: input.paymentMethod,
       }),
       "Finance domain action",
-      "RELIFE",
+      RELIFE_SYSTEM.organizationId,
       clinic,
-      "AMTALI-01",
-      `${clinic}:${input.receiptNo}`,
+      RELIFE_SYSTEM.branchId,
+      relifeRecordId(input.department, input.receiptNo),
       "",
       input.actorId,
-      "web_pwa",
-      "human_entry",
+      RELIFE_SYSTEM.sourceSystem,
+      RELIFE_SYSTEM.sourceType,
       false,
       true,
-      "relife-uda-v1",
+      RELIFE_SYSTEM.schemaVersion,
       now.provenance,
       input.department,
     ]]);
@@ -311,7 +287,7 @@ export async function createPayment(
   const overpayment = currentDue > 0 ? Math.max(0, amount - discountedDue) : 0;
   const newAdvance = currentAdvance + overpayment;
   const paymentStatus = newDue <= 0 ? "Paid" : "Due";
-  const now = dhakaParts();
+  const now = dhakaClockParts();
 
   const existingReceipts = new Set(
     paymentRows.slice(1).map((row) => at(row, receiptIdx)).filter(Boolean)
@@ -347,16 +323,16 @@ export async function createPayment(
     Remarks: remarks,
     Time: now.time,
     Session_Type: normalize(input.sessionType),
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
-    Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${receiptNo}`,
+    Organization_ID: RELIFE_SYSTEM.organizationId,
+    Clinic_ID: ledgerClinicId(department),
+    Branch_ID: RELIFE_SYSTEM.branchId,
+    Record_ID: relifeRecordId(department, receiptNo),
     Provider_ID: context.staffId,
-    Source_System: "web_pwa",
-    Source_Type: "human_entry",
+    Source_System: RELIFE_SYSTEM.sourceSystem,
+    Source_Type: RELIFE_SYSTEM.sourceType,
     AI_Generated: false,
     Human_Verified: true,
-    Schema_Version: "relife-uda-v1",
+    Schema_Version: RELIFE_SYSTEM.schemaVersion,
     Provenance_Timestamp: now.provenance,
   });
 
