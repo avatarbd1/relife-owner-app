@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requestExpense } from "@/lib/webos/financeOps";
+import { requestExpense } from "@/lib/webos/expenseRequests";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
