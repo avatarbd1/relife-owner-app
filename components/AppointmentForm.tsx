@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import TapChoice from "@/components/TapChoice";
@@ -97,6 +97,7 @@ export default function AppointmentForm({
   defaultDepartment?: Department;
 }) {
   const router = useRouter();
+  const requestIdRef = useRef("");
   const defaultPatient = patients.find((patient) => patient.patientId === defaultPatientId);
   const initialDepartment = defaultPatient?.department === "Physio" || defaultPatient?.department === "Dental"
     ? defaultPatient.department
@@ -138,6 +139,10 @@ export default function AppointmentForm({
     }),
     [modalities, modalityOptions]
   );
+
+  useEffect(() => {
+    requestIdRef.current = "";
+  }, [selectedPatient?.patientId, date, time, therapist, remarks, modalities]);
 
   useEffect(() => {
     if (!selectedPatient || selectedPatient.department !== "Physio") {
@@ -232,6 +237,13 @@ export default function AppointmentForm({
     setModalities((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   }
 
+  function stableRequestId(): string {
+    if (!requestIdRef.current) {
+      requestIdRef.current = `APPT${window.crypto.randomUUID().replace(/-/g, "")}`;
+    }
+    return requestIdRef.current;
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedPatient || !date || !time || !therapist || busy) return;
@@ -253,6 +265,7 @@ export default function AppointmentForm({
           therapist,
           remarks,
           modalities: selectedPatient.department === "Physio" ? modalities : [],
+          requestId: selectedPatient.department === "Physio" ? stableRequestId() : undefined,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -272,6 +285,7 @@ export default function AppointmentForm({
         }
         throw new Error(result.error || `HTTP ${response.status}`);
       }
+      requestIdRef.current = "";
       haptic("success");
       router.push(`/appointments?date=${encodeURIComponent(date)}`);
       router.refresh();
