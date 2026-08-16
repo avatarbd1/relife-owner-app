@@ -18,14 +18,19 @@ import type {
 } from "@/lib/types";
 
 /**
- * READ-ONLY DATA SERVICE LAYER
+ * DATA SERVICE LAYER
  *
  * Production: private Google Sheets API reads using the same service account
  * that is shared on the Relife workbooks. No clinic sheet needs to be
  * published to the public web.
  *
+ * Safety rule: when private live data is configured, a failed read must never
+ * be replaced by seed/demo clinic records. The lower Sheets adapter may return
+ * an explicitly time-bounded last-known-good cache; otherwise this layer fails
+ * closed and lets the dashboard error boundary show a retry state.
+ *
  * Compatibility fallback: the old SHEET_*_CSV variables are still supported
- * while the private service-account secret is being wired into Render.
+ * for non-private legacy/development setups.
  */
 
 export const IS_LIVE_DATA =
@@ -39,15 +44,13 @@ const LIVE_RANGES = [
   "21_Cash_Movement",
 ] as const;
 
-type LiveRange = (typeof LIVE_RANGES)[number];
-
-interface LiveSnapshot {
+type LiveSnapshot = {
   payments: Payment[];
   expenses: Expense[];
   staff: StaffMember[];
   salaryPayments: SalaryPayment[];
   cashMovements: CashMovement[];
-}
+};
 
 let snapshotCache:
   | { createdAt: number; promise: Promise<LiveSnapshot> }
@@ -379,6 +382,9 @@ async function fromPrivateOrSeed<K extends keyof LiveSnapshot>(
     return (await getPrivateSnapshot())[key];
   } catch (error) {
     console.error(`Private Google Sheets read failed (${key}):`, error);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(`LIVE_DATA_UNAVAILABLE:${key}`);
+    }
     return seed;
   }
 }
