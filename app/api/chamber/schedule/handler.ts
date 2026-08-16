@@ -36,6 +36,7 @@ function errorResponse(error: unknown): NextResponse {
       "INVALID_SLOT",
       "INVALID_BED",
       "INVALID_THERAPIST",
+      "INVALID_REQUEST_ID",
     ].includes(message)
   ) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
@@ -63,6 +64,7 @@ function parseInput(body: Record<string, unknown>): ChamberScheduleInput {
     requestedBedId: String(body.requestedBedId || ""),
     modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
     remarks: String(body.remarks || ""),
+    requestId: String(body.requestId || ""),
   };
 }
 
