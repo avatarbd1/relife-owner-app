@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import {
+  assignUnifiedChamberTherapist,
+  setUnifiedChamberBedPreference,
+} from "@/lib/domain/chamber/liveControls";
+import {
   assertLiveChamberCutoverReady,
   getCutoverChamberSnapshot,
   prepareLiveChamberCompletion,
@@ -12,9 +16,7 @@ import {
   startChamberSession,
   updateChamberStep,
 } from "@/lib/webos/chamber";
-import { assignChamberTherapist } from "@/lib/webos/chamberAssignment";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
-import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
@@ -26,7 +28,7 @@ function statusFor(message: string): number {
     message.startsWith("RESOURCE_BUSY:") ||
     ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING", "APPOINTMENT_NOT_ACTIVE"].includes(message)
   ) return 409;
-  if (["CHAMBER_STEP_REQUIRED", "INVALID_STEP_DURATION", "INVALID_ACTION", "SCHEMA_MISMATCH"].includes(message)) return 400;
+  if (["CHAMBER_STEP_REQUIRED", "INVALID_STEP_DURATION", "INVALID_ACTION", "INVALID_THERAPIST", "SCHEMA_MISMATCH"].includes(message)) return 400;
   return 500;
 }
 
@@ -63,11 +65,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result, statusSyncPending: !statusSynced });
     }
     if (action === "assign_therapist") {
-      const result = await assignChamberTherapist(context, body.appointmentId, body.staffId);
+      const result = await assignUnifiedChamberTherapist(
+        context,
+        body.appointmentId,
+        body.staffId
+      );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "prefer_station") {
-      const result = await setChamberBedPreference(context, body.appointmentId, body.stationId);
+      const result = await setUnifiedChamberBedPreference(
+        context,
+        body.appointmentId,
+        body.stationId
+      );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "start") {
