@@ -120,6 +120,7 @@ export interface SupabaseValidatedBookingPlan {
 }
 
 const DEFAULT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-chamber-api";
+const DEFAULT_APPOINTMENT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-appointment-api";
 
 export function chamberDbMode(): ChamberDbMode {
   const value = String(process.env.RELIFE_CHAMBER_DB_MODE || "sheets").trim().toLowerCase();
@@ -135,8 +136,11 @@ export function shouldUseSupabaseValidation(): boolean {
   return chamberDbMode() !== "sheets" && chamberSupabaseConfigured();
 }
 
-async function callEdge<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-  const url = (process.env.RELIFE_SUPABASE_EDGE_URL || DEFAULT_EDGE_URL).trim();
+async function callUrl<T>(
+  url: string,
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<T> {
   const secret = process.env.RELIFE_EDGE_SECRET?.trim();
   if (!secret) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
 
@@ -172,6 +176,19 @@ async function callEdge<T>(action: string, payload: Record<string, unknown> = {}
   }
 }
 
+async function callEdge<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const url = (process.env.RELIFE_SUPABASE_EDGE_URL || DEFAULT_EDGE_URL).trim();
+  return callUrl<T>(url, action, payload);
+}
+
+async function callAppointmentEdge<T>(
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<T> {
+  const url = (process.env.RELIFE_SUPABASE_APPOINTMENT_EDGE_URL || DEFAULT_APPOINTMENT_EDGE_URL).trim();
+  return callUrl<T>(url, action, payload);
+}
+
 export async function getSupabaseChamberBootstrap(date: string): Promise<SupabaseChamberBootstrap> {
   return callEdge<SupabaseChamberBootstrap>("bootstrap", { date });
 }
@@ -204,7 +221,7 @@ export async function updateSupabaseChamberAppointmentStatus(input: {
 export async function validateSupabaseBookingPlan(
   plan: SupabaseValidatedBookingPlan
 ): Promise<Array<{ type: string; message: string }>> {
-  const result = await callEdge<{
+  const result = await callAppointmentEdge<{
     ok: true;
     conflicts: Array<{ type: string; message: string }>;
   }>("validate_booking_plan", { plan });
@@ -220,7 +237,7 @@ export async function createSupabaseValidatedBooking(input: {
   timelineId: string;
   duplicate?: boolean;
 }> {
-  const result = await callEdge<{
+  const result = await callAppointmentEdge<{
     ok: true;
     appointmentId: string;
     timelineId: string;
