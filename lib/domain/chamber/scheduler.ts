@@ -18,8 +18,14 @@ import { validateFixedHourBookingWithSupabase } from "@/lib/webos/chamberSupabas
 import { getPatientForContext } from "@/lib/webos/reception";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
-export type ChamberScheduleInput = FixedHourInput;
+export type ChamberScheduleInput = FixedHourInput & { requestId?: string };
 export type ChamberScheduleValidation = FixedHourValidation;
+
+function stableRequestId(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(text)) throw new Error("INVALID_REQUEST_ID");
+  return text;
+}
 
 async function warmSupabaseReference(
   context: AccessContext,
@@ -73,10 +79,7 @@ function mergeCutoverValidation(
   sheets: ChamberScheduleValidation,
   supabase: ChamberScheduleValidation
 ): ChamberScheduleValidation {
-  const conflicts = [
-    ...supabase.conflicts,
-    ...sheets.conflicts,
-  ];
+  const conflicts = [...supabase.conflicts, ...sheets.conflicts];
   const unique = [
     ...new Map(conflicts.map((item) => [`${item.type}:${item.message}`, item])).values(),
   ];
@@ -107,6 +110,7 @@ export async function validateChamberSchedule(
   }
 
   if (chamberDbMode() === "supabase") {
+    if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
     const sheets = await validateFixedHourBooking(context, input);
     await warmSupabaseReference(context, input, sheets, true);
     const supabase = await validateFixedHourBookingWithSupabase(context, input);
@@ -152,11 +156,13 @@ export async function createChamberScheduleBooking(
   appointmentId: string;
   validation: ChamberScheduleValidation;
 }> {
-  if (chamberDbMode() !== "supabase" || !chamberSupabaseConfigured()) {
+  if (chamberDbMode() !== "supabase") {
     return withMutationLock(`appointment-create:${input.date}`, () =>
       createFixedHourBooking(context, input)
     );
   }
+  if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
+  const requestId = stableRequestId(input.requestId);
 
   const validation = await validateChamberSchedule(context, input);
   if (!validation.isValid) {
@@ -186,6 +192,7 @@ export async function createChamberScheduleBooking(
       })),
       remarks: input.remarks || "",
       actorId: context.staffId,
+      requestId,
     });
     return { appointmentId: result.appointmentId, validation };
   } catch (error) {

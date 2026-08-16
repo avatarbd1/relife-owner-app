@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createUnifiedPhysioBooking } from "@/lib/domain/appointments/create";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { createPhysioBooking, type BookingValidationResult } from "@/lib/webos/appointmentScheduling";
+import type { BookingValidationResult } from "@/lib/webos/appointmentScheduling";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { createAppointment, getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -36,10 +37,10 @@ function errorResponse(error: unknown): NextResponse {
       { status: 409 }
     );
   }
-  if (["INVALID_DATE", "INVALID_TIME", "INVALID_THERAPIST"].includes(message)) {
+  if (["INVALID_DATE", "INVALID_TIME", "INVALID_THERAPIST", "INVALID_REQUEST_ID"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  if (message === "SCHEMA_MISMATCH") {
+  if (["SCHEMA_MISMATCH", "SUPABASE_EDGE_SECRET_MISSING", "TENANT_NOT_FOUND"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
   console.error("Appointment creation failed:", message);
@@ -64,13 +65,14 @@ export async function POST(request: NextRequest) {
     const lockKey = `appointment-create:${String(body.date || "")}`;
     const result = await withMutationLock(lockKey, () => {
       if (patient.department === "Physio") {
-        return createPhysioBooking(context, {
+        return createUnifiedPhysioBooking(context, {
           patientId: patient.patientId,
           date: body.date,
           time: body.time,
           therapist: body.therapist,
           remarks: body.remarks,
           modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
+          requestId: body.requestId,
         });
       }
       return createAppointment(context, {

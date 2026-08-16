@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateUnifiedPhysioBooking } from "@/lib/domain/appointments/create";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { getBookingProfile, validatePhysioBooking } from "@/lib/webos/appointmentScheduling";
+import { getBookingProfile } from "@/lib/webos/appointmentScheduling";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -10,7 +11,7 @@ function errorResponse(error: unknown): NextResponse {
   if (["INVALID_DATE", "INVALID_TIME"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  if (message === "SCHEMA_MISMATCH") {
+  if (["SCHEMA_MISMATCH", "SUPABASE_EDGE_SECRET_MISSING", "TENANT_NOT_FOUND"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
   console.error("Appointment validation failed:", message);
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, profile, validation: null });
     }
 
-    const validation = await validatePhysioBooking(context, {
+    const validation = await validateUnifiedPhysioBooking(context, {
       patientId,
       date: body.date,
       time: body.time,

@@ -97,7 +97,30 @@ export interface SupabaseChamberBootstrap {
   equipment: Array<Record<string, unknown>>;
 }
 
+export interface SupabaseValidatedBookingPlan {
+  patientId: string;
+  date: string;
+  startMinute: number;
+  therapist: string;
+  bedId: string;
+  gender: string;
+  roomId: string;
+  modalities: string[];
+  totalDurationMin: number;
+  timeline: Array<{
+    sequence: number;
+    name: string;
+    resourceId: string;
+    resourceName: string;
+    durationMin: number;
+    startMinute: number;
+    endMinute: number;
+  }>;
+  remarks: string;
+}
+
 const DEFAULT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-chamber-api";
+const DEFAULT_APPOINTMENT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-appointment-api";
 
 export function chamberDbMode(): ChamberDbMode {
   const value = String(process.env.RELIFE_CHAMBER_DB_MODE || "sheets").trim().toLowerCase();
@@ -113,8 +136,11 @@ export function shouldUseSupabaseValidation(): boolean {
   return chamberDbMode() !== "sheets" && chamberSupabaseConfigured();
 }
 
-async function callEdge<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-  const url = (process.env.RELIFE_SUPABASE_EDGE_URL || DEFAULT_EDGE_URL).trim();
+async function callUrl<T>(
+  url: string,
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<T> {
   const secret = process.env.RELIFE_EDGE_SECRET?.trim();
   if (!secret) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
 
@@ -150,6 +176,19 @@ async function callEdge<T>(action: string, payload: Record<string, unknown> = {}
   }
 }
 
+async function callEdge<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const url = (process.env.RELIFE_SUPABASE_EDGE_URL || DEFAULT_EDGE_URL).trim();
+  return callUrl<T>(url, action, payload);
+}
+
+async function callAppointmentEdge<T>(
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<T> {
+  const url = (process.env.RELIFE_SUPABASE_APPOINTMENT_EDGE_URL || DEFAULT_APPOINTMENT_EDGE_URL).trim();
+  return callUrl<T>(url, action, payload);
+}
+
 export async function getSupabaseChamberBootstrap(date: string): Promise<SupabaseChamberBootstrap> {
   return callEdge<SupabaseChamberBootstrap>("bootstrap", { date });
 }
@@ -177,6 +216,38 @@ export async function updateSupabaseChamberAppointmentStatus(input: {
     status: string;
   }>("update_booking_status", input);
   return { appointmentId: result.appointmentId, status: result.status };
+}
+
+export async function validateSupabaseBookingPlan(
+  plan: SupabaseValidatedBookingPlan
+): Promise<Array<{ type: string; message: string }>> {
+  const result = await callAppointmentEdge<{
+    ok: true;
+    conflicts: Array<{ type: string; message: string }>;
+  }>("validate_booking_plan", { plan });
+  return Array.isArray(result.conflicts) ? result.conflicts : [];
+}
+
+export async function createSupabaseValidatedBooking(input: {
+  plan: SupabaseValidatedBookingPlan;
+  actorId: string;
+  requestId: string;
+}): Promise<{
+  appointmentId: string;
+  timelineId: string;
+  duplicate?: boolean;
+}> {
+  const result = await callAppointmentEdge<{
+    ok: true;
+    appointmentId: string;
+    timelineId: string;
+    duplicate?: boolean;
+  }>("create_validated_booking", input);
+  return {
+    appointmentId: result.appointmentId,
+    timelineId: result.timelineId,
+    duplicate: result.duplicate,
+  };
 }
 
 export async function syncSupabaseChamberCache(input: {
