@@ -119,8 +119,14 @@ export interface SupabaseValidatedBookingPlan {
   remarks: string;
 }
 
+export interface SupabaseRuntimeSessionResult {
+  session: Record<string, unknown>;
+  duplicate?: boolean;
+}
+
 const DEFAULT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-chamber-api";
 const DEFAULT_APPOINTMENT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-appointment-api";
+const DEFAULT_RUNTIME_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-chamber-runtime-api";
 
 export function chamberDbMode(): ChamberDbMode {
   const value = String(process.env.RELIFE_CHAMBER_DB_MODE || "sheets").trim().toLowerCase();
@@ -186,6 +192,14 @@ async function callAppointmentEdge<T>(
   payload: Record<string, unknown> = {}
 ): Promise<T> {
   const url = (process.env.RELIFE_SUPABASE_APPOINTMENT_EDGE_URL || DEFAULT_APPOINTMENT_EDGE_URL).trim();
+  return callUrl<T>(url, action, payload);
+}
+
+async function callRuntimeEdge<T>(
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<T> {
+  const url = (process.env.RELIFE_SUPABASE_RUNTIME_EDGE_URL || DEFAULT_RUNTIME_EDGE_URL).trim();
   return callUrl<T>(url, action, payload);
 }
 
@@ -293,4 +307,36 @@ export async function createSupabaseFixedHourBooking(input: {
     ...input,
     requestId: input.requestId || `CBK${randomUUID().replace(/-/g, "")}`,
   });
+}
+
+export async function receiveSupabaseChamberSession(input: {
+  appointmentId: string;
+  actorId: string;
+}): Promise<SupabaseRuntimeSessionResult> {
+  return callRuntimeEdge<SupabaseRuntimeSessionResult & { ok: true }>("receive", input);
+}
+
+export async function startSupabaseChamberSession(input: {
+  sessionId: string;
+  actorId: string;
+}): Promise<SupabaseRuntimeSessionResult> {
+  return callRuntimeEdge<SupabaseRuntimeSessionResult & { ok: true }>("start", input);
+}
+
+export async function updateSupabaseChamberSessionStep(input: {
+  sessionId: string;
+  actorId: string;
+  step: string;
+  resourceId?: string;
+  stationId?: string;
+  durationMin?: number;
+}): Promise<SupabaseRuntimeSessionResult> {
+  return callRuntimeEdge<SupabaseRuntimeSessionResult & { ok: true }>("step", input);
+}
+
+export async function completeSupabaseChamberSession(input: {
+  sessionId: string;
+  actorId: string;
+}): Promise<SupabaseRuntimeSessionResult> {
+  return callRuntimeEdge<SupabaseRuntimeSessionResult & { ok: true }>("complete", input);
 }

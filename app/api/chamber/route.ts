@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import {
-  completeChamberSession,
-  getChamberSnapshot,
-  receiveChamberPatient,
-  startChamberSession,
-  updateChamberStep,
-} from "@/lib/webos/chamber";
+  completeChamberRuntimeSession,
+  getChamberRuntimeSnapshot,
+  receiveChamberRuntimePatient,
+  startChamberRuntimeSession,
+  updateChamberRuntimeStep,
+} from "@/lib/domain/chamber/runtime";
 import { assignChamberTherapist } from "@/lib/webos/chamberAssignment";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
@@ -15,9 +15,10 @@ import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 function statusFor(message: string): number {
   if (["ACCESS_DENIED", "THERAPIST_NOT_ASSIGNED"].includes(message)) return 403;
   if (["APPOINTMENT_NOT_FOUND", "PATIENT_NOT_FOUND", "CHAMBER_SESSION_NOT_FOUND", "STATION_NOT_FOUND", "RESOURCE_NOT_FOUND", "STAFF_NOT_FOUND"].includes(message)) return 404;
-  if (message === "CHAMBER_SCHEMA_MISSING") return 503;
+  if (["CHAMBER_SCHEMA_MISSING", "SUPABASE_EDGE_SECRET_MISSING"].includes(message)) return 503;
   if (
     message.startsWith("CHAMBER_CAPACITY:") ||
+    message.startsWith("CHAMBER_RUNTIME_CONFLICT:") ||
     message.startsWith("RESOURCE_BUSY:") ||
     ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING", "APPOINTMENT_NOT_ACTIVE"].includes(message)
   ) return 409;
@@ -28,7 +29,7 @@ function statusFor(message: string): number {
 export async function GET() {
   try {
     const context = await requireCurrentAccessContext();
-    const snapshot = await getChamberSnapshot(context);
+    const snapshot = await getChamberRuntimeSnapshot(context);
     const enriched = await enrichChamberSnapshotWithPatientProfiles(context, snapshot);
     return NextResponse.json({ ok: true, snapshot: enriched });
   } catch (error) {
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     const action = String(body.action || "");
     if (action === "receive") {
-      const result = await receiveChamberPatient(context, body.appointmentId);
+      const result = await receiveChamberRuntimePatient(context, body.appointmentId);
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "assign_therapist") {
@@ -64,11 +65,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "start") {
-      const result = await startChamberSession(context, body.sessionId);
+      const result = await startChamberRuntimeSession(context, body.sessionId);
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "step") {
-      const result = await updateChamberStep(context, {
+      const result = await updateChamberRuntimeStep(context, {
         sessionId: body.sessionId,
         step: body.step,
         resourceId: body.resourceId,
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "complete") {
-      const result = await completeChamberSession(context, body.sessionId);
+      const result = await completeChamberRuntimeSession(context, body.sessionId);
       return NextResponse.json({ ok: true, ...result });
     }
     throw new Error("INVALID_ACTION");
