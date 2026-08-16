@@ -75,13 +75,16 @@ function sortDescending(rows: AppointmentRecord[]): AppointmentRecord[] {
   });
 }
 
-function supabasePhysioReadable(context: AccessContext, scope: Scope): boolean {
+function needsSupabasePhysio(context: AccessContext, scope: Scope): boolean {
   return (
     chamberDbMode() === "supabase" &&
-    chamberSupabaseConfigured() &&
     scope !== "dental" &&
     canPerform(context, "appointment.read", "Physio")
   );
+}
+
+function requireConfiguredCutover(): void {
+  if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
 }
 
 /**
@@ -104,7 +107,8 @@ export async function getUnifiedAppointmentsForContext(
   const sheetRows = (await getAppointmentsForContext(context, scope)).filter(
     (row) => row.date >= startDate && row.date <= endDate
   );
-  if (!supabasePhysioReadable(context, scope)) return sortAscending(sheetRows);
+  if (!needsSupabasePhysio(context, scope)) return sortAscending(sheetRows);
+  requireConfiguredCutover();
 
   const supabaseRows = await querySupabaseChamberAppointments({ startDate, endDate });
   return sortAscending(mergeAppointments(sheetRows, supabaseRows));
@@ -119,11 +123,11 @@ export async function getUnifiedPatientAppointmentsForContext(
   if (
     patient.department !== "Physio" ||
     chamberDbMode() !== "supabase" ||
-    !chamberSupabaseConfigured() ||
     !canPerform(context, "appointment.read", "Physio")
   ) {
     return sheetRows;
   }
+  requireConfiguredCutover();
 
   const supabaseRows = await querySupabaseChamberAppointments({ patientId: patient.patientId });
   return sortDescending(mergeAppointments(sheetRows, supabaseRows));
