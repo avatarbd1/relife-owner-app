@@ -20,11 +20,12 @@ interface ServiceAccountCredentials {
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
-const SHEET_READ_CACHE_TTL_MS = 4_000;
+const SHEET_READ_CACHE_TTL_MS = 30_000;
+const SHEET_READ_STALE_TTL_MS = 5 * 60_000;
 const SHEET_READ_MAX_RETRIES = 3;
 const RETRYABLE_READ_STATUS = new Set([429, 500, 502, 503, 504]);
 
-type RangeCacheEntry = { expiresAt: number; rows: string[][] };
+type RangeCacheEntry = { expiresAt: number; staleUntil: number; rows: string[][] };
 const rangeReadCache = new Map<string, RangeCacheEntry>();
 const rangeReadInFlight = new Map<string, Promise<string[][]>>();
 
@@ -121,7 +122,7 @@ async function getAccessToken(): Promise<string> {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      grant_type: "urn:ietf:params:oauth-type:jwt-bearer".replace("oauth-type", "oauth-grant-type"),
       assertion,
     }),
     cache: "no-store",
@@ -217,7 +218,7 @@ export async function fetchSheetRanges(
       result[name] = cached.rows;
       continue;
     }
-    if (cached) rangeReadCache.delete(key);
+    if (cached && cached.staleUntil <= now) rangeReadCache.delete(key);
 
     const inFlight = rangeReadInFlight.get(key);
     if (inFlight) {
@@ -235,11 +236,21 @@ export async function fetchSheetRanges(
       rangePromise = batchPromise
         .then((snapshot) => {
           const rows = snapshot[name] || [];
+          const savedAt = Date.now();
           rangeReadCache.set(key, {
-            expiresAt: Date.now() + SHEET_READ_CACHE_TTL_MS,
+            expiresAt: savedAt + SHEET_READ_CACHE_TTL_MS,
+            staleUntil: savedAt + SHEET_READ_STALE_TTL_MS,
             rows,
           });
           return rows;
+        })
+        .catch((error) => {
+          const stale = rangeReadCache.get(key);
+          if (stale && stale.staleUntil > Date.now()) {
+            console.warn(`Google Sheets read fallback to stale cache for ${key}`);
+            return stale.rows;
+          }
+          throw error;
         })
         .finally(() => {
           if (rangeReadInFlight.get(key) === rangePromise) {

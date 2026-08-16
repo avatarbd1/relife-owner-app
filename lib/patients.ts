@@ -93,7 +93,7 @@ function parsePatients(rows: string[][], fallback: Department): PatientRecord[] 
 }
 
 let patientCache: { createdAt: number; promise: Promise<PatientRecord[]> } | undefined;
-const CACHE_MS = 5_000;
+const CACHE_MS = 30_000;
 
 async function loadPatients(): Promise<PatientRecord[]> {
   if (!hasPrivateSheetsCredentials()) return [];
