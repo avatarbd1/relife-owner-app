@@ -154,6 +154,31 @@ export async function getSupabaseChamberBootstrap(date: string): Promise<Supabas
   return callEdge<SupabaseChamberBootstrap>("bootstrap", { date });
 }
 
+export async function querySupabaseChamberAppointments(input: {
+  startDate?: string;
+  endDate?: string;
+  patientId?: string;
+}): Promise<SupabaseAppointmentRow[]> {
+  const result = await callEdge<{ ok: true; appointments: SupabaseAppointmentRow[] }>(
+    "appointments_query",
+    input
+  );
+  return result.appointments;
+}
+
+export async function updateSupabaseChamberAppointmentStatus(input: {
+  appointmentId: string;
+  status: string;
+  actorId: string;
+}): Promise<{ appointmentId: string; status: string }> {
+  const result = await callEdge<{
+    ok: true;
+    appointmentId: string;
+    status: string;
+  }>("update_booking_status", input);
+  return { appointmentId: result.appointmentId, status: result.status };
+}
+
 export async function syncSupabaseChamberCache(input: {
   patients: Array<{
     patientId: string;
