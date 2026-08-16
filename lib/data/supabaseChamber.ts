@@ -97,6 +97,28 @@ export interface SupabaseChamberBootstrap {
   equipment: Array<Record<string, unknown>>;
 }
 
+export interface SupabaseValidatedBookingPlan {
+  patientId: string;
+  date: string;
+  startMinute: number;
+  therapist: string;
+  bedId: string;
+  gender: string;
+  roomId: string;
+  modalities: string[];
+  totalDurationMin: number;
+  timeline: Array<{
+    sequence: number;
+    name: string;
+    resourceId: string;
+    resourceName: string;
+    durationMin: number;
+    startMinute: number;
+    endMinute: number;
+  }>;
+  remarks: string;
+}
+
 const DEFAULT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-chamber-api";
 
 export function chamberDbMode(): ChamberDbMode {
@@ -177,6 +199,38 @@ export async function updateSupabaseChamberAppointmentStatus(input: {
     status: string;
   }>("update_booking_status", input);
   return { appointmentId: result.appointmentId, status: result.status };
+}
+
+export async function validateSupabaseBookingPlan(
+  plan: SupabaseValidatedBookingPlan
+): Promise<Array<{ type: string; message: string }>> {
+  const result = await callEdge<{
+    ok: true;
+    conflicts: Array<{ type: string; message: string }>;
+  }>("validate_booking_plan", { plan });
+  return Array.isArray(result.conflicts) ? result.conflicts : [];
+}
+
+export async function createSupabaseValidatedBooking(input: {
+  plan: SupabaseValidatedBookingPlan;
+  actorId: string;
+  requestId: string;
+}): Promise<{
+  appointmentId: string;
+  timelineId: string;
+  duplicate?: boolean;
+}> {
+  const result = await callEdge<{
+    ok: true;
+    appointmentId: string;
+    timelineId: string;
+    duplicate?: boolean;
+  }>("create_validated_booking", input);
+  return {
+    appointmentId: result.appointmentId,
+    timelineId: result.timelineId,
+    duplicate: result.duplicate,
+  };
 }
 
 export async function syncSupabaseChamberCache(input: {
