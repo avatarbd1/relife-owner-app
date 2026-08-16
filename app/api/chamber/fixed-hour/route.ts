@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { shouldUseSupabaseValidation } from "@/lib/data/supabaseChamber";
-import { createFixedHourBooking, validateFixedHourBooking, type FixedHourInput } from "@/lib/webos/chamberFixedHour";
+import { shouldUseSupabaseValidation, syncSupabaseChamberCache } from "@/lib/data/supabaseChamber";
+import { createFixedHourBooking, validateFixedHourBooking, type FixedHourInput, type FixedHourValidation } from "@/lib/webos/chamberFixedHour";
 import { validateFixedHourBookingWithSupabase } from "@/lib/webos/chamberSupabaseValidation";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getPatientForContext } from "@/lib/webos/reception";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import type { AccessContext } from "@/lib/webos/access";
 
@@ -23,6 +24,41 @@ function errorResponse(error: unknown): NextResponse {
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
+async function warmSupabaseReference(
+  context: AccessContext,
+  input: FixedHourInput,
+  validation: FixedHourValidation
+): Promise<void> {
+  try {
+    const patient = await getPatientForContext(context, input.patientId);
+    if (!patient || patient.department !== "Physio") return;
+    const suggestedLabels = validation.suggestedModalities.flatMap((value) => {
+      const option = validation.modalityOptions.find((item) => item.value === value);
+      return option ? [option.label] : [];
+    });
+    if (validation.needsTraction) suggestedLabels.push("Traction");
+    await syncSupabaseChamberCache({
+      patients: [{
+        patientId: patient.patientId,
+        fullName: patient.fullName,
+        gender: patient.gender,
+        therapist: patient.therapist,
+        status: patient.status,
+        department: "Physio",
+      }],
+      plans: [{
+        patientId: patient.patientId,
+        electrotherapyPlan: suggestedLabels.join(" "),
+        manualTherapyPlan: validation.suggestedModalities.includes("MANUAL") ? "Manual Therapy" : "",
+        exercisePlan: "",
+        status: "Active",
+      }],
+    });
+  } catch (error) {
+    console.warn("Supabase Chamber cache warm failed", error);
+  }
+}
+
 async function validateBooking(context: AccessContext, input: FixedHourInput) {
   if (!shouldUseSupabaseValidation()) return validateFixedHourBooking(context, input);
   try {
@@ -33,10 +69,12 @@ async function validateBooking(context: AccessContext, input: FixedHourInput) {
       throw error;
     }
     // Shadow mode must never make clinic booking unavailable. If Supabase is
-    // temporarily unavailable or its reference cache is not ready, use the
-    // existing Sheets validator for this request and log the fallback.
+    // temporarily unavailable or its cache is not ready, validate once from
+    // Sheets, then warm the selected patient into Supabase for later taps.
     console.warn("Supabase Chamber validation fallback to Sheets:", message);
-    return validateFixedHourBooking(context, input);
+    const validation = await validateFixedHourBooking(context, input);
+    void warmSupabaseReference(context, input, validation);
+    return validation;
   }
 }
 
