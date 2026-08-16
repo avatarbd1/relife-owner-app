@@ -1,5 +1,8 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+import { RELIFE_SUPABASE_SCOPE } from "@/lib/config/relifeSystem";
+
 export type ChamberDbMode = "sheets" | "shadow" | "supabase";
 
 export interface SupabasePatientCacheRow {
@@ -124,7 +127,12 @@ async function callEdge<T>(action: string, payload: Record<string, unknown> = {}
         "content-type": "application/json",
         "x-relife-server-key": secret,
       },
-      body: JSON.stringify({ action, ...payload }),
+      body: JSON.stringify({
+        action,
+        ...payload,
+        organizationSlug: RELIFE_SUPABASE_SCOPE.organizationSlug,
+        clinicSlug: RELIFE_SUPABASE_SCOPE.clinicSlug,
+      }),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -183,6 +191,10 @@ export async function createSupabaseFixedHourBooking(input: {
   }>;
   remarks: string;
   actorId: string;
-}): Promise<{ ok: true; appointmentId: string; timelineId: string }> {
-  return callEdge("create_booking", input);
+  requestId?: string;
+}): Promise<{ ok: true; appointmentId: string; timelineId: string; duplicate?: boolean }> {
+  return callEdge("create_booking", {
+    ...input,
+    requestId: input.requestId || `CBK${randomUUID().replace(/-/g, "")}`,
+  });
 }

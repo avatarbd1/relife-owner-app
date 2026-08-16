@@ -1,6 +1,12 @@
 import "server-only";
 
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
+import {
+  chamberDbMode,
+  chamberSupabaseConfigured,
+  getSupabaseChamberBootstrap,
+  type SupabaseAppointmentRow,
+} from "@/lib/data/supabaseChamber";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
 const APPOINTMENT_SHEET = "04_Appointments";
@@ -73,7 +79,7 @@ function parseJsonArray(value: string): string[] {
 
 function timeMinutes(value: string): number {
   const text = normalize(value).toUpperCase();
-  const input = /^(\d{1,2}):(\d{2})$/.exec(text);
+  const input = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(text);
   if (input) {
     const hour = Number(input[1]);
     const minute = Number(input[2]);
@@ -182,6 +188,37 @@ function parseBoardAppointments(
     .sort((a, b) => a.startMinute - b.startMinute);
 }
 
+function parseSupabaseAppointment(
+  row: SupabaseAppointmentRow,
+  date: string
+): HourlyBoardAppointment | null {
+  if (String(row.date).slice(0, 10) !== date) return null;
+  const status = normalize(row.status) || "Scheduled";
+  if (TERMINAL_NON_OCCUPYING.has(normalized(status))) return null;
+  let startMinute = 0;
+  try {
+    startMinute = timeMinutes(row.start_time);
+  } catch {
+    return null;
+  }
+  const treatmentDurationMin = Math.max(60, Number(row.expected_duration_min || 60));
+  return {
+    appointmentId: normalize(row.id),
+    date,
+    time: inputTime(startMinute),
+    startMinute,
+    endMinute: startMinute + treatmentDurationMin,
+    patientId: normalize(row.patient_id),
+    patientName: normalize(row.patient_name),
+    therapist: normalize(row.therapist),
+    status,
+    assignedBedId: bedId(row.bed_id),
+    treatmentDurationMin,
+    bedHoldDurationMin: treatmentDurationMin,
+    modalities: Array.isArray(row.modalities) ? row.modalities.map(String) : [],
+  };
+}
+
 async function loadAppointmentRows(): Promise<string[][]> {
   const snapshot = await fetchSheetRanges("physio", [APPOINTMENT_SHEET]);
   const rows = snapshot[APPOINTMENT_SHEET] || [];
@@ -201,14 +238,36 @@ async function loadAppointmentRows(): Promise<string[][]> {
   return rows;
 }
 
-/** Canonical read model for the Chamber hourly bed board. */
+/**
+ * Canonical read model for the Chamber hourly bed board.
+ *
+ * During the Supabase cutover we merge legacy Sheets appointments with new
+ * tenant-scoped Supabase rows. Supabase wins on matching appointment IDs.
+ */
 export async function getHourlyBedBoard(
   context: AccessContext,
   date: string
 ): Promise<HourlyBoardAppointment[]> {
   assertCanPerform(context, "chamber.read", "Physio");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("INVALID_DATE");
-  return parseBoardAppointments(await loadAppointmentRows(), date);
+
+  const sheets = parseBoardAppointments(await loadAppointmentRows(), date);
+  if (chamberDbMode() !== "supabase" || !chamberSupabaseConfigured()) {
+    return sheets;
+  }
+
+  try {
+    const snapshot = await getSupabaseChamberBootstrap(date);
+    const merged = new Map(sheets.map((item) => [item.appointmentId, item]));
+    for (const row of snapshot.appointments) {
+      const appointment = parseSupabaseAppointment(row, date);
+      if (appointment?.appointmentId) merged.set(appointment.appointmentId, appointment);
+    }
+    return [...merged.values()].sort((a, b) => a.startMinute - b.startMinute);
+  } catch (error) {
+    console.warn("Supabase Chamber board fallback to Sheets", error);
+    return sheets;
+  }
 }
 
 export function chamberHourSlots(): Array<{

@@ -10,6 +10,15 @@ export const RELIFE_SYSTEM = {
   schemaVersion: "relife-uda-v1",
 } as const;
 
+/**
+ * Supabase tenant scope is deliberately separate from the legacy Sheets ledger
+ * identities below. The slugs resolve to UUID primary keys inside Postgres.
+ */
+export const RELIFE_SUPABASE_SCOPE = {
+  organizationSlug: "relife",
+  clinicSlug: "amtali-main",
+} as const;
+
 const DEPARTMENT_CONFIG = {
   Physio: {
     workbook: "physio",
