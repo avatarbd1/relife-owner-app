@@ -19,7 +19,7 @@ export default function ChamberNav({ pending = 0 }: { pending?: number }) {
         {ITEMS.map((item) => {
           const active = item.href.startsWith("/chamber/chat")
             ? pathname.startsWith("/chamber/chat")
-            : pathname === "/chamber";
+            : item.label === "Beds" && pathname === "/chamber";
           return (
             <Link
               key={item.href}
