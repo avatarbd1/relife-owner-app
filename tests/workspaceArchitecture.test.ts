@@ -46,14 +46,31 @@ test("Home quick actions route to semantic workspaces", () => {
 
 test("Chamber is organized around Schedule Live Team", () => {
   const chamber = source("app/(dashboard)/chamber/page.tsx");
+  const tabs = source("components/ChamberWorkspaceTabs.tsx");
   assert.match(chamber, /ChamberWorkspaceTabs/);
-  assert.match(chamber, /schedule=\{schedulePanel\}/);
-  assert.match(chamber, /live=\{livePanel\}/);
-  assert.match(chamber, /team=\{teamPanel\}/);
+  assert.match(chamber, /activeTab=\{activeTab\}/);
+  assert.match(chamber, /panel=\{panel\}/);
+  assert.match(tabs, /label: "Schedule"/);
+  assert.match(tabs, /label: "Live"/);
+  assert.match(tabs, /label: "Team"/);
   assert.doesNotMatch(chamber, /ChamberReservationPanel/);
   assert.doesNotMatch(chamber, /ChamberPatientEditPanel/);
   assert.equal(
     existsSync(new URL("../components/ChamberNav.tsx", import.meta.url)),
     false
   );
+});
+
+test("Chamber loads only the active workspace data", () => {
+  const chamber = source("app/(dashboard)/chamber/page.tsx");
+  const tabs = source("components/ChamberWorkspaceTabs.tsx");
+  assert.match(chamber, /if \(activeTab === "schedule"\)/);
+  assert.match(chamber, /else if \(activeTab === "live"\)/);
+  assert.match(chamber, /getHourlyBedBoard\(context, selectedDate\)/);
+  assert.match(chamber, /getChamberCommsSnapshot\(context\)/);
+  assert.doesNotMatch(
+    chamber,
+    /\[rawSnapshot, staffDirectory, comms, hourlyAppointments, visiblePatients\]/
+  );
+  assert.doesNotMatch(tabs, /useState/);
 });
