@@ -121,6 +121,7 @@ export interface SupabaseValidatedBookingPlan {
 
 const DEFAULT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-chamber-api";
 const DEFAULT_APPOINTMENT_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-appointment-api";
+const DEFAULT_LIVE_EDGE_URL = "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-live-chamber-api";
 
 export function chamberDbMode(): ChamberDbMode {
   const value = String(process.env.RELIFE_CHAMBER_DB_MODE || "sheets").trim().toLowerCase();
@@ -189,6 +190,14 @@ async function callAppointmentEdge<T>(
   return callUrl<T>(url, action, payload);
 }
 
+async function callLiveEdge<T>(
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<T> {
+  const url = (process.env.RELIFE_SUPABASE_LIVE_EDGE_URL || DEFAULT_LIVE_EDGE_URL).trim();
+  return callUrl<T>(url, action, payload);
+}
+
 export async function getSupabaseChamberBootstrap(date: string): Promise<SupabaseChamberBootstrap> {
   return callEdge<SupabaseChamberBootstrap>("bootstrap", { date });
 }
@@ -216,6 +225,32 @@ export async function updateSupabaseChamberAppointmentStatus(input: {
     status: string;
   }>("update_booking_status", input);
   return { appointmentId: result.appointmentId, status: result.status };
+}
+
+export async function updateSupabaseLiveTherapist(input: {
+  appointmentId: string;
+  therapist: string;
+  actorId: string;
+}): Promise<{ appointmentId: string; therapist: string }> {
+  const result = await callLiveEdge<{
+    ok: true;
+    appointmentId: string;
+    therapist: string;
+  }>("assign_therapist", input);
+  return { appointmentId: result.appointmentId, therapist: result.therapist };
+}
+
+export async function setSupabaseLiveBedPreference(input: {
+  appointmentId: string;
+  stationId: string;
+  actorId: string;
+}): Promise<{ appointmentId: string; stationId: string }> {
+  const result = await callLiveEdge<{
+    ok: true;
+    appointmentId: string;
+    stationId: string;
+  }>("set_bed_preference", input);
+  return { appointmentId: result.appointmentId, stationId: result.stationId };
 }
 
 export async function validateSupabaseBookingPlan(
