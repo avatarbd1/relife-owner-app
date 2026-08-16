@@ -12,7 +12,11 @@ type NavItem = {
   label: string;
   icon: AppIconName;
   matches: string[];
-  visible: (roles: WebRole[], actions: Set<WebAction>, hasPhysioAccess: boolean) => boolean;
+  visible: (
+    roles: WebRole[],
+    actions: Set<WebAction>,
+    hasPhysioAccess: boolean
+  ) => boolean;
 };
 
 function hasAny(actions: Set<WebAction>, required: WebAction[]): boolean {
@@ -39,7 +43,6 @@ const ITEMS: NavItem[] = [
         "patient.update",
         "appointment.read",
         "appointment.create",
-        "appointment.update",
         "clinical.read",
         "clinical.write",
       ]),
@@ -53,11 +56,25 @@ const ITEMS: NavItem[] = [
       hasPhysioAccess && actions.has("chamber.read"),
   },
   {
+    href: "/finance",
+    label: "Finance",
+    icon: "finance",
+    matches: [
+      "/finance",
+      "/payments",
+      "/salary",
+      "/expenses",
+      "/operations",
+    ],
+    visible: (roles) => roles.includes("Owner"),
+  },
+  {
     href: "/payments",
     label: "Payments",
     icon: "payment",
     matches: ["/payments"],
-    visible: (_roles, actions) =>
+    visible: (roles, actions) =>
+      !roles.includes("Owner") &&
       hasAny(actions, ["payment.read_amount", "payment.create", "payment.void"]),
   },
   {
@@ -67,14 +84,8 @@ const ITEMS: NavItem[] = [
     matches: [
       "/more",
       "/menu",
-      "/tools",
       "/security",
-      "/corrections",
-      "/finance",
-      "/operations",
       "/reports",
-      "/salary",
-      "/expenses",
       "/pwa",
       "/audit",
       "/settings",
@@ -102,7 +113,9 @@ export default function BottomNav({
   const [chamberPending, setChamberPending] = useState(0);
   const visibleItems = useMemo(() => {
     const actionSet = new Set(actions);
-    return ITEMS.filter((item) => item.visible(roles, actionSet, hasPhysioAccess));
+    return ITEMS.filter((item) =>
+      item.visible(roles, actionSet, hasPhysioAccess)
+    );
   }, [actions, hasPhysioAccess, roles]);
   const swipeRoutes = useMemo(
     () => visibleItems.map((item) => ({ href: item.href, matches: item.matches })),
@@ -137,7 +150,10 @@ export default function BottomNav({
       : swipeDirection === "previous"
         ? visibleItems[activeIndex - 1]
         : undefined;
-  const cueOpacity = Math.max(0, Math.min(1, (swipeProgress - 0.08) / 0.92));
+  const cueOpacity = Math.max(
+    0,
+    Math.min(1, (swipeProgress - 0.08) / 0.92)
+  );
   const cueShift = 10 * (1 - swipeProgress);
 
   return (
@@ -145,7 +161,9 @@ export default function BottomNav({
       <div
         aria-hidden="true"
         className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 origin-left bg-blue-700 transition-[opacity,transform] duration-200 ease-out ${
-          isNavigating ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
+          isNavigating
+            ? "scale-x-100 opacity-100"
+            : "scale-x-0 opacity-0"
         }`}
       />
 
@@ -188,12 +206,16 @@ export default function BottomNav({
                   <span
                     aria-hidden="true"
                     className={`absolute top-0 h-0.5 w-9 origin-center rounded-full bg-blue-700 transition-[opacity,transform] duration-100 ease-out ${
-                      active ? "scale-x-100 opacity-100" : "scale-x-[0.22] opacity-0"
+                      active
+                        ? "scale-x-100 opacity-100"
+                        : "scale-x-[0.22] opacity-0"
                     }`}
                   />
                   <span
                     className={`relative transition-transform duration-100 ease-out ${
-                      active ? "-translate-y-0.5 scale-[1.07]" : "translate-y-0 scale-100"
+                      active
+                        ? "-translate-y-0.5 scale-[1.07]"
+                        : "translate-y-0 scale-100"
                     }`}
                   >
                     <AppIcon
