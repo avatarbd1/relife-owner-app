@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import {
+  assertLiveChamberCutoverReady,
+  getCutoverChamberSnapshot,
+  prepareLiveChamberCompletion,
+  reconcileLiveChamberAfterMutation,
+} from "@/lib/domain/chamber/liveParity";
+import {
   completeChamberSession,
-  getChamberSnapshot,
   receiveChamberPatient,
   startChamberSession,
   updateChamberStep,
@@ -14,8 +19,8 @@ import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
   if (["ACCESS_DENIED", "THERAPIST_NOT_ASSIGNED"].includes(message)) return 403;
-  if (["APPOINTMENT_NOT_FOUND", "PATIENT_NOT_FOUND", "CHAMBER_SESSION_NOT_FOUND", "STATION_NOT_FOUND", "RESOURCE_NOT_FOUND", "STAFF_NOT_FOUND"].includes(message)) return 404;
-  if (message === "CHAMBER_SCHEMA_MISSING") return 503;
+  if (["APPOINTMENT_NOT_FOUND", "PATIENT_NOT_FOUND", "CHAMBER_SESSION_NOT_FOUND", "SESSION_NOT_FOUND", "STATION_NOT_FOUND", "RESOURCE_NOT_FOUND", "STAFF_NOT_FOUND"].includes(message)) return 404;
+  if (["CHAMBER_SCHEMA_MISSING", "SUPABASE_EDGE_SECRET_MISSING", "TENANT_NOT_FOUND"].includes(message)) return 503;
   if (
     message.startsWith("CHAMBER_CAPACITY:") ||
     message.startsWith("RESOURCE_BUSY:") ||
@@ -28,7 +33,7 @@ function statusFor(message: string): number {
 export async function GET() {
   try {
     const context = await requireCurrentAccessContext();
-    const snapshot = await getChamberSnapshot(context);
+    const snapshot = await getCutoverChamberSnapshot(context);
     const enriched = await enrichChamberSnapshotWithPatientProfiles(context, snapshot);
     return NextResponse.json({ ok: true, snapshot: enriched });
   } catch (error) {
@@ -50,10 +55,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
+    assertLiveChamberCutoverReady();
     const action = String(body.action || "");
     if (action === "receive") {
       const result = await receiveChamberPatient(context, body.appointmentId);
-      return NextResponse.json({ ok: true, ...result });
+      const statusSynced = await reconcileLiveChamberAfterMutation(context);
+      return NextResponse.json({ ok: true, ...result, statusSyncPending: !statusSynced });
     }
     if (action === "assign_therapist") {
       const result = await assignChamberTherapist(context, body.appointmentId, body.staffId);
@@ -65,7 +72,8 @@ export async function POST(request: NextRequest) {
     }
     if (action === "start") {
       const result = await startChamberSession(context, body.sessionId);
-      return NextResponse.json({ ok: true, ...result });
+      const statusSynced = await reconcileLiveChamberAfterMutation(context);
+      return NextResponse.json({ ok: true, ...result, statusSyncPending: !statusSynced });
     }
     if (action === "step") {
       const result = await updateChamberStep(context, {
@@ -78,6 +86,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "complete") {
+      await prepareLiveChamberCompletion(context, body.sessionId);
       const result = await completeChamberSession(context, body.sessionId);
       return NextResponse.json({ ok: true, ...result });
     }
