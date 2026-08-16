@@ -17,20 +17,40 @@ export default async function MorePage() {
   const canAcceptCash = actionSet.has("cash.accept");
   const canChamber = canPerform(context, "chamber.read", "Physio");
   const canReadRegister = canPerform(context, "register.read", "Physio") || canPerform(context, "register.read", "Dental");
+  const canFinance = [
+    "payment.read_amount",
+    "payment.create",
+    "report.read_financial",
+    "expense.read",
+    "expense.request",
+    "expense.approve",
+    "cash.read",
+    "cash.request",
+    "cash.accept",
+    "salary.read",
+  ].some((action) => actionSet.has(action as never));
+  const canReports = actionSet.has("report.read_operational") || actionSet.has("report.read_financial");
   const snapshot = isOwner ? await getOwnerControlSnapshot() : null;
   const pendingTotal = snapshot ? snapshot.pendingExpenses.length + snapshot.pendingCashMovements.length : 0;
 
   return (
     <div>
-      <PageHeading title="More" subtitle="Operations, clinical tools and administration" />
+      <PageHeading title="More" subtitle="Operations, finance, reports and administration" />
 
       <Section title="Operations">
-        {canChamber && <ActionRow href="/chamber" icon="clinical" title="Live chamber" subtitle="Beds, traction, utilization, machine availability and timers" />}
+        {canChamber && <ActionRow href="/chamber" icon="chamber" title="Live chamber" subtitle="Beds, waiting, machines, chat and conflicts" />}
         <ActionRow href="/daily" icon="attendance" title="Attendance" subtitle="Check in, break and check out" />
         {canReadRegister && <ActionRow href="/register" icon="register" title="Daily register" subtitle="Department-safe operational register" />}
         {canAcceptCash && !isOwner && <ActionRow href="/finance/cash-receive" icon="cash" title="Receive cash handover" subtitle="Confirm actual amount received" />}
         {canPhysioInventory && <ActionRow href="/tools" icon="inventory" title="Inventory" subtitle="Authorized Physio stock and inventory log" />}
       </Section>
+
+      {(canFinance || canReports) && (
+        <Section title="Finance & reports">
+          {canFinance && <ActionRow href="/finance" icon="finance" title="Finance" subtitle="Payments, expenses, cash, salary and balances" />}
+          {canReports && <ActionRow href="/reports" icon="reports" title="Reports & analysis" subtitle="Operational and financial reports within your access" />}
+        </Section>
+      )}
 
       {(canPhysioClinicalTools || canCorrect) && (
         <Section title="Clinical & learning">

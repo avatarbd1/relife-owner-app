@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import type { WebAction, WebRole } from "@/lib/webos/access";
@@ -12,7 +12,7 @@ type NavItem = {
   label: string;
   icon: AppIconName;
   matches: string[];
-  visible: (roles: WebRole[], actions: Set<WebAction>) => boolean;
+  visible: (roles: WebRole[], actions: Set<WebAction>, hasPhysioAccess: boolean) => boolean;
 };
 
 function hasAny(actions: Set<WebAction>, required: WebAction[]): boolean {
@@ -26,26 +26,6 @@ const ITEMS: NavItem[] = [
     icon: "home",
     matches: ["/home", "/daily"],
     visible: () => true,
-  },
-  {
-    href: "/finance",
-    label: "Finance",
-    icon: "finance",
-    matches: ["/finance", "/operations"],
-    visible: (_roles, actions) =>
-      hasAny(actions, [
-        "payment.read_amount",
-        "payment.create",
-        "payment.void",
-        "report.read_financial",
-        "expense.request",
-        "expense.approve",
-        "expense.pay",
-        "cash.request",
-        "cash.accept",
-        "salary.read",
-        "salary.pay",
-      ]),
   },
   {
     href: "/patients",
@@ -65,22 +45,40 @@ const ITEMS: NavItem[] = [
       ]),
   },
   {
-    href: "/reports",
-    label: "Reports",
-    icon: "reports",
-    matches: ["/reports"],
+    href: "/chamber",
+    label: "Chamber",
+    icon: "chamber",
+    matches: ["/chamber"],
+    visible: (_roles, actions, hasPhysioAccess) =>
+      hasPhysioAccess && actions.has("chamber.read"),
+  },
+  {
+    href: "/payments",
+    label: "Payments",
+    icon: "payment",
+    matches: ["/payments"],
     visible: (_roles, actions) =>
-      hasAny(actions, [
-        "report.read_operational",
-        "report.read_financial",
-        "audit.read",
-      ]),
+      hasAny(actions, ["payment.read_amount", "payment.create", "payment.void"]),
   },
   {
     href: "/more",
     label: "More",
     icon: "more",
-    matches: ["/more", "/menu", "/tools", "/security", "/corrections"],
+    matches: [
+      "/more",
+      "/menu",
+      "/tools",
+      "/security",
+      "/corrections",
+      "/finance",
+      "/operations",
+      "/reports",
+      "/salary",
+      "/expenses",
+      "/pwa",
+      "/audit",
+      "/settings",
+    ],
     visible: () => true,
   },
 ];
@@ -94,16 +92,18 @@ function isActive(pathname: string, matches: string[]): boolean {
 export default function BottomNav({
   roles,
   actions,
+  hasPhysioAccess = false,
 }: {
   roles: WebRole[];
   actions: WebAction[];
   hasPhysioAccess?: boolean;
 }) {
   const pathname = usePathname();
+  const [chamberPending, setChamberPending] = useState(0);
   const visibleItems = useMemo(() => {
     const actionSet = new Set(actions);
-    return ITEMS.filter((item) => item.visible(roles, actionSet));
-  }, [actions, roles]);
+    return ITEMS.filter((item) => item.visible(roles, actionSet, hasPhysioAccess));
+  }, [actions, hasPhysioAccess, roles]);
   const swipeRoutes = useMemo(
     () => visibleItems.map((item) => ({ href: item.href, matches: item.matches })),
     [visibleItems]
@@ -118,6 +118,15 @@ export default function BottomNav({
     routes: swipeRoutes,
     threshold: 52,
   });
+
+  useEffect(() => {
+    function onPending(event: Event) {
+      const next = Number((event as CustomEvent<number>).detail || 0);
+      setChamberPending(Number.isFinite(next) ? Math.max(0, next) : 0);
+    }
+    window.addEventListener("relife-chamber-pending", onPending);
+    return () => window.removeEventListener("relife-chamber-pending", onPending);
+  }, []);
 
   const activeIndex = visibleItems.findIndex((item) =>
     isActive(pathname, item.matches)
@@ -161,6 +170,7 @@ export default function BottomNav({
         <ul className="mx-auto flex w-full max-w-3xl">
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.matches);
+            const pending = item.href === "/chamber" ? chamberPending : 0;
             return (
               <li key={item.href} className="flex-1">
                 <Link
@@ -182,7 +192,7 @@ export default function BottomNav({
                     }`}
                   />
                   <span
-                    className={`transition-transform duration-100 ease-out ${
+                    className={`relative transition-transform duration-100 ease-out ${
                       active ? "-translate-y-0.5 scale-[1.07]" : "translate-y-0 scale-100"
                     }`}
                   >
@@ -190,6 +200,11 @@ export default function BottomNav({
                       name={item.icon}
                       className={`h-5 w-5 ${active ? "stroke-[2]" : ""}`}
                     />
+                    {pending > 0 && (
+                      <span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-red-600 px-1 text-center text-[8px] font-bold leading-4 text-white ring-2 ring-white">
+                        {pending > 9 ? "9+" : pending}
+                      </span>
+                    )}
                   </span>
                   <span className={active ? "font-semibold" : "font-medium"}>
                     {item.label}

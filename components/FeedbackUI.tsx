@@ -1,5 +1,5 @@
 type SpinnerSize = "sm" | "md" | "lg";
-type StatusTone = "success" | "warning" | "error" | "info" | "neutral";
+type StatusTone = "success" | "warning" | "error" | "danger" | "info" | "neutral";
 
 const SPINNER_SIZE: Record<SpinnerSize, string> = {
   sm: "h-4 w-4",
@@ -19,6 +19,10 @@ const STATUS_STYLE: Record<StatusTone, { className: string; icon: string }> = {
   error: {
     className: "border-red-500 bg-red-100 text-red-700",
     icon: "✕",
+  },
+  danger: {
+    className: "border-red-500 bg-red-100 text-red-700",
+    icon: "!",
   },
   info: {
     className: "border-blue-500 bg-blue-100 text-blue-800",
@@ -168,7 +172,7 @@ export function InlineNotice({
   return (
     <div
       className={`rounded-xl border px-3 py-2.5 text-xs leading-5 ${style.className} ${className}`}
-      role={tone === "error" ? "alert" : "status"}
+      role={tone === "error" || tone === "danger" ? "alert" : "status"}
     >
       {title && <p className="font-semibold">{title}</p>}
       <div className={title ? "mt-0.5" : ""}>{children}</div>

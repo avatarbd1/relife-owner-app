@@ -1,4 +1,4 @@
-const CACHE_VERSION = "relife-owner-pwa-v2-static";
+const CACHE_VERSION = "relife-owner-pwa-v3-static";
 const STATIC_ASSETS = new Set([
   "/manifest.webmanifest",
   "/icon-192.png",
@@ -50,6 +50,25 @@ self.addEventListener("fetch", (event) => {
       const response = await fetch(event.request);
       if (response.ok) await cache.put(url.pathname, response.clone());
       return response;
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || "/chamber/chat";
+  const targetUrl = new URL(target, self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+      for (const client of clients) {
+        if (new URL(client.url).origin !== self.location.origin) continue;
+        if ("navigate" in client && client.url !== targetUrl) {
+          await client.navigate(targetUrl).catch(() => undefined);
+        }
+        if ("focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+      return undefined;
     })
   );
 });
