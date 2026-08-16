@@ -1,4 +1,5 @@
 import BottomNav from "@/components/BottomNav";
+import ChamberAlertListener from "@/components/ChamberAlertListener";
 import InteractionLayer from "@/components/InteractionLayer";
 import ProfileMenu from "@/components/ProfileMenu";
 import { IS_LIVE_DATA } from "@/lib/data";
@@ -20,6 +21,7 @@ export default async function DashboardLayout({
   const hasPhysioAccess =
     context.departmentAccess.includes("Physio") ||
     context.departmentAccess.includes("All");
+  const canChamber = hasPhysioAccess && actions.includes("chamber.read");
   const isOwner = context.roles.includes("Owner");
 
   return (
@@ -54,6 +56,7 @@ export default async function DashboardLayout({
       </main>
 
       <InteractionLayer />
+      {canChamber && <ChamberAlertListener currentStaffId={context.staffId} />}
       <BottomNav
         roles={context.roles}
         actions={actions}
