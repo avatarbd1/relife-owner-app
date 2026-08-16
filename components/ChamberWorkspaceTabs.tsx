@@ -1,7 +1,4 @@
-"use client";
-
-import { useState } from "react";
-import { haptic } from "@/lib/interactions";
+import Link from "next/link";
 
 type Tab = "schedule" | "live" | "team";
 
@@ -12,41 +9,32 @@ const TABS: Array<{ id: Tab; label: string; hint: string }> = [
 ];
 
 export default function ChamberWorkspaceTabs({
-  schedule,
-  live,
-  team,
+  activeTab,
+  date,
+  panel,
   pendingTeam = 0,
-  defaultTab = "schedule",
 }: {
-  schedule: React.ReactNode;
-  live: React.ReactNode;
-  team: React.ReactNode;
+  activeTab: Tab;
+  date: string;
+  panel: React.ReactNode;
   pendingTeam?: number;
-  defaultTab?: Tab;
 }) {
-  const [tab, setTab] = useState<Tab>(defaultTab);
-
   return (
     <div className="space-y-4">
-      <div
+      <nav
         className="sticky top-[58px] z-10 grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur"
-        role="tablist"
         aria-label="Live Chamber workspace"
       >
         {TABS.map((item) => {
-          const active = tab === item.id;
+          const active = activeTab === item.id;
           const badge = item.id === "team" ? pendingTeam : 0;
+          const params = new URLSearchParams({ tab: item.id, date });
           return (
-            <button
+            <Link
               key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => {
-                setTab(item.id);
-                haptic("tap");
-              }}
-              className={`relative min-h-[54px] rounded-lg px-2 py-2 text-center transition ${
+              href={`/chamber?${params.toString()}`}
+              aria-current={active ? "page" : undefined}
+              className={`relative flex min-h-[54px] flex-col items-center justify-center rounded-lg px-2 py-2 text-center transition ${
                 active
                   ? "bg-blue-800 text-white shadow-sm"
                   : "text-slate-600 active:bg-slate-100"
@@ -65,14 +53,12 @@ export default function ChamberWorkspaceTabs({
                   {badge > 9 ? "9+" : badge}
                 </span>
               )}
-            </button>
+            </Link>
           );
         })}
-      </div>
+      </nav>
 
-      <div role="tabpanel">
-        {tab === "schedule" ? schedule : tab === "live" ? live : team}
-      </div>
+      <div>{panel}</div>
     </div>
   );
 }
