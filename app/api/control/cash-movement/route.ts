@@ -4,15 +4,15 @@ import {
   checkOwnerPin,
   verifySessionToken,
 } from "@/lib/auth";
-import { decideCashMovement } from "@/lib/controls";
+import { decideCashMovement } from "@/lib/domain/finance/cash";
 import type { Workbook } from "@/lib/data/googleSheets";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
 function statusForError(message: string): number {
   if (message === "CONTROL_NOT_FOUND") return 404;
   if (message === "CONTROL_ALREADY_DECIDED") return 409;
-  if (message.startsWith("CONTROL_CONFIG_")) return 503;
-  if (message === "CONTROL_SCHEMA_MISMATCH") return 500;
+  if (message === "SCHEMA_MISMATCH") return 503;
+  if (["INVALID_WORKBOOK", "INVALID_DECISION", "INVALID_RECEIVED_AMOUNT"].includes(message)) return 400;
   return 500;
 }
 
@@ -51,12 +51,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await decideCashMovement(
-      workbook as Workbook,
-      id,
+    await decideCashMovement({
+      workbook: workbook as Workbook,
+      movementId: id,
       decision,
-      receivedAmount
-    );
+      receivedAmount,
+      actorId: process.env.OWNER_DISPLAY_NAME || "Owner",
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CONTROL_FAILED";

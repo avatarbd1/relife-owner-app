@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requestExpense } from "@/lib/domain/finance/expenses";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requestExpense } from "@/lib/webos/expenseRequests";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -14,7 +14,7 @@ function errorResponse(error: unknown): NextResponse {
   if (["INVALID_DEPARTMENT", "INVALID_AMOUNT", "INVALID_CATEGORY", "INVALID_REQUEST_ID"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  console.error("W3 expense request failed:", message);
+  console.error("Finance expense request failed:", message);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 

@@ -4,16 +4,16 @@ import {
   checkOwnerPin,
   verifySessionToken,
 } from "@/lib/auth";
-import { decideExpense } from "@/lib/controls";
+import { decideExpense } from "@/lib/domain/finance/expenses";
 import type { Workbook } from "@/lib/data/googleSheets";
-import { recordExpenseRejectionReason } from "@/lib/webos/controlAudit";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
 function statusForError(message: string): number {
   if (message === "CONTROL_NOT_FOUND") return 404;
   if (message === "CONTROL_ALREADY_DECIDED") return 409;
   if (message.startsWith("CONTROL_CONFIG_")) return 503;
-  if (message === "CONTROL_SCHEMA_MISMATCH") return 500;
+  if (message === "SCHEMA_MISMATCH") return 503;
+  if (message === "REJECTION_REASON_REQUIRED") return 400;
   return 500;
 }
 
@@ -48,12 +48,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await decideExpense(workbook as Workbook, id, decision);
-    const reasonRecorded =
-      decision === "reject"
-        ? await recordExpenseRejectionReason(workbook as Workbook, id, reason)
-        : true;
-    return NextResponse.json({ ok: true, reasonRecorded });
+    await decideExpense({
+      workbook: workbook as Workbook,
+      expenseId: id,
+      decision,
+      actorId: process.env.OWNER_DISPLAY_NAME || "Owner",
+      reason: decision === "reject" ? reason : undefined,
+    });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CONTROL_FAILED";
     console.error("Owner expense control failed:", message);
