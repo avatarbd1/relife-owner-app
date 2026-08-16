@@ -6,31 +6,33 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-function assertDomainRoute(path: string, module: string): void {
+function assertProductionRoute(path: string): void {
   assert.match(
     source(path),
-    new RegExp(`@/lib/domain/finance/${module}`.replaceAll("/", "\\/")),
-    `${path} must use Finance domain ${module}`
+    /@\/lib\/domain\/finance\/production/,
+    `${path} must use the final Finance production boundary`
   );
 }
 
-test("payment writes use Finance domain", () => {
-  assertDomainRoute("app/api/finance/payment/route.ts", "payments");
+test("all finance write routes use one production boundary", () => {
+  [
+    "app/api/finance/payment/route.ts",
+    "app/api/finance/expense/request/route.ts",
+    "app/api/finance/expense/pay/route.ts",
+    "app/api/control/expense/route.ts",
+    "app/api/finance/cash/request/route.ts",
+    "app/api/control/cash-movement/route.ts",
+    "app/api/finance/salary/route.ts",
+  ].forEach(assertProductionRoute);
 });
 
-test("expense lifecycle routes use Finance domain", () => {
-  assertDomainRoute("app/api/finance/expense/request/route.ts", "expenses");
-  assertDomainRoute("app/api/finance/expense/pay/route.ts", "expenses");
-  assertDomainRoute("app/api/control/expense/route.ts", "expenses");
-});
-
-test("cash lifecycle routes use Finance domain", () => {
-  assertDomainRoute("app/api/finance/cash/request/route.ts", "cash");
-  assertDomainRoute("app/api/control/cash-movement/route.ts", "cash");
-});
-
-test("salary writes use Finance domain", () => {
-  assertDomainRoute("app/api/finance/salary/route.ts", "salary");
+test("finance production boundary delegates existing business rules", () => {
+  const production = source("lib/domain/finance/production.ts");
+  assert.match(production, /@\/lib\/domain\/finance\/payments/);
+  assert.match(production, /@\/lib\/domain\/finance\/expenses/);
+  assert.match(production, /@\/lib\/domain\/finance\/cash/);
+  assert.match(production, /@\/lib\/domain\/finance\/salary/);
+  assert.match(production, /@\/lib\/data\/supabaseFinance/);
 });
 
 test("duplicate expense writers are removed", () => {

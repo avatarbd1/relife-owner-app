@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPayment } from "@/lib/domain/finance/payments";
+import { createPayment } from "@/lib/domain/finance/production";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
@@ -11,7 +11,7 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "PATIENT_NOT_FOUND") {
     return NextResponse.json({ ok: false, error: message }, { status: 404 });
   }
-  if (message === "SCHEMA_MISMATCH") {
+  if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
   if (

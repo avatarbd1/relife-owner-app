@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requestCashMovement } from "@/lib/domain/finance/cash";
+import { requestCashMovement } from "@/lib/domain/finance/production";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
@@ -8,7 +8,7 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "ACCESS_DENIED") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
-  if (message === "SCHEMA_MISMATCH") {
+  if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
   if (["INVALID_DEPARTMENT", "INVALID_AMOUNT", "INVALID_CUSTODIAN", "INVALID_REQUEST_ID"].includes(message)) {

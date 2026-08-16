@@ -4,7 +4,7 @@ import {
   checkOwnerPin,
   verifySessionToken,
 } from "@/lib/auth";
-import { decideExpense } from "@/lib/domain/finance/expenses";
+import { decideExpense } from "@/lib/domain/finance/production";
 import type { Workbook } from "@/lib/data/googleSheets";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
@@ -12,7 +12,7 @@ function statusForError(message: string): number {
   if (message === "CONTROL_NOT_FOUND") return 404;
   if (message === "CONTROL_ALREADY_DECIDED") return 409;
   if (message.startsWith("CONTROL_CONFIG_")) return 503;
-  if (message === "SCHEMA_MISMATCH") return 503;
+  if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") return 503;
   if (message === "REJECTION_REASON_REQUIRED") return 400;
   return 500;
 }
