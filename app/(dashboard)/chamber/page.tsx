@@ -1,3 +1,4 @@
+import ChamberNav from "@/components/ChamberNav";
 import ChamberPatientEditPanel from "@/components/ChamberPatientEditPanel";
 import ChamberReservationPanel from "@/components/ChamberReservationPanel";
 import LiveChamberBoard from "@/components/LiveChamberBoard";
@@ -5,15 +6,17 @@ import { ProgressBar, StatusBadge } from "@/components/FeedbackUI";
 import { canPerform } from "@/lib/webos/access";
 import { getChamberBookingPlans } from "@/lib/webos/appointmentScheduling";
 import { getChamberSnapshot } from "@/lib/webos/chamber";
+import { getChamberCommsSnapshot } from "@/lib/webos/chamberComms";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 export default async function ChamberPage() {
   const context = await requireCurrentAccessContext();
-  const [rawSnapshot, staffDirectory] = await Promise.all([
+  const [rawSnapshot, staffDirectory, comms] = await Promise.all([
     getChamberSnapshot(context),
     getWebStaffDirectory(),
+    getChamberCommsSnapshot(context),
   ]);
   const [snapshot, bookingPlan] = await Promise.all([
     enrichChamberSnapshotWithPatientProfiles(context, rawSnapshot),
@@ -85,7 +88,7 @@ export default async function ChamberPage() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Physio operations</p>
             <h1 className="mt-1 text-2xl font-bold">Live chamber</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">Beds, traction, patient timing, therapist assignment, machine reservations, live locks and allocation safety.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-300">Beds, patient flow, machines, team chat and treatment safety in one workspace.</p>
           </div>
           <StatusBadge tone={conflictCount ? "warning" : "success"} className="border-white/10">
             {conflictCount ? `${conflictCount} warnings` : "Live healthy"}
@@ -99,41 +102,55 @@ export default async function ChamberPage() {
         </div>
       </section>
 
-      <ChamberReservationPanel plans={bookingPlan.plans} reservations={bookingPlan.reservations} />
+      <ChamberNav pending={comms.pendingUrgentCount} />
 
-      <ChamberPatientEditPanel
-        initialItems={uniqueCorrectionItems}
-        canEdit={canEditPatient}
-        canAssignTherapist={canAssignTherapist}
-        therapists={therapists}
-      />
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div><h2 className="text-base font-semibold text-slate-950">Station utilization</h2><p className="mt-0.5 text-xs text-slate-500">Current occupied treatment stations</p></div>
-          <StatusBadge tone={stationUtilization >= 100 ? "warning" : stationUtilization >= 50 ? "info" : "success"}>{Math.round(stationUtilization)}%</StatusBadge>
-        </div>
-        <ProgressBar value={stationUtilization} label={`${occupiedStations} occupied · ${Math.max(0, totalStations - occupiedStations)} free`} className="mt-4" />
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {snapshot.stations.map((station) => (
-            <div key={station.resource.resourceId} className={`rounded-lg border p-3 ${station.session ? "border-blue-200 bg-blue-50" : "border-emerald-200 bg-emerald-50"}`}>
-              <p className="truncate text-xs font-semibold text-slate-900">{station.resource.resourceName}</p>
-              <p className={`mt-1 text-[10px] font-semibold ${station.session ? "text-blue-700" : "text-emerald-700"}`}>{station.session ? `In use · ${station.session.patientName}` : "Free"}</p>
-              {station.roomGender && <p className={`mt-1 text-[10px] ${station.roomGender === "Mixed" ? "font-semibold text-red-700" : "text-slate-500"}`}>{station.roomGender} room</p>}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {conflictCount > 0 && (
-        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-amber-950">Allocation warnings</h2><p className="mt-0.5 text-xs text-amber-800">Resolve before assigning a station or resource.</p></div><StatusBadge tone="warning">{conflictCount}</StatusBadge></div>
-          <div className="mt-3 space-y-2">
-            {mixedRooms.map((station) => <div key={`mixed-${station.resource.resourceId}`} className="rounded-lg bg-white/70 p-3 text-xs font-medium text-red-800 ring-1 ring-red-100">{station.resource.resourceName}: mixed-gender occupancy conflict detected.</div>)}
-            {warnings.map((item) => <div key={`warning-${item.appointmentId}`} className="rounded-lg bg-white/70 p-3 text-xs text-amber-900 ring-1 ring-amber-100"><strong>{item.patientName || item.patientId}</strong> · {item.allocationWarning}</div>)}
+      <div id="beds" className="scroll-mt-28">
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div><h2 className="text-base font-semibold text-slate-950">Beds now</h2><p className="mt-0.5 text-xs text-slate-500">Bed 1–4 + traction live status</p></div>
+            <StatusBadge tone={stationUtilization >= 100 ? "warning" : stationUtilization >= 50 ? "info" : "success"}>{Math.round(stationUtilization)}%</StatusBadge>
+          </div>
+          <ProgressBar value={stationUtilization} label={`${occupiedStations} occupied · ${Math.max(0, totalStations - occupiedStations)} free`} className="mt-4" />
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {snapshot.stations.map((station) => (
+              <div key={station.resource.resourceId} className={`rounded-lg border p-3 ${station.session ? "border-blue-200 bg-blue-50" : "border-emerald-200 bg-emerald-50"}`}>
+                <p className="truncate text-xs font-semibold text-slate-900">{station.resource.resourceName}</p>
+                <p className={`mt-1 text-[10px] font-semibold ${station.session ? "text-blue-700" : "text-emerald-700"}`}>{station.session ? `In use · ${station.session.patientName}` : "Free"}</p>
+                {station.roomGender && <p className={`mt-1 text-[10px] ${station.roomGender === "Mixed" ? "font-semibold text-red-700" : "text-slate-500"}`}>{station.roomGender} room</p>}
+              </div>
+            ))}
           </div>
         </section>
-      )}
+      </div>
+
+      <div id="waiting" className="scroll-mt-28">
+        <ChamberPatientEditPanel
+          initialItems={uniqueCorrectionItems}
+          canEdit={canEditPatient}
+          canAssignTherapist={canAssignTherapist}
+          therapists={therapists}
+        />
+      </div>
+
+      <div id="machines" className="scroll-mt-28">
+        <ChamberReservationPanel plans={bookingPlan.plans} reservations={bookingPlan.reservations} />
+      </div>
+
+      <div id="conflicts" className="scroll-mt-28">
+        {conflictCount > 0 ? (
+          <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-amber-950">Allocation warnings</h2><p className="mt-0.5 text-xs text-amber-800">Resolve before assigning a station or resource.</p></div><StatusBadge tone="warning">{conflictCount}</StatusBadge></div>
+            <div className="mt-3 space-y-2">
+              {mixedRooms.map((station) => <div key={`mixed-${station.resource.resourceId}`} className="rounded-lg bg-white/70 p-3 text-xs font-medium text-red-800 ring-1 ring-red-100">{station.resource.resourceName}: mixed-gender occupancy conflict detected.</div>)}
+              {warnings.map((item) => <div key={`warning-${item.appointmentId}`} className="rounded-lg bg-white/70 p-3 text-xs text-amber-900 ring-1 ring-amber-100"><strong>{item.patientName || item.patientId}</strong> · {item.allocationWarning}</div>)}
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-800 shadow-sm">
+            <strong>No active allocation conflict.</strong> Gender and station safety checks are healthy.
+          </section>
+        )}
+      </div>
 
       <LiveChamberBoard initial={snapshot} />
     </div>
