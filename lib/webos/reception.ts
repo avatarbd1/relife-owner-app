@@ -5,6 +5,12 @@ import {
   fetchSheetRanges,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import {
+  chamberDbMode,
+  chamberSupabaseConfigured,
+  querySupabaseChamberAppointments,
+  type SupabaseAppointmentRow,
+} from "@/lib/data/supabaseChamber";
 import { getPatients, type PatientRecord } from "@/lib/patients";
 import type { Scope } from "@/lib/types";
 import {
@@ -161,6 +167,17 @@ function sheetTimeFromInput(value: string): string {
     2,
     "0"
   )} ${suffix}`;
+}
+
+function sheetTimeFromSupabase(value: string): string {
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(normalize(value));
+  if (!match) return normalize(value);
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return normalize(value);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 function rowForHeaders(
@@ -399,6 +416,34 @@ function parseAppointments(
   });
 }
 
+function appointmentFromSupabase(row: SupabaseAppointmentRow): AppointmentRecord {
+  return {
+    appointmentId: normalize(row.id),
+    date: normalize(row.date).slice(0, 10),
+    time: sheetTimeFromSupabase(row.start_time),
+    patientId: normalize(row.patient_id),
+    patientName: normalize(row.patient_name),
+    department: "Physio",
+    therapist: normalize(row.therapist),
+    status: normalize(row.status) || "Scheduled",
+    remarks: normalize(row.remarks),
+    receivedBy: "",
+  };
+}
+
+function mergeAppointments(
+  sheets: AppointmentRecord[],
+  supabase: SupabaseAppointmentRow[]
+): AppointmentRecord[] {
+  const merged = new Map<string, AppointmentRecord>();
+  for (const row of sheets) merged.set(`${row.department}:${row.appointmentId}`, row);
+  for (const raw of supabase) {
+    const row = appointmentFromSupabase(raw);
+    if (row.appointmentId) merged.set(`Physio:${row.appointmentId}`, row);
+  }
+  return [...merged.values()];
+}
+
 async function loadAppointments(): Promise<AppointmentRecord[]> {
   const [physio, dental] = await Promise.all([
     fetchSheetRanges("physio", ["04_Appointments"]),
@@ -410,24 +455,47 @@ async function loadAppointments(): Promise<AppointmentRecord[]> {
   ];
 }
 
+function shouldReadSupabasePhysio(context: AccessContext, scope: Scope): boolean {
+  return (
+    chamberDbMode() === "supabase" &&
+    scope !== "dental" &&
+    canPerform(context, "appointment.read", "Physio")
+  );
+}
+
 export async function getAppointmentsForContext(
   context: AccessContext,
   scope: Scope,
   date?: string
 ): Promise<AppointmentRecord[]> {
-  const rows = await loadAppointments();
-  return rows
-    .filter(
+  const sheets = (await loadAppointments()).filter(
+    (row) =>
+      scopeAllows(scope, row.department) &&
+      (!date || row.date === date) &&
+      canPerform(context, "appointment.read", row.department)
+  );
+
+  let rows = sheets;
+  // Only bounded reads join the Supabase cutover store here. Unbounded screens
+  // use their own range-aware domain read model and must not trigger a full DB scan.
+  if (date && shouldReadSupabasePhysio(context, scope)) {
+    if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
+    const supabase = await querySupabaseChamberAppointments({
+      startDate: date,
+      endDate: date,
+    });
+    rows = mergeAppointments(sheets, supabase).filter(
       (row) =>
         scopeAllows(scope, row.department) &&
-        (!date || row.date === date) &&
         canPerform(context, "appointment.read", row.department)
-    )
-    .sort((a, b) => {
-      const dateOrder = a.date.localeCompare(b.date);
-      if (dateOrder !== 0) return dateOrder;
-      return appointmentMinutes(a.time) - appointmentMinutes(b.time);
-    });
+    );
+  }
+
+  return rows.sort((a, b) => {
+    const dateOrder = a.date.localeCompare(b.date);
+    if (dateOrder !== 0) return dateOrder;
+    return appointmentMinutes(a.time) - appointmentMinutes(b.time);
+  });
 }
 
 export async function getPatientAppointmentsForContext(
@@ -435,19 +503,31 @@ export async function getPatientAppointmentsForContext(
   patient: PatientRecord
 ): Promise<AppointmentRecord[]> {
   assertCanPerform(context, "appointment.read", patient.department);
-  const rows = await loadAppointments();
-  return rows
-    .filter(
-      (row) =>
-        row.patientId === patient.patientId &&
-        row.department === patient.department &&
-        canPerform(context, "appointment.read", row.department)
-    )
-    .sort((a, b) => {
-      const dateOrder = b.date.localeCompare(a.date);
-      if (dateOrder !== 0) return dateOrder;
-      return appointmentMinutes(b.time) - appointmentMinutes(a.time);
-    });
+  const sheets = (await loadAppointments()).filter(
+    (row) =>
+      row.patientId === patient.patientId &&
+      row.department === patient.department &&
+      canPerform(context, "appointment.read", row.department)
+  );
+
+  let rows = sheets;
+  if (
+    patient.department === "Physio" &&
+    chamberDbMode() === "supabase" &&
+    canPerform(context, "appointment.read", "Physio")
+  ) {
+    if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
+    const supabase = await querySupabaseChamberAppointments({ patientId: patient.patientId });
+    rows = mergeAppointments(sheets, supabase).filter(
+      (row) => row.patientId === patient.patientId && row.department === "Physio"
+    );
+  }
+
+  return rows.sort((a, b) => {
+    const dateOrder = b.date.localeCompare(a.date);
+    if (dateOrder !== 0) return dateOrder;
+    return appointmentMinutes(b.time) - appointmentMinutes(a.time);
+  });
 }
 
 export async function getClinicianOptions(
