@@ -18,6 +18,7 @@ export function formatBDT(amount: number): string {
 
 export function formatDateBn(date: Date): string {
   return date.toLocaleDateString("en-GB", {
+    timeZone: "Asia/Dhaka",
     day: "2-digit",
     month: "short",
     year: "numeric",

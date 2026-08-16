@@ -134,6 +134,8 @@ interface DepartmentAccessRow {
   department: Department;
   role: WebRole | null;
   status: string;
+  clinicalWriteScope: string;
+  financialAccess: string;
 }
 
 function parseDepartmentAccess(rows: string[][]): DepartmentAccessRow[] {
@@ -141,8 +143,12 @@ function parseDepartmentAccess(rows: string[][]): DepartmentAccessRow[] {
   const headers = rows[0];
   const staffIdIdx = headerIndex(headers, "Staff_ID");
   const departmentIdx = headerIndex(headers, "Department");
-  const roleIdx = headerIndex(headers, "Role");
+  // The production mapping sheet names this column Role_Snapshot.
+  // Keep Role as a compatibility alias for older copies.
+  const roleIdx = headerIndex(headers, "Role_Snapshot", "Role");
   const statusIdx = headerIndex(headers, "Status");
+  const clinicalIdx = headerIndex(headers, "Clinical_Write_Scope");
+  const financialIdx = headerIndex(headers, "Financial_Access");
 
   return rows.slice(1).flatMap((row) => {
     const staffId = at(row, staffIdIdx);
@@ -150,7 +156,14 @@ function parseDepartmentAccess(rows: string[][]): DepartmentAccessRow[] {
     const role = parseRole(at(row, roleIdx));
     const status = at(row, statusIdx) || "Active";
     if (!staffId || !department || status.toLowerCase() !== "active") return [];
-    return [{ staffId, department, role, status }];
+    return [{
+      staffId,
+      department,
+      role,
+      status,
+      clinicalWriteScope: at(row, clinicalIdx),
+      financialAccess: at(row, financialIdx),
+    }];
   });
 }
 
@@ -182,6 +195,8 @@ export async function getWebStaffDirectory(): Promise<WebStaffIdentity[]> {
   const mapping = parseDepartmentAccess(accessRows);
   const departmentsByStaff = new Map<string, Department[]>();
   const rolesByStaff = new Map<string, WebRole[]>();
+  const clinicalByStaff = new Map<string, string>();
+  const financialByStaff = new Map<string, string>();
 
   for (const row of mapping) {
     const departments = departmentsByStaff.get(row.staffId) || [];
@@ -193,6 +208,8 @@ export async function getWebStaffDirectory(): Promise<WebStaffIdentity[]> {
       if (!roles.includes(row.role)) roles.push(row.role);
       rolesByStaff.set(row.staffId, roles);
     }
+    if (row.clinicalWriteScope) clinicalByStaff.set(row.staffId, row.clinicalWriteScope);
+    if (row.financialAccess) financialByStaff.set(row.staffId, row.financialAccess);
   }
 
   const allowLegacyDepartmentFallback = process.env.NODE_ENV !== "production";
@@ -215,8 +232,8 @@ export async function getWebStaffDirectory(): Promise<WebStaffIdentity[]> {
           : allowLegacyDepartmentFallback
             ? item.fallbackDepartmentAccess
             : [],
-      clinicalWriteScope: item.clinicalWriteScope,
-      financialAccess: item.financialAccess,
+      clinicalWriteScope: clinicalByStaff.get(item.staffId) || item.clinicalWriteScope,
+      financialAccess: financialByStaff.get(item.staffId) || item.financialAccess,
     };
   });
 }
