@@ -9,21 +9,14 @@ import {
 } from "@/components/WorkspaceUI";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import { getTodaysCollection } from "@/lib/calculations";
-import { getPayments } from "@/lib/data";
 import { getScopedCashPosition } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
+import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
 import {
   getAppointmentsForContext,
   todayDhaka,
 } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-
-function paymentSessionCount(remarks?: string): number {
-  const match = /(?:^|\|)\s*Sessions:\s*(\d+)/i.exec(String(remarks || ""));
-  if (!match) return 1;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-}
 
 export default async function HomePage() {
   const context = await requireCurrentAccessContext();
@@ -48,28 +41,16 @@ export default async function HomePage() {
 
   const now = new Date();
   const today = todayDhaka();
-  const [cash, todays, appointments, controls, payments] = await Promise.all([
+  const [cash, todays, appointments, controls, clinicalActivity] = await Promise.all([
     getScopedCashPosition("combined", now),
     getTodaysCollection(now),
     getAppointmentsForContext(context, "combined", today),
     getOwnerControlSnapshot(),
-    getPayments(),
+    getDailyClinicalActivity("combined", today),
   ]);
 
-  const todayPayments = payments.filter(
-    (payment) => payment.date.trim().slice(0, 10) === today
-  );
-  const todayPatientCount = new Set(
-    todayPayments
-      .map((payment) =>
-        payment.patientId.trim() || payment.patientName.trim()
-      )
-      .filter(Boolean)
-  ).size;
-  const todaySessionCount = todayPayments.reduce(
-    (sum, payment) => sum + paymentSessionCount(payment.remarks),
-    0
-  );
+  const todayPatientCount = clinicalActivity.patients;
+  const todaySessionCount = clinicalActivity.sessions;
   const completed = appointments.filter(
     (item) => item.status.trim().toLowerCase() === "completed"
   ).length;
@@ -124,13 +105,13 @@ export default async function HomePage() {
         <div className="mt-5 grid grid-cols-3 gap-2.5 text-center">
           <div className="rounded-xl bg-white/[0.07] p-3 ring-1 ring-white/10">
             <p className="text-xl font-semibold tabular-nums">{todayPatientCount}</p>
-            <p className="mt-0.5 text-[10px] text-slate-400">Patients</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">Patients treated</p>
           </div>
           <div className="rounded-xl bg-white/[0.07] p-3 ring-1 ring-white/10">
             <p className="text-xl font-semibold text-emerald-300 tabular-nums">
               {todaySessionCount}
             </p>
-            <p className="mt-0.5 text-[10px] text-slate-400">Sessions</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">Sessions done</p>
           </div>
           <div className="rounded-xl bg-white/[0.07] p-3 ring-1 ring-white/10">
             <p className="text-xl font-semibold tabular-nums">{open}</p>
