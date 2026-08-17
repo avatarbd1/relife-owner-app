@@ -189,13 +189,17 @@ export default function BottomNav({
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.matches);
             const pending = item.href === "/chamber" ? chamberPending : 0;
+            const href =
+              item.href === "/chamber" && pending > 0
+                ? "/chamber?tab=team&team=messages#chamber-team-panel"
+                : item.href;
             return (
               <li key={item.href} className="flex-1">
                 <Link
-                  href={item.href}
+                  href={href}
                   aria-current={active ? "page" : undefined}
                   onClick={() => {
-                    if (!active) setIsNavigating(true);
+                    if (!active || href !== item.href) setIsNavigating(true);
                   }}
                   className={`relative flex min-h-[60px] select-none flex-col items-center justify-center gap-0.5 px-1 text-[10.5px] transition-[color,transform] duration-100 ease-out ${
                     active

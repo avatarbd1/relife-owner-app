@@ -125,7 +125,7 @@ export default async function FinanceOperationsPage({
             </Link>
           )}
           {isOwner && (
-            <Link href="/more#approvals" className="min-h-10 rounded-lg bg-amber-400/15 px-3 py-2.5 font-medium text-amber-100 ring-1 ring-amber-300/20">
+            <Link href="/finance#approvals" className="min-h-10 rounded-lg bg-amber-400/15 px-3 py-2.5 font-medium text-amber-100 ring-1 ring-amber-300/20">
               Owner approvals
             </Link>
           )}

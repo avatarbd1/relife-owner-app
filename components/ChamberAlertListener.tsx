@@ -35,6 +35,7 @@ const MAX_SEEN = 120;
 const CALL_PREFIX = "CALL:";
 const ALERT_START_HOUR = 9;
 const ALERT_END_HOUR = 21;
+const ALERT_VISIBLE_MS = 60_000;
 
 function readSeen(): string[] {
   try {
@@ -233,7 +234,7 @@ export default function ChamberAlertListener({
         createdAt: message.createdAt,
         title: `Chamber call · ${message.senderName || "Team"}`,
         body: `${message.body}${message.bedId ? ` · ${message.bedId}` : ""}`,
-        href: "/chamber/chat",
+        href: "/chamber?tab=team&team=messages#chamber-team-panel",
       });
     }
 
@@ -258,7 +259,7 @@ export default function ChamberAlertListener({
       stopRing();
       setAlert(null);
       autoDismissRef.current = null;
-    }, 10_500);
+    }, ALERT_VISIBLE_MS);
     await Promise.allSettled([playTenSecondCall(), showSystemNotification(newest)]);
   }, [currentRoles, currentStaffId, playTenSecondCall, showSystemNotification, stopRing]);
 
@@ -314,7 +315,7 @@ export default function ChamberAlertListener({
       <div className="p-4">
         <p className="text-sm leading-5 text-slate-700">{alert.body}</p>
         <p className="mt-1 text-[10px] font-semibold text-red-600">
-          10-second call · auto closes
+          Rings for 10 seconds · stays visible for 1 minute
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button

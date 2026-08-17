@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ChamberBookingAssist from "@/components/ChamberBookingAssist";
 
 type Tab = "schedule" | "live" | "team";
 
@@ -21,6 +22,7 @@ export default function ChamberWorkspaceTabs({
 }) {
   return (
     <div className="space-y-4">
+      <ChamberBookingAssist />
       <nav
         className="sticky top-[58px] z-10 grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur"
         aria-label="Live Chamber workspace"
@@ -32,7 +34,7 @@ export default function ChamberWorkspaceTabs({
           return (
             <Link
               key={item.id}
-              href={`/chamber?${params.toString()}`}
+              href={`/chamber?${params.toString()}#chamber-${item.id}-panel`}
               aria-current={active ? "page" : undefined}
               className={`relative flex min-h-[54px] flex-col items-center justify-center rounded-lg px-2 py-2 text-center transition ${
                 active
@@ -58,7 +60,12 @@ export default function ChamberWorkspaceTabs({
         })}
       </nav>
 
-      <div>{panel}</div>
+      <div
+        id={`chamber-${activeTab}-panel`}
+        className="scroll-mt-32"
+      >
+        {panel}
+      </div>
     </div>
   );
 }

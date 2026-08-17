@@ -7,6 +7,7 @@ import AppointmentStatusControl from "@/components/AppointmentStatusControl";
 import { haptic } from "@/lib/interactions";
 
 type Department = "Physio" | "Dental";
+type Scope = "combined" | "physio" | "dental";
 type Tab = "schedule" | "calendar" | "clinicians";
 
 type AppointmentView = {
@@ -34,7 +35,10 @@ type Props = {
   calendarDays: CalendarDay[];
   selectedDate: string;
   today: string;
+  scope: Scope;
   scopeLabel: string;
+  initialTab?: Tab;
+  focusExceptions?: boolean;
   canCreatePhysio: boolean;
   canCreateDental: boolean;
 };
@@ -144,12 +148,15 @@ export default function AppointmentsWorkspaceClient({
   calendarDays,
   selectedDate,
   today,
+  scope,
   scopeLabel,
+  initialTab = "schedule",
+  focusExceptions = false,
   canCreatePhysio,
   canCreateDental,
 }: Props) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("schedule");
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   const ordered = useMemo(
     () => [...appointments].sort((a, b) => parseTime(a.time) - parseTime(b.time)),
@@ -183,14 +190,21 @@ export default function AppointmentsWorkspaceClient({
   const tractionBusy = physioOpen.some(
     (item) => allocationFromRemarks(item.remarks).station === "Traction"
   );
-  const waitingAllocation = physioOpen.filter((item) => {
+  const allocationWaitingAppointments = physioOpen.filter((item) => {
     const allocation = allocationFromRemarks(item.remarks);
     return allocation.room === "Waiting" || allocation.station === "Waiting";
-  }).length;
+  });
+  const waitingAllocation = allocationWaitingAppointments.length;
+  const firstGenderMissing = allocationWaitingAppointments.find(
+    (item) => !allocationFromRemarks(item.remarks).gender
+  );
 
   function navigateDate(next: string) {
     haptic("tap");
-    router.push(`/appointments?date=${encodeURIComponent(next)}`);
+    const params = new URLSearchParams({ date: next, scope });
+    if (tab !== "schedule") params.set("tab", tab);
+    if (focusExceptions) params.set("focus", "exceptions");
+    router.push(`/appointments?${params.toString()}`);
   }
 
   const tabs: Array<{ id: Tab; label: string }> = [
@@ -295,11 +309,41 @@ export default function AppointmentsWorkspaceClient({
 
       {tab === "schedule" && (
         <div className="space-y-4">
-          {waitingAllocation > 0 && (
-            <div className="rounded-xl border border-amber-300 bg-amber-100 px-4 py-3 text-sm text-amber-800">
-              <p className="font-semibold">Action needed · {waitingAllocation} Physio allocation waiting</p>
-              <p className="mt-0.5 text-xs">Patient gender/resource assignment is incomplete for this booking.</p>
+          {focusExceptions && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <div>
+                <p className="font-semibold">No-show / cancelled only</p>
+                <p className="mt-0.5 text-xs">Showing today&apos;s appointment exceptions.</p>
+              </div>
+              <Link
+                href={`/appointments?date=${encodeURIComponent(selectedDate)}&scope=${scope}`}
+                className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200"
+              >
+                Show all
+              </Link>
             </div>
+          )}
+
+          {waitingAllocation > 0 && (
+            firstGenderMissing ? (
+              <Link
+                href={`/patients/${encodeURIComponent(firstGenderMissing.patientId)}?edit=1#patient-edit`}
+                className="block rounded-xl border border-amber-300 bg-amber-100 px-4 py-3 text-sm text-amber-800 active:bg-amber-200"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">Action needed · {waitingAllocation} Physio allocation waiting</p>
+                    <p className="mt-0.5 text-xs">Gender is missing. Tap here to fix it now.</p>
+                  </div>
+                  <span className="shrink-0 text-lg" aria-hidden="true">›</span>
+                </div>
+              </Link>
+            ) : (
+              <div className="rounded-xl border border-amber-300 bg-amber-100 px-4 py-3 text-sm text-amber-800">
+                <p className="font-semibold">Action needed · {waitingAllocation} Physio allocation waiting</p>
+                <p className="mt-0.5 text-xs">Patient resource assignment is incomplete for this booking.</p>
+              </div>
+            )
           )}
 
           {physioOpen.length > 0 && (
@@ -331,6 +375,7 @@ export default function AppointmentsWorkspaceClient({
               const allocation = allocationFromRemarks(appointment.remarks);
               const notes = cleanRemarks(appointment.remarks);
               const allocationWaiting = allocation.room === "Waiting" || allocation.station === "Waiting";
+              const genderMissing = appointment.department === "Physio" && allocationWaiting && !allocation.gender;
               return (
                 <article
                   key={`${appointment.department}-${appointment.appointmentId}`}
@@ -379,6 +424,16 @@ export default function AppointmentsWorkspaceClient({
                         </div>
                       </div>
 
+                      {genderMissing && (
+                        <Link
+                          href={`/patients/${encodeURIComponent(appointment.patientId)}?edit=1#patient-edit`}
+                          className="mt-2 flex min-h-10 items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800"
+                        >
+                          <span>Fix patient gender</span>
+                          <span aria-hidden="true">→</span>
+                        </Link>
+                      )}
+
                       {notes && <p className="mt-3 text-xs leading-5 text-slate-500">{notes}</p>}
 
                       {appointment.canUpdate && (
@@ -417,7 +472,7 @@ export default function AppointmentsWorkspaceClient({
           </div>
 
           <div className="mt-4 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day) => <span key={day}>{day}</span>)}
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}
           </div>
           <div className="mt-2 grid grid-cols-7 gap-1.5">
             {Array.from({ length: dateObject(`${selectedDate.slice(0, 7)}-01`).getDay() }).map((_, index) => (
