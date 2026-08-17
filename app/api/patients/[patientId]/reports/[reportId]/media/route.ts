@@ -4,6 +4,10 @@ import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { getPatientReportForContext } from "@/lib/webos/reports";
 import { downloadReportFromDrive } from "@/lib/webos/reportDrive";
+import {
+  downloadPrivatePatientReport,
+  reportStoragePathFromLink,
+} from "@/lib/webos/reportStorage";
 
 const DEFAULT_BRIDGE_URL = "https://relife-clinic-os.onrender.com";
 
@@ -18,6 +22,22 @@ function bridgeConfig(): { baseUrl: string; secret: string } | null {
 
 function safeFilename(value: string, fallback: string): string {
   return (value || fallback).replace(/[\r\n"]/g, "_").slice(0, 180) || fallback;
+}
+
+function mediaResponse(
+  body: ArrayBuffer,
+  contentType: string,
+  fileName: string
+): NextResponse {
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      "Content-Type": contentType || "application/octet-stream",
+      "Content-Disposition": `inline; filename="${fileName}"`,
+      "Cache-Control": "private, max-age=300",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 export async function GET(
@@ -44,19 +64,30 @@ export async function GET(
       decodeURIComponent(reportId)
     );
     if (!report) return new NextResponse("Not found", { status: 404 });
+    const fileName = safeFilename(report.fileName, report.reportId);
+
+    if (reportStoragePathFromLink(report.driveLink)) {
+      try {
+        const stored = await downloadPrivatePatientReport(report.driveLink);
+        return mediaResponse(
+          stored.body,
+          stored.contentType || report.fileType,
+          fileName
+        );
+      } catch (error) {
+        console.error("Private report storage fetch failed", report.reportId, error);
+        return new NextResponse("Media unavailable", { status: 502 });
+      }
+    }
 
     if (report.driveLink) {
       try {
         const drive = await downloadReportFromDrive(report.driveLink);
-        return new NextResponse(drive.body, {
-          status: 200,
-          headers: {
-            "Content-Type": drive.contentType || report.fileType || "application/octet-stream",
-            "Content-Disposition": `inline; filename="${safeFilename(report.fileName, report.reportId)}"`,
-            "Cache-Control": "private, max-age=300",
-            "X-Content-Type-Options": "nosniff",
-          },
-        });
+        return mediaResponse(
+          drive.body,
+          drive.contentType || report.fileType,
+          fileName
+        );
       } catch (error) {
         console.error("Drive report fetch failed; trying legacy bridge", report.reportId, error);
       }
@@ -93,7 +124,7 @@ export async function GET(
       upstream.headers.get("content-type") || "application/octet-stream";
     const disposition =
       upstream.headers.get("content-disposition") ||
-      `inline; filename="${safeFilename(report.fileName, report.reportId)}"`;
+      `inline; filename="${fileName}"`;
 
     return new NextResponse(body, {
       status: 200,
