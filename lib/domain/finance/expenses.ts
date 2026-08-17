@@ -160,13 +160,6 @@ function requireSheetId(map: Map<string, number>, title: string): number {
   return id;
 }
 
-async function expenseSheetId(workbook: Workbook): Promise<number> {
-  const properties = await getSheetProperties(workbook);
-  const sheet = properties.find((item) => item.title === "07_Expenses");
-  if (!sheet) throw new Error("SCHEMA_MISMATCH");
-  return sheet.sheetId;
-}
-
 function buildExpenseAuditRow(
   headers: string[],
   input: {

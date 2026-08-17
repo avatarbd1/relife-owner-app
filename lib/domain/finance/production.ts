@@ -312,14 +312,17 @@ export async function paySalary(
     throw new Error("STAFF_DEPARTMENT_UNSUPPORTED");
   }
 
-  return withMutationLock(`finance:salary:${staff.staffId}`, async () => {
+  const staffId = staff.staffId;
+  const department = staff.primaryDepartment;
+
+  return withMutationLock(`finance:salary:${staffId}`, async () => {
     const result = await paySheetsSalary(context, input);
     await syncFinance({
       requestId: input.requestId,
       action: "finance.salary.pay",
       entityType: "SalaryPayment",
       entityId: result.paymentId,
-      department: staff.primaryDepartment,
+      department,
       status: "Paid",
       amount: Number(input.amount),
       actorId: context.staffId,

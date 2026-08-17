@@ -97,13 +97,6 @@ function appendRowRequest(sheetId: number, row: SheetValue[]): SpreadsheetBatchR
   };
 }
 
-async function salarySheetId(workbook: Workbook): Promise<number> {
-  const properties = await getSheetProperties(workbook);
-  const sheet = properties.find((item) => item.title === "13_Salary");
-  if (!sheet) throw new Error("SCHEMA_MISMATCH");
-  return sheet.sheetId;
-}
-
 async function sheetIds(workbook: Workbook): Promise<Map<string, number>> {
   const properties = await getSheetProperties(workbook);
   const map = new Map<string, number>();
