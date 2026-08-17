@@ -13,13 +13,24 @@ test("own correction list reads both Physio and Dental payments", () => {
   assert.match(corrections, /payment\.correct_own_today/);
 });
 
-test("own same-day correction reverses patient Paid and Due before deleting payment", () => {
+test("own same-day correction reverses patient Paid and Due with an append-only ledger entry", () => {
   const corrections = source("lib/webos/ownCorrections.ts");
   assert.match(corrections, /const newPaid = Math\.max\(0, currentPaid - amount\)/);
   assert.match(corrections, /const restoredDueRaw = currentDue \+ amount \+ discount/);
   assert.match(corrections, /updateCellRequest\(patientSheetId, patientRowNumber, paidIdx \+ 1, newPaid\)/);
   assert.match(corrections, /updateCellRequest\(patientSheetId, patientRowNumber, dueIdx \+ 1, newDue\)/);
-  assert.match(corrections, /requests\.push\(deleteRowRequest\(paymentSheetId, paymentRowNumber\)\)/);
+  assert.match(corrections, /Amount: -amount/);
+  assert.match(corrections, /Discount: -discount/);
+  assert.match(corrections, /REVERSAL_OF:/);
+  assert.match(corrections, /payment\.reverse_own_today_append_only/);
+  assert.doesNotMatch(corrections, /deleteDimension/);
+});
+
+test("already-reversed receipts are hidden and cannot be reversed twice", () => {
+  const corrections = source("lib/webos/ownCorrections.ts");
+  assert.match(corrections, /reversedReceipts/);
+  assert.match(corrections, /reversalOf\(remarks\)/);
+  assert.match(corrections, /PAYMENT_ALREADY_REVERSED/);
 });
 
 test("correction fails closed for another staff member, stale due, or non-latest payment", () => {
