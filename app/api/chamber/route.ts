@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findActivePatientConflict } from "@/lib/domain/chamber/patientConcurrency";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { assertCanPerform } from "@/lib/webos/access";
 import {
   completeChamberRuntimeSession,
   getChamberRuntimeSnapshot,
@@ -60,6 +61,7 @@ export async function POST(request: NextRequest) {
 
     const action = String(body.action || "");
     if (action === "receive") {
+      assertCanPerform(context, "chamber.receive", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
       // Serialize receive across appointments so two taps for different bookings
       // of the same patient cannot both pass the active-patient snapshot check.
@@ -100,38 +102,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "assign_therapist") {
-      const result = await assignChamberTherapist(context, body.appointmentId, body.staffId);
+      assertCanPerform(context, "chamber.run", "Physio");
+      const appointmentId = String(body.appointmentId || "").trim();
+      const result = await withMutationLock(`chamber-therapist:${appointmentId}`, () =>
+        assignChamberTherapist(context, appointmentId, body.staffId)
+      );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "prefer_station") {
-      const result = await setChamberBedPreference(context, body.appointmentId, body.stationId);
+      assertCanPerform(context, "chamber.run", "Physio");
+      const appointmentId = String(body.appointmentId || "").trim();
+      const result = await withMutationLock(`chamber-station:${appointmentId}`, () =>
+        setChamberBedPreference(context, appointmentId, body.stationId)
+      );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "start") {
-      const result = await startChamberRuntimeSession(context, body.sessionId);
+      assertCanPerform(context, "chamber.run", "Physio");
+      const sessionId = String(body.sessionId || "").trim();
+      const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
+        startChamberRuntimeSession(context, sessionId)
+      );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "step") {
-      const result = await updateChamberRuntimeStep(context, {
-        sessionId: body.sessionId,
-        step: body.step,
-        resourceId: body.resourceId,
-        stationId: body.stationId,
-        durationMin: body.durationMin,
-      });
+      assertCanPerform(context, "chamber.run", "Physio");
+      const sessionId = String(body.sessionId || "").trim();
+      const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
+        updateChamberRuntimeStep(context, {
+          sessionId,
+          step: body.step,
+          resourceId: body.resourceId,
+          stationId: body.stationId,
+          durationMin: body.durationMin,
+        })
+      );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "complete") {
-      const capture = await captureChamberTreatmentForCompletion(
-        context,
-        body.sessionId
+      assertCanPerform(context, "chamber.run", "Physio");
+      const sessionId = String(body.sessionId || "").trim();
+      const capture = await captureChamberTreatmentForCompletion(context, sessionId);
+      const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
+        completeChamberRuntimeSession(context, sessionId)
       );
-      const result = await completeChamberRuntimeSession(context, body.sessionId);
       try {
-        const treatmentNote = await recordChamberCompletionTreatmentNote(
-          context,
-          capture
-        );
+        const treatmentNote = await recordChamberCompletionTreatmentNote(context, capture);
         return NextResponse.json({
           ok: true,
           ...result,

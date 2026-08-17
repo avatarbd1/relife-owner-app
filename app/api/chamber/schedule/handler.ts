@@ -5,6 +5,7 @@ import {
   type ChamberScheduleInput,
 } from "@/lib/domain/chamber/scheduler";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { assertCanPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -91,10 +92,12 @@ export async function chamberSchedulePost(request: NextRequest) {
     const input = parseInput(record);
 
     if (action === "validate") {
+      assertCanPerform(context, "appointment.create", "Physio");
       const validation = await validateChamberSchedule(context, input);
       return NextResponse.json({ ok: true, validation });
     }
     if (action === "create") {
+      assertCanPerform(context, "appointment.create", "Physio");
       const result = await createChamberScheduleBooking(context, input);
       return NextResponse.json({ ok: true, ...result });
     }
