@@ -153,7 +153,7 @@ export default async function PatientFilePage({
           )}
           {canCreatePayment && (
             <Link
-              href={`/payments/new?patientId=${encodeURIComponent(patient.patientId)}`}
+              href={`/payments?patientId=${encodeURIComponent(patient.patientId)}`}
               className="flex min-h-14 items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
             >
               💳 Payment
