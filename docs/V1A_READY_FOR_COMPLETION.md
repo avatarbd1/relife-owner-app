@@ -2,7 +2,7 @@
 
 ## Current State
 
-V1-A is no longer a planning document. The implementation is present on PR #92 and is awaiting final production-gate approval.
+V1-A is implemented on PR #92 and remains open/unmerged pending the final production gate.
 
 Completed scope:
 - Expense audit atomicity
