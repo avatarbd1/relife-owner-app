@@ -25,9 +25,9 @@ export default function OwnCorrectionsClient({ entries }: { entries: Entry[] }) 
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function remove(entry: Entry) {
+  async function reverse(entry: Entry) {
     const confirmed = window.confirm(
-      `${entry.receiptNo} · ${entry.patientName}\n${bdt(entry.amount)} entry delete + reverse করবেন?\n\nশুধু আজকের নিজের latest entry-ই delete হবে।`
+      `${entry.receiptNo} · ${entry.patientName}\n${bdt(entry.amount)} payment reverse করবেন?\n\nOriginal receipt থাকবে; system একটি negative reversal entry লিখে patient Paid/Due ঠিক করবে। শুধু আজকের নিজের latest entry reverse করা যাবে।`
     );
     if (!confirmed) return;
 
@@ -106,10 +106,10 @@ export default function OwnCorrectionsClient({ entries }: { entries: Entry[] }) 
             <button
               type="button"
               disabled={busy !== null}
-              onClick={() => remove(entry)}
+              onClick={() => reverse(entry)}
               className="mt-3 min-h-11 w-full rounded-xl bg-red-600 px-4 text-xs font-semibold text-white active:scale-[0.99] disabled:opacity-40"
             >
-              {busy === key ? "Reversing…" : "🗑️ Delete + reverse"}
+              {busy === key ? "Reversing…" : "↩ Reverse payment"}
             </button>
           </section>
         );
