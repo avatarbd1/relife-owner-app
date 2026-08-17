@@ -9,6 +9,10 @@ import {
   updateChamberRuntimeStep,
 } from "@/lib/domain/chamber/runtime";
 import { assignChamberTherapist } from "@/lib/webos/chamberAssignment";
+import {
+  captureChamberTreatmentForCompletion,
+  recordChamberCompletionTreatmentNote,
+} from "@/lib/webos/chamberClinicalNote";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -118,8 +122,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "complete") {
+      const capture = await captureChamberTreatmentForCompletion(
+        context,
+        body.sessionId
+      );
       const result = await completeChamberRuntimeSession(context, body.sessionId);
-      return NextResponse.json({ ok: true, ...result });
+      try {
+        const treatmentNote = await recordChamberCompletionTreatmentNote(
+          context,
+          capture
+        );
+        return NextResponse.json({
+          ok: true,
+          ...result,
+          noteSaved: true,
+          treatmentNote,
+        });
+      } catch (noteError) {
+        console.error(
+          "Chamber completed but automatic treatment note save failed",
+          noteError
+        );
+        return NextResponse.json({
+          ok: true,
+          ...result,
+          noteSaved: false,
+          noteError:
+            noteError instanceof Error ? noteError.message : "TREATMENT_NOTE_SAVE_FAILED",
+        });
+      }
     }
     throw new Error("INVALID_ACTION");
   } catch (error) {
