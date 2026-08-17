@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import { ok, equal } from "node:assert";
-import { canPerform } from "../lib/webos/access.ts";
-import type { AccessContext } from "../lib/webos/access.ts";
+import { canPerform, type AccessContext, type WebRole } from "../lib/webos/access.ts";
+import type { Department } from "../lib/types.ts";
 
 describe("Department isolation: direct ID/API bypass regression", () => {
   const makeContext = (
@@ -9,9 +9,9 @@ describe("Department isolation: direct ID/API bypass regression", () => {
     departmentAccess: string[]
   ): AccessContext => ({
     staffId: "test-staff",
-    roles: roles as any,
-    primaryDepartment: departmentAccess[0] as any,
-    departmentAccess: departmentAccess as any,
+    roles: roles as WebRole[],
+    primaryDepartment: departmentAccess[0] as Department,
+    departmentAccess: departmentAccess as Department[],
     clinicalWriteScope: undefined,
   });
 
