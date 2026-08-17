@@ -9,6 +9,7 @@ import {
 } from "@/lib/calculations";
 import { getPayments } from "@/lib/data";
 import { getPatients } from "@/lib/patients";
+import RangeReports from "./RangeReports";
 import type { Department, Scope } from "@/lib/types";
 import { actionsForRoles, canPerform } from "@/lib/webos/access";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -134,6 +135,8 @@ export default async function ReportsPage() {
           </section>
         </>
       )}
+
+      {canReadFinancial && <RangeReports scope={scope} />}
     </div>
   );
 }
