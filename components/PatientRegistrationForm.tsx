@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Spinner } from "@/components/FeedbackUI";
 import TapChoice from "@/components/TapChoice";
+import PhotoCaptureRegistration from "@/components/PhotoCaptureRegistration";
 import { haptic } from "@/lib/interactions";
 
 type Department = "Physio" | "Dental";
@@ -42,12 +43,22 @@ export default function PatientRegistrationForm({
   const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showPhotoCapture, setShowPhotoCapture] = useState(false);
 
   const departmentClinicians = useMemo(
     () => clinicians.filter((item) => item.department === department),
     [clinicians, department]
   );
   const physioGenderRequired = department === "Physio";
+
+  function handlePhotoExtract(data: { fullName?: string; phone?: string; address?: string; fatherHusbandName?: string }) {
+    if (data.fullName) setFullName(data.fullName);
+    if (data.phone) setPhone(data.phone);
+    if (data.address) setAddress(data.address);
+    if (data.fatherHusbandName) setFatherHusbandName(data.fatherHusbandName);
+    setShowPhotoCapture(false);
+    haptic("success");
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -113,8 +124,22 @@ export default function PatientRegistrationForm({
     "mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition-colors duration-100 focus:border-blue-700 focus:ring-2 focus:ring-blue-100";
 
   return (
-    <form onSubmit={submit} className="space-y-4">
-      {allowedDepartments.length > 1 ? (
+    <>
+      <PhotoCaptureRegistration
+        isOpen={showPhotoCapture}
+        onClose={() => setShowPhotoCapture(false)}
+        onExtract={handlePhotoExtract}
+      />
+      <form onSubmit={submit} className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setShowPhotoCapture(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+        >
+          📸 Use camera to extract name & phone
+        </button>
+
+        {allowedDepartments.length > 1 ? (
         <TapChoice
           label="Department"
           value={department}
@@ -235,6 +260,7 @@ export default function PatientRegistrationForm({
         {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving patient" />}
         {busy ? "Saving…" : "Register patient"}
       </button>
-    </form>
+      </form>
+    </>
   );
 }
