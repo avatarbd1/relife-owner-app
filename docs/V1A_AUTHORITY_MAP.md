@@ -1,323 +1,103 @@
-# V1-A Finance Domain Authority Map
+# V1-A Finance Authority Map
 
-## Canonical Services & Data Sources
+## Canonical Finance Boundary
 
-### PAYMENT
+All production finance writes continue through `lib/domain/finance/production.ts`.
 
-| Aspect | Authority | API | Datastore | Audit |
-|--------|-----------|-----|-----------|-------|
-| **Service** | `lib/domain/finance/payments.ts::createPayment()` | POST /api/finance/payment | 02_Patients (Paid/Due/Status) + 06_Payments (ledger) | 20_Data_Audit |
-| **Wrapper** | `lib/domain/finance/production.ts::createPayment()` | Same | Sheets primary, Supabase shadow | 20_Data_Audit batch |
-| **Lock** | `withMutationLock("finance:payment:${dept}:${patientId}")` | - | - | - |
-| **Atomicity** | ✅ FIXED (PR #91) | - | Audit in same batch (line 363) | - |
-| **Idempotency** | requestId marker in Remarks + check (line 179) | - | - | - |
-| **Concurrency** | ✅ Protected | - | - | - |
+| Domain | Canonical Sheets service | Primary Sheets | Audit | Lock scope |
+|---|---|---|---|---|
+| Payment | `payments.ts::createPayment()` | `02_Patients` + `06_Payments` | `20_Data_Audit` in same batch | `finance:payment:{department}:{patientId}` |
+| Expense request | `expenses.ts::requestExpense()` | `07_Expenses` | `20_Data_Audit` in same batch | `finance:expense:{department}` |
+| Expense decide/pay | `expenses.ts::decideExpense()` / `payApprovedExpense()` | `07_Expenses` | `20_Data_Audit` in same batch | `finance:expense:{expenseId}` |
+| Cash request | `cash.ts::requestCashMovement()` | `21_Cash_Movement` | `20_Data_Audit` in same batch | `finance:cash:{department}` |
+| Cash decide | `cash.ts::decideCashMovement()` | `21_Cash_Movement` | `20_Data_Audit` in same batch | `finance:cash:{movementId}` |
+| Salary pay | `salary.ts::paySalary()` | `13_Salary` | `20_Data_Audit` in same batch | `finance:salary:{staffId}` |
 
----
+Payment atomicity originated in PR #91. V1-A applies the same audit-integrity standard to Expense, Cash Movement, and Salary.
 
-### EXPENSE (BROKEN - V1-A FIX)
+## Source of Truth
 
-| Aspect | Current | Target (V1-A) |
-|--------|---------|---------------|
-| **Service** | `expenses.ts::requestExpense()` | Atomized wrapper |
-| **Primary Mutation** | batchUpdateSpreadsheet([append]) ✅ | Same ✅ |
-| **Audit Write** | appendSheetValues (SEPARATE) ❌ | SAME BATCH ✓ |
-| **Lock** | NONE ❌ | withMutationLock (dept-scoped) ✓ |
-| **Audit Failure** | Silent catch ❌ | Batch failure ✓ |
-| **Datastore** | 07_Expenses + 20_Data_Audit | Same |
-| **Idempotency** | requestId marker (good) | Preserve ✓ |
+Google Sheets remains the current finance business-record authority for these write paths. Supabase finance operation recording remains controlled by the existing finance DB mode/shadow behavior in `production.ts`; V1-A does not silently switch finance record authority.
 
-**Three operations need atomization**:
-1. `requestExpense()` - Create expense request
-2. `decideExpense()` - Approve/reject
-3. `payApprovedExpense()` - Mark as paid
+The new Supabase table is infrastructure-only and is authoritative only for distributed mutation lease state:
 
----
+`public.distributed_mutation_lock`
 
-### CASH MOVEMENT (BROKEN - V1-A FIX)
+It is not a finance ledger and does not replace any Sheet.
 
-| Aspect | Current | Target (V1-A) |
-|--------|---------|---------------|
-| **Service** | `cash.ts::requestCashMovement()` | Atomized wrapper |
-| **Primary Mutation** | batchUpdateSpreadsheet([append]) ✅ | Same ✅ |
-| **Audit Write** | appendSheetValues (SEPARATE) ❌ | SAME BATCH ✓ |
-| **Lock** | NONE ❌ | withMutationLock ✓ |
-| **Audit Failure** | Silent catch ❌ | Batch failure ✓ |
-| **Datastore** | 21_Cash_Movement + 20_Data_Audit | Same |
+## Audit Contract
 
-**Two operations need atomization**:
-1. `requestCashMovement()` - Create cash request
-2. `decideCashMovement()` - Accept/reject
+All finance audit rows use the existing `20_Data_Audit` schema. Each mutation validates the audit schema before its primary write and places the audit append into the same `spreadsheets.batchUpdate` request as the associated Sheet mutation.
 
----
+This removes the previous split-write failure mode where primary finance data could succeed while the audit append failed independently.
 
-### SALARY (BROKEN - V1-A FIX)
+## Lock Authority
 
-| Aspect | Current | Target (V1-A) |
-|--------|---------|---------------|
-| **Service** | `salary.ts::paySalary()` | Atomized wrapper |
-| **Primary Mutation** | batchUpdateSpreadsheet([append]) ✅ | Same ✅ |
-| **Audit Write** | appendSheetValues (SEPARATE) ❌ | SAME BATCH ✓ |
-| **Lock** | NONE ❌ | withMutationLock ✓ |
-| **Audit Failure** | Silent catch ❌ | Batch failure ✓ |
-| **Datastore** | 13_Salary + 20_Data_Audit | Same |
+`lib/webos/mutationLock.ts` is the server-only public lock entry point.
 
-**One operation needs atomization**:
-1. `paySalary()` - Record salary payment
+`lib/webos/mutationLockCore.ts` contains the testable distributed lease algorithm.
 
----
+Production/default mode:
+- `DISTRIBUTED_LOCK_MODE=required`
+- requires Supabase server credentials;
+- fails closed if distributed lock acquisition cannot be performed;
+- does not silently fall back to process-local locking.
 
-## Lock Scope Design (V1-A)
+Compatibility mode:
+- `DISTRIBUTED_LOCK_MODE=compatibility`
+- process-local fallback additionally requires `ENABLE_PROCESS_LOCAL_LOCK_FALLBACK=true`;
+- intended only for explicit local/test/single-instance compatibility.
 
-### Payment Lock (Current ✅)
-```
-Key: finance:payment:${department}:${patientId}
-Scope: Patient-specific
-Effect: Two payments for same patient serialize
-Benefit: Concurrent payments for different patients allowed
-```
+## Distributed Lease Semantics
 
-### Expense Lock (V1-A New)
-```
-Key: finance:expense:${department}
-Scope: Department-wide
-Effect: All expense requests in department serialize
-Justification: ID collision risk is department-scoped
-Concurrent: Different departments can request in parallel
-```
+The Supabase migration provides:
+- `acquire_distributed_lock(text, text, int)`
+- `renew_distributed_lock(text, text, uuid, int)`
+- `release_distributed_lock(text, text, uuid)`
+- `cleanup_expired_locks()`
 
-### Cash Movement Lock (V1-A New)
-```
-Key: finance:cash:${department}
-Scope: Department-wide
-Effect: All cash requests in department serialize
-Justification: Movement ID collision, custody tracking
-Concurrent: Different departments can move in parallel
-```
+Safety properties:
+- unique owner identity per acquisition;
+- token-bound ownership;
+- expired lease recovery;
+- no reentrant ownership based solely on Render instance identity;
+- bounded acquisition deadline and exponential backoff;
+- 120-second lease with periodic heartbeat renewal;
+- renew/release require the current owner + token;
+- expired leases cannot be renewed;
+- direct table access and RPC execution are revoked from `PUBLIC`, `anon`, and `authenticated`;
+- RPC execution is granted to `service_role` only.
 
-### Salary Lock (V1-A New)
-```
-Key: finance:salary:${department}
-Scope: Department-wide (or could be staff-scoped if needed later)
-Effect: Salary payments serialize within department
-Justification: ID collision, payment sequence integrity
-```
+The longer lease provides margin for external Google Sheets network operations while heartbeat renewal keeps a valid long-running operation's lease fresh.
 
----
+## Lock Scope Rationale
 
-## Distributed Lock Strategy (V1-A Decision Required)
+### Creation scopes
+Expense and Cash request creation allocate IDs from department-level existing state. These paths therefore serialize by department so two concurrent creators cannot read the same ID set and allocate the same next identifier.
 
-Current implementation: `withMutationLock()` uses in-memory Map (process-local)
+### Existing-record scopes
+Expense decision/payment and Cash decision operate on one known record and use that record ID as the lock key. Different records can mutate concurrently.
 
-### Option 1: Supabase Advisory Locks (RECOMMENDED)
-- **Pros**: Already have Postgres, native, no Redis setup
-- **Cons**: Requires Edge Function or direct connection
-- **Implementation**: Replace Map-based lock with Supabase `pg_advisory_lock()`
+### Salary scope
+Salary payment is staff-scoped to prevent conflicting/duplicate payment activity for the same staff member while allowing unrelated staff payments to proceed independently.
 
-### Option 2: Supabase distributed_lock Table
-- **Pros**: App-level implementation, visible, debuggable
-- **Cons**: More code, lease-based (stale recovery needed)
-- **Implementation**: Create table, TTL cleanup, acquire/release logic
+## Required Production Order
 
-### Option 3: Redis
-- **Pros**: Industry standard
-- **Cons**: New external dependency, operational overhead
-- **Implementation**: Last resort if Supabase unsuitable
+Before merging/deploying V1-A:
 
-**V1-A Decision**: Try Option 1 (Advisory locks) first
-- If feasible: implement by end of V1-A
-- If not feasible: implement Option 2 as fallback
+1. Apply `supabase/migrations/20260817_distributed_mutation_lock.sql` to the production Supabase project.
+2. Confirm Render has `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` server-side.
+3. Merge PR #92 only after GitHub CI is green.
+4. Allow Render auto-deploy from `main` and verify the deployed commit.
 
----
+Do not deploy the new `required` lock code before the RPC migration exists.
 
-## Sheets Schema Verification (V1-A Pre-check)
+## V1-A Verification
 
-Before implementation, verify these sheets exist and have required columns:
+The current V1-A branch passes:
+- impact/user-flow gate;
+- lint;
+- 134 domain/regression tests;
+- production build.
 
-### 20_Data_Audit (Required for all 4 mutations)
-```
-Expected columns (from payments.ts line 220-244):
-- Audit_ID
-- Timestamp
-- Actor_ID
-- Action (EXPENSE_REQUESTED, EXPENSE_APPROVED, EXPENSE_REJECTED, EXPENSE_PAID, etc.)
-- Entity_Type (Expense, CashMovement, SalaryPayment)
-- Entity_ID
-- Patient_ID (may be empty for some)
-- Before_Value
-- After_Value (JSON)
-- Reason
-- Organization_ID
-- Clinic_ID
-- Branch_ID
-- Record_ID
-- Encounter_ID
-- Provider_ID
-- Source_System
-- Source_Type
-- AI_Generated
-- Human_Verified
-- Schema_Version
-- Provenance_Timestamp
-- Department
-```
-
-**Check during implementation**: Verify Physio workbook has all columns ✓
-
-### 07_Expenses (Expense mutations)
-```
-Headers (line 230-239 expenses.ts):
-- Expense_ID
-- Date
-- Category
-- Amount
-- Status (Pending, Approved, Rejected, Paid)
-- Requested_By
-- Approved_By
-- Approved_At
-- Paid_From
-- Paid_By
-- Paid_At
-- Department
-- Note
-[+ standard tenant fields]
-```
-
-### 21_Cash_Movement (Cash mutations)
-```
-Headers (from cash.ts):
-- Movement_ID
-- Date
-- From_Custodian (Reception)
-- To_Custodian (Home Treasury, Bank)
-- Amount
-- Status (Pending, Accepted, Rejected)
-- Requested_By
-- Accepted_By
-- Accepted_At
-- Department
-- Note
-```
-
-### 13_Salary (Salary mutations)
-```
-Headers (from salary.ts):
-- Payment_ID
-- Date
-- Staff_ID
-- Amount
-- Paid_From
-- Paid_By
-- Department
-- Note
-```
-
----
-
-## Audit Trail Schema (V1-A Standard)
-
-All four mutations must write to 20_Data_Audit using this schema:
-
-```typescript
-{
-  Audit_ID: `AUD-${randomUUID()}`,
-  Timestamp: now.timestamp,                    // ISO 8601
-  Actor_ID: context.staffId,
-  Action: "EXPENSE_REQUESTED" | "EXPENSE_APPROVED" | "EXPENSE_REJECTED" | "EXPENSE_PAID" |
-          "CASH_REQUESTED" | "CASH_ACCEPTED" | "CASH_REJECTED" |
-          "SALARY_PAID",
-  Entity_Type: "Expense" | "CashMovement" | "SalaryPayment",
-  Entity_ID: expenseId | movementId | paymentId,
-  Patient_ID: "",                              // Empty for staff operations
-  Before_Value: JSON.stringify(beforeState),
-  After_Value: JSON.stringify(afterState),
-  Reason: "Finance domain action" | custom reason,
-  Organization_ID: RELIFE_SYSTEM.organizationId,
-  Clinic_ID: ledgerClinicId(department),
-  Branch_ID: RELIFE_SYSTEM.branchId,
-  Record_ID: relifeRecordId(department, entityId),
-  Encounter_ID: "",
-  Provider_ID: context.staffId,
-  Source_System: RELIFE_SYSTEM.sourceSystem,
-  Source_Type: RELIFE_SYSTEM.sourceType,
-  AI_Generated: false,
-  Human_Verified: true,
-  Schema_Version: RELIFE_SYSTEM.schemaVersion,
-  Provenance_Timestamp: now.provenance,
-  Department: department
-}
-```
-
----
-
-## Files to Change (V1-A Implementation)
-
-### 1. lib/domain/finance/expenses.ts
-- Remove `appendExpenseAudit()` function (consolidate to batch)
-- Update `requestExpense()` to build audit row and add to batch
-- Update `decideExpense()` to add audit row to batch
-- Update `payApprovedExpense()` to add audit row to batch
-- Preserve all business logic
-
-### 2. lib/domain/finance/cash.ts
-- Remove `appendCashAudit()` function
-- Update `requestCashMovement()` to atomize
-- Update `decideCashMovement()` to atomize
-- Preserve all business logic
-
-### 3. lib/domain/finance/salary.ts
-- Remove `appendSalaryAudit()` function
-- Update `paySalary()` to atomize
-- Preserve all business logic
-
-### 4. lib/domain/finance/production.ts
-- Add withMutationLock wrappers to:
-  - `requestExpense()` with key `finance:expense:${department}`
-  - `decideExpense()` with key based on workbook
-  - `payApprovedExpense()` with key based on department
-  - `requestCashMovement()` with key `finance:cash:${department}`
-  - `decideCashMovement()` with key based on workbook
-  - `paySalary()` with key `finance:salary:${department}`
-
-### 5. lib/webos/mutationLock.ts (IF distributed lock implemented)
-- Replace in-memory Map with distributed lock (Supabase advisory locks)
-- Preserve API compatibility
-- Add TTL/lease renewal for safety
-
-### 6. tests/
-- Add `expenseAtomicityBatch.test.ts` - verify expense/audit in same batch
-- Add `cashAtomicityBatch.test.ts` - verify cash/audit in same batch
-- Add `salaryAtomicityBatch.test.ts` - verify salary/audit in same batch
-- Add `expenseConcurrency.test.ts` - concurrent expense requests
-- Add `cashConcurrency.test.ts` - concurrent cash requests
-- Add `salaryConcurrency.test.ts` - concurrent salary payments
-- Add `distributedLockSafety.test.ts` - cross-instance lock verification (if implemented)
-
----
-
-## Success Criteria (V1-A Definition of Done)
-
-- [ ] All audit calls moved into batch requests
-- [ ] All expense/cash/salary mutations have withMutationLock wrappers
-- [ ] All appendExpenseAudit/appendCashAudit/appendSalaryAudit functions removed (consolidated)
-- [ ] Finance business logic identical to PR #91 payment implementation
-- [ ] Regression test suite passes (10+ new tests)
-- [ ] No silent error handling on audit failure
-- [ ] Idempotency preserved for all operations
-- [ ] Lock scopes verified (no unnecessary serialization)
-- [ ] Distributed lock evaluated and documented
-- [ ] docs/COMPLETE_PRODUCTION_AUDIT.md updated with resolution status
-
----
-
-## Known Risks & Mitigations (V1-A)
-
-| Risk | Mitigation |
-|------|-----------|
-| Audit row missing column | Pre-check all columns exist before batch (payment model line 220-244) |
-| Audit batch failure | Test with missing columns, verify error propagates |
-| Lock deadlock | Use timeout, test concurrent unrelated requests |
-| Sheet not found | Schema validation before batch (payment model line 188-194) |
-| Partial write | Batch API guarantees all-or-nothing, verify in test |
-| Double-approval | Lock + idempotency check (test both) |
-
+No fake live finance write is required for this verification.
