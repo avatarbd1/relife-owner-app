@@ -38,6 +38,7 @@ import {
 } from "@/lib/domain/finance/salary";
 import type { AccessContext } from "@/lib/webos/access";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function normalize(value: unknown): string {
   return String(value ?? "").trim();
@@ -107,28 +108,31 @@ export async function createPayment(
   context: AccessContext,
   input: PaymentCreateInput
 ): Promise<{ receiptNo: string; due: number; duplicate: boolean }> {
-  const result = await createSheetsPayment(context, input);
-  const department = departmentFromPatientId(input.patientId);
-  await syncFinance({
-    requestId: input.requestId,
-    action: "finance.payment.create",
-    entityType: "Payment",
-    entityId: result.receiptNo,
-    department,
-    status: result.due <= 0 ? "Paid" : "Due",
-    amount: Number(input.amount),
-    actorId: context.staffId,
-    patientId: normalize(input.patientId).toUpperCase(),
-    payload: {
-      discount: Number(input.discount || 0),
-      due: result.due,
-      paymentMethod: input.paymentMethod,
-      sessions: Number(input.sessions || 0),
-      sessionType: normalize(input.sessionType),
-      sheetsDuplicate: result.duplicate,
-    },
+  const patientId = normalize(input.patientId).toUpperCase();
+  const department = departmentFromPatientId(patientId);
+  return withMutationLock(`finance:payment:${department}:${patientId}`, async () => {
+    const result = await createSheetsPayment(context, { ...input, patientId });
+    await syncFinance({
+      requestId: input.requestId,
+      action: "finance.payment.create",
+      entityType: "Payment",
+      entityId: result.receiptNo,
+      department,
+      status: result.due <= 0 ? "Paid" : "Due",
+      amount: Number(input.amount),
+      actorId: context.staffId,
+      patientId,
+      payload: {
+        discount: Number(input.discount || 0),
+        due: result.due,
+        paymentMethod: input.paymentMethod,
+        sessions: Number(input.sessions || 0),
+        sessionType: normalize(input.sessionType),
+        sheetsDuplicate: result.duplicate,
+      },
+    });
+    return result;
   });
-  return result;
 }
 
 export async function requestExpense(
