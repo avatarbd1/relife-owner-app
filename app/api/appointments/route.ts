@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createUnifiedPhysioBooking } from "@/lib/domain/appointments/create";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import type { BookingValidationResult } from "@/lib/webos/appointmentScheduling";
+import { assertCanPerform } from "@/lib/webos/access";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { createAppointment, getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -61,6 +62,8 @@ export async function POST(request: NextRequest) {
     if (!patient || patient.department === "All") {
       return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
     }
+
+    assertCanPerform(context, "appointment.create", patient.department);
 
     const lockKey = `appointment-create:${String(body.date || "")}`;
     const result = await withMutationLock(lockKey, () => {
