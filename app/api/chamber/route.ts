@@ -57,7 +57,9 @@ export async function POST(request: NextRequest) {
     const action = String(body.action || "");
     if (action === "receive") {
       const appointmentId = String(body.appointmentId || "").trim();
-      const result = await withMutationLock(`chamber-receive:${appointmentId || "unknown"}`, async () => {
+      // Serialize receive across appointments so two taps for different bookings
+      // of the same patient cannot both pass the active-patient snapshot check.
+      const result = await withMutationLock("chamber-receive", async () => {
         const snapshot = await getChamberRuntimeSnapshot(context);
         const target = snapshot.queue.find((item) => item.appointmentId === appointmentId);
         if (target) {
