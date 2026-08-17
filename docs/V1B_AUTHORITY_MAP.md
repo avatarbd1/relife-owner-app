@@ -129,4 +129,5 @@ Before merge/deploy:
 - Same-patient profile/clinical mutations must use the canonical patient lock scope.
 - Google Sheets must remain patient/clinical business-record authority.
 - V1-A finance behavior must remain green.
+- Latest PR head must pass impact gate, lint, domain tests, and production build.
 - No fake production patient, clinical, appointment or finance write is required for verification.
