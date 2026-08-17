@@ -58,12 +58,12 @@ test("payment audit row is schema-checked and appended in the same Sheets batch"
 
 test("payment audit has no separate post-batch network append", () => {
   const source = read("lib/domain/finance/payments.ts");
-  const batchCall = source.indexOf("await batchUpdateSpreadsheet(workbook, requests)");
+  const batchStatement = "await batchUpdateSpreadsheet(workbook, requests)";
+  const batchCall = source.indexOf(batchStatement);
   const returnResult = source.indexOf("return { receiptNo, due: newDue, duplicate: false };", batchCall);
 
   assert.doesNotMatch(source, /appendPaymentAudit/);
   assert.doesNotMatch(source, /appendSheetValues/);
   assert.ok(batchCall > 0 && returnResult > batchCall);
-  assert.equal(source.slice(batchCall, returnResult).includes("await "), true);
-  assert.equal((source.slice(batchCall, returnResult).match(/await /g) || []).length, 1);
+  assert.doesNotMatch(source.slice(batchCall + batchStatement.length, returnResult), /await /);
 });
