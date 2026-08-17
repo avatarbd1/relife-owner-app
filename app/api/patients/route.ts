@@ -55,8 +55,7 @@ export async function POST(request: NextRequest) {
       throw new Error("INVALID_PATIENT_GENDER");
     }
 
-    const phone = normalizePhone(body.phone);
-    const lockKey = `patient-create:${department || "unknown"}:${phone || "no-phone"}`;
+    const lockKey = `patient-register:${department || "unknown"}`;
     const result = await withMutationLock(lockKey, () =>
       registerPatient(context, {
         department: body.department,

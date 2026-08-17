@@ -5,6 +5,7 @@ import { withMutationLock } from "@/lib/webos/mutationLock";
 import { updatePatientProfile } from "@/lib/webos/patientUpdate";
 import { syncActiveChamberPatientProfile } from "@/lib/webos/chamberPatientProfile";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getPatientForContext } from "@/lib/webos/reception";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "PATIENT_UPDATE_FAILED";
@@ -44,7 +45,12 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
-    const result = await withMutationLock(`patient-update:${decodedPatientId}`, () =>
+    const patient = await getPatientForContext(context, decodedPatientId);
+    if (!patient || patient.department === "All") {
+      return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
+    }
+
+    const result = await withMutationLock(`patient:${patient.department}:${decodedPatientId}`, () =>
       updatePatientProfile(context, decodedPatientId, {
         fullName: body.fullName,
         phone: body.phone,
