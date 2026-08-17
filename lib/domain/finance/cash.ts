@@ -10,7 +10,6 @@ import {
   workbookForDepartment,
 } from "@/lib/config/relifeSystem";
 import {
-  appendSheetValues,
   batchUpdateSpreadsheet,
   fetchSheetRanges,
   getSheetProperties,

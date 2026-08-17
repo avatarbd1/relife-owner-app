@@ -10,7 +10,6 @@ import {
   workbookForDepartment,
 } from "@/lib/config/relifeSystem";
 import {
-  appendSheetValues,
   batchUpdateSpreadsheet,
   fetchSheetRanges,
   getSheetProperties,
@@ -150,6 +149,17 @@ function updateCellRequest(
   };
 }
 
+async function sheetIds(workbook: Workbook): Promise<Map<string, number>> {
+  const properties = await getSheetProperties(workbook);
+  return new Map(properties.map((item) => [item.title, item.sheetId]));
+}
+
+function requireSheetId(map: Map<string, number>, title: string): number {
+  const id = map.get(title);
+  if (typeof id !== "number") throw new Error("SCHEMA_MISMATCH");
+  return id;
+}
+
 async function expenseSheetId(workbook: Workbook): Promise<number> {
   const properties = await getSheetProperties(workbook);
   const sheet = properties.find((item) => item.title === "07_Expenses");
@@ -157,47 +167,45 @@ async function expenseSheetId(workbook: Workbook): Promise<number> {
   return sheet.sheetId;
 }
 
-async function appendExpenseAudit(input: {
-  workbook: Workbook;
-  actorId: string;
-  action: string;
-  expenseId: string;
-  department: ClinicDepartment;
-  beforeValue?: string;
-  afterValue?: string;
-  reason?: string;
-}): Promise<void> {
-  const now = dhakaClockParts();
-  const clinic = ledgerClinicId(input.department);
-  try {
-    await appendSheetValues(input.workbook, "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      input.actorId,
-      input.action,
-      "Expense",
-      input.expenseId,
-      "",
-      input.beforeValue || "",
-      input.afterValue || "",
-      input.reason || "Finance domain action",
-      RELIFE_SYSTEM.organizationId,
-      clinic,
-      RELIFE_SYSTEM.branchId,
-      relifeRecordId(input.department, input.expenseId),
-      "",
-      input.actorId,
-      RELIFE_SYSTEM.sourceSystem,
-      RELIFE_SYSTEM.sourceType,
-      false,
-      true,
-      RELIFE_SYSTEM.schemaVersion,
-      now.provenance,
-      input.department,
-    ]]);
-  } catch (error) {
-    console.error("Finance expense audit append failed:", error);
+function buildExpenseAuditRow(
+  headers: string[],
+  input: {
+    now: ReturnType<typeof dhakaClockParts>;
+    actorId: string;
+    action: string;
+    expenseId: string;
+    department: ClinicDepartment;
+    beforeValue?: string;
+    afterValue?: string;
+    reason?: string;
   }
+): SheetValue[] {
+  const clinic = ledgerClinicId(input.department);
+  return rowForHeaders(headers, {
+    Audit_ID: `AUD-${randomUUID()}`,
+    Timestamp: input.now.timestamp,
+    Actor_ID: input.actorId,
+    Action: input.action,
+    Entity_Type: "Expense",
+    Entity_ID: input.expenseId,
+    Patient_ID: "",
+    Before_Value: input.beforeValue || "",
+    After_Value: input.afterValue || "",
+    Reason: input.reason || "Finance domain action",
+    Organization_ID: RELIFE_SYSTEM.organizationId,
+    Clinic_ID: clinic,
+    Branch_ID: RELIFE_SYSTEM.branchId,
+    Record_ID: relifeRecordId(input.department, input.expenseId),
+    Encounter_ID: "",
+    Provider_ID: input.actorId,
+    Source_System: RELIFE_SYSTEM.sourceSystem,
+    Source_Type: RELIFE_SYSTEM.sourceType,
+    AI_Generated: false,
+    Human_Verified: true,
+    Schema_Version: RELIFE_SYSTEM.schemaVersion,
+    Provenance_Timestamp: input.now.provenance,
+    Department: input.department,
+  });
 }
 
 export async function requestExpense(
@@ -223,10 +231,20 @@ export async function requestExpense(
   const requestId = validateRequestId(input.requestId);
   const marker = `WEBREQ:${requestId}`;
   const workbook = workbookForDepartment(department);
-  const snapshot = await fetchSheetRanges(workbook, ["07_Expenses"]);
-  const rows = snapshot["07_Expenses"] || [];
-  if (rows.length < 1) throw new Error("SCHEMA_MISMATCH");
-  const headers = rows[0];
+  const ids = await sheetIds(workbook);
+  const expenseSheetIdVal = requireSheetId(ids, "07_Expenses");
+  const auditSheetIdVal = requireSheetId(ids, "20_Data_Audit");
+
+  const [expenseSnapshot, auditSnapshot] = await Promise.all([
+    fetchSheetRanges(workbook, ["07_Expenses"]),
+    fetchSheetRanges(workbook, ["20_Data_Audit"]),
+  ]);
+  const expenseRows = expenseSnapshot["07_Expenses"] || [];
+  const auditRows = auditSnapshot["20_Data_Audit"] || [];
+  if (expenseRows.length < 1 || auditRows.length < 1) throw new Error("SCHEMA_MISMATCH");
+
+  const headers = expenseRows[0];
+  const auditHeaders = auditRows[0];
   ensureHeaders(headers, [
     "Expense_ID",
     "Date",
@@ -237,13 +255,38 @@ export async function requestExpense(
     "Department",
     "Note",
   ]);
+  ensureHeaders(auditHeaders, [
+    "Audit_ID",
+    "Timestamp",
+    "Actor_ID",
+    "Action",
+    "Entity_Type",
+    "Entity_ID",
+    "Patient_ID",
+    "Before_Value",
+    "After_Value",
+    "Reason",
+    "Organization_ID",
+    "Clinic_ID",
+    "Branch_ID",
+    "Record_ID",
+    "Encounter_ID",
+    "Provider_ID",
+    "Source_System",
+    "Source_Type",
+    "AI_Generated",
+    "Human_Verified",
+    "Schema_Version",
+    "Provenance_Timestamp",
+    "Department",
+  ]);
 
   const noteIdx = headerIndex(headers, "Note");
   const idIdx = headerIndex(headers, "Expense_ID");
-  const existing = rows.slice(1).find((row) => at(row, noteIdx).includes(marker));
+  const existing = expenseRows.slice(1).find((row) => at(row, noteIdx).includes(marker));
   if (existing) return { expenseId: at(existing, idIdx), duplicate: true };
 
-  const existingIds = new Set(rows.slice(1).map((row) => at(row, idIdx)).filter(Boolean));
+  const existingIds = new Set(expenseRows.slice(1).map((row) => at(row, idIdx)).filter(Boolean));
   const expenseId = nextEntityId("EX", existingIds);
   const now = dhakaClockParts();
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
@@ -272,16 +315,20 @@ export async function requestExpense(
     Department: department,
   });
 
-  const sheetId = await expenseSheetId(workbook);
-  await batchUpdateSpreadsheet(workbook, [appendRowRequest(sheetId, row)]);
-  await appendExpenseAudit({
-    workbook,
+  const auditRow = buildExpenseAuditRow(auditHeaders, {
+    now,
     actorId: context.staffId,
     action: "EXPENSE_REQUESTED",
     expenseId,
     department,
     afterValue: JSON.stringify({ category, amount, expenseType }),
   });
+
+  const requests: SpreadsheetBatchRequest[] = [
+    appendRowRequest(expenseSheetIdVal, row),
+    appendRowRequest(auditSheetIdVal, auditRow),
+  ];
+  await batchUpdateSpreadsheet(workbook, requests);
   return { expenseId, duplicate: false };
 }
 
@@ -341,11 +388,28 @@ export async function decideExpense(input: {
   const reason = normalize(input.reason);
   if (decision === "reject" && reason.length < 3) throw new Error("REJECTION_REASON_REQUIRED");
 
-  const snapshot = await fetchSheetRanges(workbook, ["07_Expenses"]);
-  const rows = snapshot["07_Expenses"] || [];
-  if (rows.length < 2) throw new Error("CONTROL_NOT_FOUND");
-  const headers = rows[0];
+  const ids = await sheetIds(workbook);
+  const expenseSheetIdVal = requireSheetId(ids, "07_Expenses");
+  const auditSheetIdVal = requireSheetId(ids, "20_Data_Audit");
+
+  const [expenseSnapshot, auditSnapshot] = await Promise.all([
+    fetchSheetRanges(workbook, ["07_Expenses"]),
+    fetchSheetRanges(workbook, ["20_Data_Audit"]),
+  ]);
+  const expenseRows = expenseSnapshot["07_Expenses"] || [];
+  const auditRows = auditSnapshot["20_Data_Audit"] || [];
+  if (expenseRows.length < 2 || auditRows.length < 1) throw new Error("CONTROL_NOT_FOUND");
+
+  const headers = expenseRows[0];
+  const auditHeaders = auditRows[0];
   ensureHeaders(headers, ["Expense_ID", "Status", "Requested_By", "Approved_By", "Approved_At", "Department"]);
+  ensureHeaders(auditHeaders, [
+    "Audit_ID", "Timestamp", "Actor_ID", "Action", "Entity_Type", "Entity_ID", "Patient_ID",
+    "Before_Value", "After_Value", "Reason", "Organization_ID", "Clinic_ID", "Branch_ID",
+    "Record_ID", "Encounter_ID", "Provider_ID", "Source_System", "Source_Type", "AI_Generated",
+    "Human_Verified", "Schema_Version", "Provenance_Timestamp", "Department",
+  ]);
+
   const idIdx = headerIndex(headers, "Expense_ID");
   const statusIdx = headerIndex(headers, "Status");
   const requestedByIdx = headerIndex(headers, "Requested_By", "Added_By");
@@ -353,30 +417,24 @@ export async function decideExpense(input: {
   const approvedAtIdx = headerIndex(headers, "Approved_At");
   const departmentIdx = headerIndex(headers, "Department");
 
-  const dataIndex = rows.slice(1).findIndex((row) => at(row, idIdx) === normalize(expenseId));
+  const dataIndex = expenseRows.slice(1).findIndex((row) => at(row, idIdx) === normalize(expenseId));
   if (dataIndex < 0) throw new Error("CONTROL_NOT_FOUND");
-  const row = rows[dataIndex + 1];
+  const row = expenseRows[dataIndex + 1];
   const currentStatus = at(row, statusIdx);
   if (!PENDING_STATUSES.has(normalized(currentStatus))) throw new Error("CONTROL_ALREADY_DECIDED");
 
   const rowNumber = dataIndex + 2;
   const nextStatus = decision === "approve" ? "Approved" : "Rejected";
   const now = dhakaClockParts();
-  const sheetId = await expenseSheetId(workbook);
-  await batchUpdateSpreadsheet(workbook, [
-    updateCellRequest(sheetId, rowNumber, statusIdx + 1, nextStatus),
-    updateCellRequest(sheetId, rowNumber, requestedByIdx + 1, at(row, requestedByIdx)),
-    updateCellRequest(sheetId, rowNumber, approvedByIdx + 1, input.actorId),
-    updateCellRequest(sheetId, rowNumber, approvedAtIdx + 1, now.timestamp),
-  ]);
 
   const departmentRaw = at(row, departmentIdx);
   const department: ClinicDepartment =
     departmentRaw === "Dental" || departmentRaw === "Physio"
       ? departmentRaw
       : departmentForWorkbook(workbook);
-  await appendExpenseAudit({
-    workbook,
+
+  const auditRow = buildExpenseAuditRow(auditHeaders, {
+    now,
     actorId: input.actorId,
     action: decision === "approve" ? "EXPENSE_APPROVED" : "EXPENSE_REJECTED",
     expenseId,
@@ -385,6 +443,15 @@ export async function decideExpense(input: {
     afterValue: nextStatus,
     reason: decision === "reject" ? reason : undefined,
   });
+
+  const requests: SpreadsheetBatchRequest[] = [
+    updateCellRequest(expenseSheetIdVal, rowNumber, statusIdx + 1, nextStatus),
+    updateCellRequest(expenseSheetIdVal, rowNumber, requestedByIdx + 1, at(row, requestedByIdx)),
+    updateCellRequest(expenseSheetIdVal, rowNumber, approvedByIdx + 1, input.actorId),
+    updateCellRequest(expenseSheetIdVal, rowNumber, approvedAtIdx + 1, now.timestamp),
+    appendRowRequest(auditSheetIdVal, auditRow),
+  ];
+  await batchUpdateSpreadsheet(workbook, requests);
 }
 
 export async function payApprovedExpense(
@@ -402,11 +469,28 @@ export async function payApprovedExpense(
   }
 
   const workbook = workbookForDepartment(department);
-  const snapshot = await fetchSheetRanges(workbook, ["07_Expenses"]);
-  const rows = snapshot["07_Expenses"] || [];
-  if (rows.length < 2) throw new Error("EXPENSE_NOT_FOUND");
-  const headers = rows[0];
+  const ids = await sheetIds(workbook);
+  const expenseSheetIdVal = requireSheetId(ids, "07_Expenses");
+  const auditSheetIdVal = requireSheetId(ids, "20_Data_Audit");
+
+  const [expenseSnapshot, auditSnapshot] = await Promise.all([
+    fetchSheetRanges(workbook, ["07_Expenses"]),
+    fetchSheetRanges(workbook, ["20_Data_Audit"]),
+  ]);
+  const expenseRows = expenseSnapshot["07_Expenses"] || [];
+  const auditRows = auditSnapshot["20_Data_Audit"] || [];
+  if (expenseRows.length < 2 || auditRows.length < 1) throw new Error("EXPENSE_NOT_FOUND");
+
+  const headers = expenseRows[0];
+  const auditHeaders = auditRows[0];
   ensureHeaders(headers, ["Expense_ID", "Status", "Department", "Paid_From", "Paid_By", "Paid_At"]);
+  ensureHeaders(auditHeaders, [
+    "Audit_ID", "Timestamp", "Actor_ID", "Action", "Entity_Type", "Entity_ID", "Patient_ID",
+    "Before_Value", "After_Value", "Reason", "Organization_ID", "Clinic_ID", "Branch_ID",
+    "Record_ID", "Encounter_ID", "Provider_ID", "Source_System", "Source_Type", "AI_Generated",
+    "Human_Verified", "Schema_Version", "Provenance_Timestamp", "Department",
+  ]);
+
   const idIdx = headerIndex(headers, "Expense_ID");
   const statusIdx = headerIndex(headers, "Status");
   const departmentIdx = headerIndex(headers, "Department");
@@ -414,9 +498,9 @@ export async function payApprovedExpense(
   const paidByIdx = headerIndex(headers, "Paid_By");
   const paidAtIdx = headerIndex(headers, "Paid_At");
 
-  const dataIndex = rows.slice(1).findIndex((row) => at(row, idIdx) === normalize(input.expenseId));
+  const dataIndex = expenseRows.slice(1).findIndex((row) => at(row, idIdx) === normalize(input.expenseId));
   if (dataIndex < 0) throw new Error("EXPENSE_NOT_FOUND");
-  const row = rows[dataIndex + 1];
+  const row = expenseRows[dataIndex + 1];
   if (at(row, departmentIdx) !== department) throw new Error("DEPARTMENT_MISMATCH");
   const status = normalized(at(row, statusIdx));
   if (status === "paid") return { alreadyPaid: true };
@@ -424,22 +508,25 @@ export async function payApprovedExpense(
 
   const rowNumber = dataIndex + 2;
   const now = dhakaClockParts();
-  const sheetId = await expenseSheetId(workbook);
-  await batchUpdateSpreadsheet(workbook, [
-    updateCellRequest(sheetId, rowNumber, paidFromIdx + 1, input.paidFrom),
-    updateCellRequest(sheetId, rowNumber, statusIdx + 1, "Paid"),
-    updateCellRequest(sheetId, rowNumber, paidByIdx + 1, context.staffId),
-    updateCellRequest(sheetId, rowNumber, paidAtIdx + 1, now.timestamp),
-  ]);
+  const beforeStatus = at(row, statusIdx);
 
-  await appendExpenseAudit({
-    workbook,
+  const auditRow = buildExpenseAuditRow(auditHeaders, {
+    now,
     actorId: context.staffId,
     action: "EXPENSE_PAID",
     expenseId: input.expenseId,
     department,
-    beforeValue: at(row, statusIdx),
+    beforeValue: beforeStatus,
     afterValue: `Paid from ${input.paidFrom}`,
   });
+
+  const requests: SpreadsheetBatchRequest[] = [
+    updateCellRequest(expenseSheetIdVal, rowNumber, paidFromIdx + 1, input.paidFrom),
+    updateCellRequest(expenseSheetIdVal, rowNumber, statusIdx + 1, "Paid"),
+    updateCellRequest(expenseSheetIdVal, rowNumber, paidByIdx + 1, context.staffId),
+    updateCellRequest(expenseSheetIdVal, rowNumber, paidAtIdx + 1, now.timestamp),
+    appendRowRequest(auditSheetIdVal, auditRow),
+  ];
+  await batchUpdateSpreadsheet(workbook, requests);
   return { alreadyPaid: false };
 }
