@@ -32,7 +32,7 @@ export default function ChamberWorkspaceTabs({
           return (
             <Link
               key={item.id}
-              href={`/chamber?${params.toString()}`}
+              href={`/chamber?${params.toString()}#chamber-${item.id}-panel`}
               aria-current={active ? "page" : undefined}
               className={`relative flex min-h-[54px] flex-col items-center justify-center rounded-lg px-2 py-2 text-center transition ${
                 active
@@ -58,7 +58,12 @@ export default function ChamberWorkspaceTabs({
         })}
       </nav>
 
-      <div>{panel}</div>
+      <div
+        id={`chamber-${activeTab}-panel`}
+        className="scroll-mt-32"
+      >
+        {panel}
+      </div>
     </div>
   );
 }
