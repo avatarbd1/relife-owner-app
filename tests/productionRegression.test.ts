@@ -123,6 +123,28 @@ test("Home and Daily Ops count completed clinical work instead of payment sessio
   assert.match(home, /Sessions done/);
 });
 
+test("patient report upload uses private Supabase Storage instead of Google Drive", () => {
+  const route = source("app/api/tools/report-upload/route.ts");
+  const storage = source("lib/webos/reportStorage.ts");
+  const media = source("app/api/patients/[patientId]/reports/[reportId]/media/route.ts");
+  const edge = source("supabase/functions/relife-report-storage/index.ts");
+  const migration = source("supabase/migrations/20260817120100_private_patient_report_storage.sql");
+
+  assert.match(route, /uploadPatientReportToPrivateStorage/);
+  assert.doesNotMatch(route, /uploadPatientReport\} from "@\/lib\/webos\/reportDrive"/);
+  assert.match(storage, /REPORT_STORAGE_EDGE_SECRET/);
+  assert.match(storage, /supabase:\/\/\$\{REPORT_BUCKET\}\//);
+  assert.match(storage, /await deleteObject\(path\)/);
+  assert.match(media, /reportStoragePathFromLink/);
+  assert.match(media, /downloadPrivatePatientReport/);
+  assert.match(edge, /x-relife-report-key/);
+  assert.match(edge, /relife-patient-reports/);
+  assert.match(edge, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(migration, /'relife-patient-reports'/);
+  assert.match(migration, /false/);
+  assert.match(migration, /12582912/);
+});
+
 test("Patient File cache is cleared after create, edit and payment writes", () => {
   const patients = source("lib/patients.ts");
   const createPatient = source("app/api/patients/route.ts");
