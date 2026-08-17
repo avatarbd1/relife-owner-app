@@ -31,3 +31,11 @@ test("fixed-hour manual therapy remains a ten-minute therapist reservation", () 
   );
   assert.match(fixedHour, /Booking_Validation_Version: "chamber-fixed-hour-v2"/);
 });
+
+test("live fixed-hour board does not invent therapist filler after selected modalities", () => {
+  const board = source("components/ChamberHourlyBedBoard.tsx");
+  assert.match(board, /if \(selected\.length === 0\) steps\.push/);
+  assert.doesNotMatch(board, /selected\.length \? "Therapist time" : "Therapist session"/);
+  assert.match(board, /Therapist is free outside therapist-required steps/);
+  assert.match(board, /Fixed 60-minute bed slot/);
+});
