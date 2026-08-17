@@ -1,17 +1,23 @@
 import "server-only";
 
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+import {
+  resolveLockStrategy,
+  withDistributedLeaseLock,
+  type DistributedLockRpcClient,
+} from "./mutationLockCore";
 
 const mutationLocks = new Map<string, Promise<void>>();
-
-type SupabaseClientType = SupabaseClient;
 
 const DISTRIBUTED_LOCK_MODE = process.env.DISTRIBUTED_LOCK_MODE ?? "required";
 const PROCESS_LOCAL_FALLBACK_ENABLED =
   process.env.ENABLE_PROCESS_LOCAL_LOCK_FALLBACK === "true";
-const LOCK_ACQUISITION_TIMEOUT_MS = 30000; // 30s overall deadline
+const LOCK_ACQUISITION_TIMEOUT_MS = 30000;
+const LOCK_LEASE_SECONDS = 120;
 
-function getSupabaseClient(): SupabaseClientType | null {
+function getSupabaseClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
@@ -19,25 +25,27 @@ function getSupabaseClient(): SupabaseClientType | null {
 }
 
 function getInstanceId(): string {
-  return process.env.INSTANCE_ID || `render-${Math.random().toString(36).slice(2, 8)}`;
+  return process.env.INSTANCE_ID || `render-${randomUUID()}`;
+}
+
+function asLockRpcClient(supabase: SupabaseClient): DistributedLockRpcClient {
+  return {
+    async rpc(method, params) {
+      const { data, error } = await supabase.rpc(method, params);
+      return {
+        data,
+        error: error ? { message: error.message } : null,
+      };
+    },
+  };
 }
 
 /**
- * Serialize mutations that must perform a read-check-write sequence against
- * Google Sheets.
+ * Serialize read-check-write mutations against Google Sheets.
  *
- * Mode: required (default, production)
- * - Uses distributed Supabase lock (multi-instance safe)
- * - Fails closed if Supabase unavailable or lock acquisition fails
- * - No silent fallback to process-local
- *
- * Mode: compatibility (test/single-instance only)
- * - Requires ENABLE_PROCESS_LOCAL_LOCK_FALLBACK=true
- * - Uses process-local Map with optional Supabase attempt
- * - Only for development/single-instance Render deployment
- *
- * Google Sheets mutations happen outside DB transaction, so we use a lease-based
- * distributed lock with timeout/expiry for safety.
+ * required (default): Supabase/Postgres lease lock is mandatory and failures
+ * fail closed. compatibility: process-local fallback is available only when
+ * explicitly enabled for local/test/single-instance operation.
  */
 export async function withMutationLock<T>(
   key: string,
@@ -47,132 +55,42 @@ export async function withMutationLock<T>(
   if (!normalizedKey) return fn();
 
   const supabase = getSupabaseClient();
-  const instanceId = getInstanceId();
-
-  if (DISTRIBUTED_LOCK_MODE === "required") {
-    // Production: distributed lock required, fail closed if unavailable
-    if (!supabase) {
-      throw new Error(
-        "DISTRIBUTED_LOCK_MODE=required but Supabase not configured. " +
-        "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or use DISTRIBUTED_LOCK_MODE=compatibility"
-      );
-    }
-    return await withDistributedLock(normalizedKey, instanceId, fn, supabase);
-  }
-
-  // Compatibility mode (tests/local/single-instance only)
-  if (!PROCESS_LOCAL_FALLBACK_ENABLED) {
-    throw new Error(
-      "ENABLE_PROCESS_LOCAL_LOCK_FALLBACK not set. " +
-      "For compatibility mode, set ENABLE_PROCESS_LOCAL_LOCK_FALLBACK=true and DISTRIBUTED_LOCK_MODE=compatibility"
-    );
-  }
-
-  // Try distributed first, fallback to process-local only if explicitly enabled
-  if (supabase) {
-    try {
-      return await withDistributedLock(normalizedKey, instanceId, fn, supabase);
-    } catch (error) {
-      console.warn("Distributed lock failed in compatibility mode, falling back to process-local:", error);
-    }
-  }
-
-  return await withProcessLocalLock(normalizedKey, fn);
-}
-
-async function withDistributedLock<T>(
-  key: string,
-  instanceId: string,
-  fn: () => Promise<T>,
-  supabase: SupabaseClientType
-): Promise<T> {
-  const lockTimeout = 30; // seconds
-  const deadline = Date.now() + LOCK_ACQUISITION_TIMEOUT_MS;
-  let lockToken: string | null = null;
-  let ownerId: string | null = null;
-  let retryCount = 0;
-  const maxRetries = 300; // ~30s with exponential backoff
-
-  // Generate unique owner identity per acquisition attempt
-  // Prevents same instance concurrent calls from appearing as reentrant
-  const uniqueOwnerId = `${instanceId}:${Math.random().toString(36).slice(2, 18)}`;
-
-  while (retryCount < maxRetries) {
-    if (Date.now() > deadline) {
-      throw new Error(
-        `Failed to acquire distributed lock for key '${key}' within ${LOCK_ACQUISITION_TIMEOUT_MS}ms deadline. ` +
-        `Retried ${retryCount} times.`
-      );
-    }
-
-    try {
-      // Attempt to acquire distributed lock
-      const { data, error: acquireError } = await supabase.rpc("acquire_distributed_lock", {
-        p_lock_key: key,
-        p_owner_id: uniqueOwnerId,
-        p_timeout_seconds: lockTimeout,
-      });
-
-      if (acquireError) {
-        throw new Error(`Supabase RPC failed: ${acquireError.message}`);
-      }
-
-      if (data?.acquired_by_caller) {
-        lockToken = data.token;
-        ownerId = uniqueOwnerId;
-
-        // Execute function under lock with heartbeat renewal
-        try {
-          // Start renewal heartbeat to prevent lease expiry during long operations
-          const renewalInterval = setInterval(async () => {
-            if (lockToken && ownerId) {
-              try {
-                await supabase.rpc("renew_distributed_lock", {
-                  p_lock_key: key,
-                  p_owner_id: ownerId,
-                  p_token: lockToken,
-                  p_timeout_seconds: lockTimeout,
-                });
-              } catch (error) {
-                console.error("Failed to renew distributed lock:", error);
-              }
-            }
-          }, Math.floor((lockTimeout * 1000) / 3)); // Renew every ~10s for 30s lease
-
-          try {
-            return await fn();
-          } finally {
-            clearInterval(renewalInterval);
-          }
-        } finally {
-          // Release lock
-          if (lockToken && ownerId) {
-            const { error: releaseError } = await supabase.rpc("release_distributed_lock", {
-              p_lock_key: key,
-              p_owner_id: ownerId,
-              p_token: lockToken,
-            });
-            if (releaseError) {
-              console.error("Failed to release distributed lock:", releaseError);
-            }
-          }
-        }
-      }
-
-      // Lock held by another owner, wait with exponential backoff
-      const backoffMs = Math.min(100 * Math.pow(1.5, retryCount), 5000);
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      retryCount++;
-    } catch (error) {
-      throw new Error(
-        `Distributed lock acquisition failed for key '${key}': ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  throw new Error(
-    `Failed to acquire distributed lock for key '${key}' after ${maxRetries} retries within ${LOCK_ACQUISITION_TIMEOUT_MS}ms.`
+  const strategy = resolveLockStrategy(
+    DISTRIBUTED_LOCK_MODE,
+    PROCESS_LOCAL_FALLBACK_ENABLED,
+    Boolean(supabase)
   );
+
+  if (strategy === "distributed" && supabase) {
+    try {
+      return await withDistributedLeaseLock(normalizedKey, fn, asLockRpcClient(supabase), {
+        instanceId: getInstanceId(),
+        leaseSeconds: LOCK_LEASE_SECONDS,
+        acquisitionTimeoutMs: LOCK_ACQUISITION_TIMEOUT_MS,
+        randomId: randomUUID,
+        onRenewalError: (error) => {
+          console.error("Distributed mutation lock renewal warning:", error);
+        },
+        onReleaseError: (error) => {
+          console.error("Distributed mutation lock release warning:", error);
+        },
+      });
+    } catch (error) {
+      if (
+        DISTRIBUTED_LOCK_MODE === "compatibility" &&
+        PROCESS_LOCAL_FALLBACK_ENABLED
+      ) {
+        console.warn(
+          "Distributed lock failed in compatibility mode, falling back to process-local:",
+          error
+        );
+        return withProcessLocalLock(normalizedKey, fn);
+      }
+      throw error;
+    }
+  }
+
+  return withProcessLocalLock(normalizedKey, fn);
 }
 
 async function withProcessLocalLock<T>(
