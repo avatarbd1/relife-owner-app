@@ -41,9 +41,17 @@ export default async function MorePage() {
           <ActionRow
             href="/tools"
             icon="clinical"
-            title="Tools & inventory"
-            subtitle="Clinical utilities, inventory and authorized support tools"
+            title="Clinical tools"
+            subtitle="Treatment history, reports, case studies and diagnostics"
           />
+          {canPerform(context, "inventory.read", "Physio") && (
+            <ActionRow
+              href="/inventory"
+              icon="approval"
+              title="Inventory"
+              subtitle="Stock tracking, reorder points and expiry dates"
+            />
+          )}
         </Section>
       )}
 
