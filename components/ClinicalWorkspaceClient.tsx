@@ -99,6 +99,48 @@ function painTone(value: string): "success" | "warning" | "error" | "neutral" {
   return "error";
 }
 
+function PainTrendMini({ sessions }: { sessions: Workspace["sessions"] }) {
+  const recent = sessions.slice(0, 10).reverse();
+  if (recent.length < 2) return null;
+
+  const painBefores = recent.map((s) => painNumber(s.painBefore)).filter((p) => p !== null);
+  const painAfters = recent.map((s) => painNumber(s.painAfter)).filter((p) => p !== null);
+
+  if (painBefores.length < 2 && painAfters.length < 2) return null;
+
+  const maxPain = Math.max(...painBefores, ...painAfters, 1);
+  const minPain = 0;
+
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Pain trend (last {recent.length} sessions)</p>
+      <div className="mt-2 flex h-16 items-end gap-1">
+        {recent.map((session, idx) => {
+          const before = painNumber(session.painBefore);
+          const after = painNumber(session.painAfter);
+          const height = before !== null ? ((before - minPain) / (maxPain - minPain)) * 100 : 0;
+          const change = before !== null && after !== null ? before - after : null;
+
+          return (
+            <div key={session.treatmentId} className="flex-1 flex flex-col items-center gap-1" title={`S${session.sessionNo}: Before ${before || '–'}, After ${after || '–'}`}>
+              {before !== null && (
+                <div
+                  className={`w-full rounded-t-sm ${painTone(String(before)) === "success" ? "bg-emerald-400" : painTone(String(before)) === "warning" ? "bg-amber-400" : "bg-red-400"}`}
+                  style={{ height: `${height}%`, minHeight: height > 0 ? "4px" : "2px" }}
+                />
+              )}
+              {change !== null && (
+                <span className="text-[8px] font-bold text-slate-600">{change > 0 ? "↓" : change < 0 ? "↑" : "–"}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-1 text-[9px] text-slate-400">Green = improving · Amber = moderate · Red = severe</p>
+    </div>
+  );
+}
+
 function PainScale({
   value,
   onChange,
@@ -418,6 +460,8 @@ function SessionForm({
         </div>
         <ProgressBar value={planProgress} label="Plan progress" className="mt-3" />
       </div>
+
+      <PainTrendMini sessions={sessions} />
 
       {lastSession && painTrend && (
         <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
