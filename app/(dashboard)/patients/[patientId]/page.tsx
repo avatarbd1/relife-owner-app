@@ -36,6 +36,7 @@ export default async function PatientFilePage({
 
   const canEditPatient = canPerform(context, "patient.update", patient.department);
   const canSeeMoney = canPerform(context, "payment.read_amount", patient.department);
+  const canCreatePayment = canPerform(context, "payment.create", patient.department);
   const canCreateAppointment = canPerform(context, "appointment.create", patient.department);
   const canSeeClinical = canPerform(context, "clinical.read", patient.department);
   const canSeeReports = canPerform(context, "patient.report.read", patient.department);
@@ -132,8 +133,8 @@ export default async function PatientFilePage({
         <p className="text-sm leading-6 text-slate-700">{patient.diagnosis || "No diagnosis recorded."}</p>
       </Card>
 
-      {(canSeeClinical || canCreateAppointment) && (
-        <div className="grid grid-cols-2 gap-3">
+      {(canSeeClinical || canCreateAppointment || canCreatePayment) && (
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${[canSeeClinical, canCreateAppointment, canCreatePayment].filter(Boolean).length > 0 ? Math.min([canSeeClinical, canCreateAppointment, canCreatePayment].filter(Boolean).length, 2) : 1}, minmax(0, 1fr))` }}>
           {canSeeClinical && (
             <Link
               href={`/patients/${encodeURIComponent(patient.patientId)}/clinical`}
@@ -148,6 +149,14 @@ export default async function PatientFilePage({
               className="flex min-h-14 items-center justify-center rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
             >
               + Appointment
+            </Link>
+          )}
+          {canCreatePayment && (
+            <Link
+              href={`/payments/new?patientId=${encodeURIComponent(patient.patientId)}`}
+              className="flex min-h-14 items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.98]"
+            >
+              💳 Payment
             </Link>
           )}
         </div>

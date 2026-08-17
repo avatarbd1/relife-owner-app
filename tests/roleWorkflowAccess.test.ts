@@ -133,12 +133,14 @@ test("Dentist is Dental scoped and cannot cross into Physio", () => {
   ]);
 });
 
-test("Manager keeps operational cash acceptance but not owner finance powers", () => {
+test("Manager keeps operational cash acceptance and has patient hub payment action", () => {
   const ctx = context(["Manager"], ["Physio"], "Physio");
   expectAllowed(ctx, "Physio", [
     "patient.read",
     "patient.create",
     "appointment.create",
+    "payment.read_amount",
+    "payment.create",
     "expense.read",
     "expense.request",
     "cash.read",
@@ -148,7 +150,6 @@ test("Manager keeps operational cash acceptance but not owner finance powers", (
     "chamber.run",
   ]);
   expectDenied(ctx, "Physio", [
-    "payment.create",
     "expense.approve",
     "salary.read",
     "salary.pay",

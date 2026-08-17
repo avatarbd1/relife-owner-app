@@ -114,6 +114,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.create",
     "appointment.update",
     "register.read",
+    "payment.read_amount",
+    "payment.create",
     "payment.correct_own_today",
     "report.read_operational",
     "expense.read",
@@ -215,6 +217,14 @@ export function canAccessDepartment(
   return access.includes(recordDepartment);
 }
 
+function isPatientScopedAction(action: WebAction): boolean {
+  return action.startsWith("patient.") ||
+         action.startsWith("appointment.") ||
+         action.startsWith("payment.") ||
+         action.startsWith("clinical.") ||
+         action.startsWith("chamber.");
+}
+
 function roleAllows(roles: WebRole[], action: WebAction): boolean {
   return roles.some((role) => ROLE_ACTIONS[role]?.has(action));
 }
@@ -237,6 +247,10 @@ export function canPerform(
   conditions: AccessConditions = {}
 ): boolean {
   if (!canAccessDepartment(context, recordDepartment)) return false;
+
+  // Patient-scoped actions cannot operate on records with department="All"
+  // (patients always have Physio or Dental, never All)
+  if (recordDepartment === "All" && isPatientScopedAction(action)) return false;
 
   // Production Telegram parity: an explicitly provisioned Dental-only
   // Receptionist may temporarily read and enter Dental clinical data. This is
