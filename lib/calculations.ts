@@ -238,6 +238,25 @@ export async function getTodaysCollection(
   return { physio, dental, combined: physio + dental };
 }
 
+export async function getDateRangeCollection(
+  startDate: string,
+  endDate: string,
+  scope: Scope
+): Promise<TodaysCollection> {
+  const payments = await getPayments();
+  const inRange = payments.filter(
+    (p) => normalizedDate(p.date) >= startDate && normalizedDate(p.date) <= endDate
+  );
+  const scoped = inScope(inRange, scope);
+  const physio = scoped
+    .filter((p) => p.department === "Physio")
+    .reduce((sum, p) => sum + p.amount, 0);
+  const dental = scoped
+    .filter((p) => p.department === "Dental")
+    .reduce((sum, p) => sum + p.amount, 0);
+  return { physio, dental, combined: physio + dental };
+}
+
 // ---------------------------------------------------------------------
 // This Month's Business Position
 // ---------------------------------------------------------------------
@@ -290,6 +309,53 @@ export async function getMonthBusinessPosition(
     .reduce((sum, s) => sum + s.salary, 0);
 
   const fixedOverhead = await getFixedOverhead(scope, expenses, now);
+  const totalBusinessLiability =
+    variableClinicExpense + fixedOverhead + fixedSalaryCommitment;
+
+  return {
+    monthCollection,
+    variableClinicExpense,
+    fixedOverhead,
+    fixedSalaryCommitment,
+    totalBusinessLiability,
+    surplusOrUncovered: monthCollection - totalBusinessLiability,
+  };
+}
+
+export async function getDateRangeBusinessPosition(
+  startDate: string,
+  endDate: string,
+  scope: Scope
+): Promise<MonthBusinessPosition> {
+  const [payments, expenses, staff] = await Promise.all([
+    getPayments(),
+    getExpenses(),
+    getStaff(),
+  ]);
+
+  const rangeFilter = (date: string) =>
+    normalizedDate(date) >= startDate && normalizedDate(date) <= endDate;
+
+  const monthCollection = inScope(payments, scope)
+    .filter((p) => rangeFilter(p.date))
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  const variableClinicExpense = inScope(expenses, scope)
+    .filter((e) => rangeFilter(e.date) && isVariableClinicExpense(e))
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const fixedSalaryCommitment = inScope(staff, scope)
+    .filter(isSalaryCommitmentStaff)
+    .reduce((sum, s) => sum + s.salary, 0);
+
+  // For date ranges, fixed overhead is prorated (not charged for partial month)
+  const fixedOverheadDaily = (await getFixedOverhead(scope, expenses, new Date())) / 30;
+  const dayCount = Math.max(
+    1,
+    (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24) + 1
+  );
+  const fixedOverhead = fixedOverheadDaily * dayCount;
+
   const totalBusinessLiability =
     variableClinicExpense + fixedOverhead + fixedSalaryCommitment;
 
