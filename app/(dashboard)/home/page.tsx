@@ -165,7 +165,7 @@ export default async function HomePage() {
           )}
           {exceptions > 0 && (
             <ActionRow
-              href="/appointments"
+              href={`/appointments?date=${encodeURIComponent(today)}&scope=combined&focus=exceptions`}
               icon="calendar"
               title="No-show / cancelled"
               subtitle="Review today’s appointment exceptions"
