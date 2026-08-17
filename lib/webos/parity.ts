@@ -1,6 +1,7 @@
 import "server-only";
 
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
+import { totalLatestPatientDue } from "@/lib/domain/finance/dailyRegisterMath";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
@@ -253,7 +254,7 @@ function parseDailyRegister(rows: string[][], date: string) {
   return {
     rows: result,
     totalPaid: result.reduce((sum, row) => sum + row.amount, 0),
-    totalDue: result.reduce((sum, row) => sum + row.due, 0),
+    totalDue: totalLatestPatientDue(result),
     totalDiscount: result.reduce((sum, row) => sum + row.discount, 0),
     totalSessions: result.reduce((sum, row) => sum + row.sessions, 0),
   };
