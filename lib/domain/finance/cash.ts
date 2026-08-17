@@ -155,46 +155,59 @@ async function movementSheetId(workbook: Workbook): Promise<number> {
   return sheet.sheetId;
 }
 
-async function appendCashAudit(input: {
-  workbook: Workbook;
-  actorId: string;
-  action: string;
-  movementId: string;
-  department: ClinicDepartment;
-  beforeValue?: string;
-  afterValue?: string;
-}): Promise<void> {
-  const now = dhakaClockParts();
-  const clinic = ledgerClinicId(input.department);
-  try {
-    await appendSheetValues(input.workbook, "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      input.actorId,
-      input.action,
-      "CashMovement",
-      input.movementId,
-      "",
-      input.beforeValue || "",
-      input.afterValue || "",
-      "Finance domain action",
-      RELIFE_SYSTEM.organizationId,
-      clinic,
-      RELIFE_SYSTEM.branchId,
-      relifeRecordId(input.department, input.movementId),
-      "",
-      input.actorId,
-      RELIFE_SYSTEM.sourceSystem,
-      RELIFE_SYSTEM.sourceType,
-      false,
-      true,
-      RELIFE_SYSTEM.schemaVersion,
-      now.provenance,
-      input.department,
-    ]]);
-  } catch (error) {
-    console.error("Finance cash audit append failed:", error);
+async function sheetIds(workbook: Workbook): Promise<Map<string, number>> {
+  const properties = await getSheetProperties(workbook);
+  const map = new Map<string, number>();
+  for (const prop of properties) {
+    map.set(prop.title, prop.sheetId);
   }
+  return map;
+}
+
+function requireSheetId(map: Map<string, number>, title: string): number {
+  const id = map.get(title);
+  if (id === undefined) throw new Error("SCHEMA_MISMATCH");
+  return id;
+}
+
+function buildCashAuditRow(
+  headers: string[],
+  input: {
+    now: ReturnType<typeof dhakaClockParts>;
+    actorId: string;
+    action: string;
+    movementId: string;
+    department: ClinicDepartment;
+    beforeValue?: string;
+    afterValue?: string;
+  }
+): SheetValue[] {
+  const clinic = ledgerClinicId(input.department);
+  return rowForHeaders(headers, {
+    Audit_ID: `AUD-${randomUUID()}`,
+    Timestamp: input.now.timestamp,
+    Actor_ID: input.actorId,
+    Action: input.action,
+    Entity_Type: "CashMovement",
+    Entity_ID: input.movementId,
+    Patient_ID: "",
+    Before_Value: input.beforeValue || "",
+    After_Value: input.afterValue || "",
+    Reason: "Finance domain action",
+    Organization_ID: RELIFE_SYSTEM.organizationId,
+    Clinic_ID: clinic,
+    Branch_ID: RELIFE_SYSTEM.branchId,
+    Record_ID: relifeRecordId(input.department, input.movementId),
+    Encounter_ID: "",
+    Provider_ID: input.actorId,
+    Source_System: RELIFE_SYSTEM.sourceSystem,
+    Source_Type: RELIFE_SYSTEM.sourceType,
+    AI_Generated: false,
+    Human_Verified: true,
+    Schema_Version: RELIFE_SYSTEM.schemaVersion,
+    Provenance_Timestamp: input.now.provenance,
+    Department: input.department,
+  });
 }
 
 export async function requestCashMovement(
@@ -215,10 +228,19 @@ export async function requestCashMovement(
   const requestId = validateRequestId(input.requestId);
   const marker = `WEBREQ:${requestId}`;
   const workbook = workbookForDepartment(department);
-  const snapshot = await fetchSheetRanges(workbook, ["21_Cash_Movement"]);
-  const rows = snapshot["21_Cash_Movement"] || [];
-  if (rows.length < 1) throw new Error("SCHEMA_MISMATCH");
+  const ids = await sheetIds(workbook);
+  const movementSheetIdVal = requireSheetId(ids, "21_Cash_Movement");
+  const auditSheetIdVal = requireSheetId(ids, "20_Data_Audit");
+
+  const [movementSnapshot, auditSnapshot] = await Promise.all([
+    fetchSheetRanges(workbook, ["21_Cash_Movement"]),
+    fetchSheetRanges(workbook, ["20_Data_Audit"]),
+  ]);
+  const rows = movementSnapshot["21_Cash_Movement"] || [];
+  const auditRows = auditSnapshot["20_Data_Audit"] || [];
+  if (rows.length < 1 || auditRows.length < 1) throw new Error("SCHEMA_MISMATCH");
   const headers = rows[0];
+  const auditHeaders = auditRows[0];
   ensureHeaders(headers, [
     "Movement_ID",
     "Date",
@@ -228,6 +250,31 @@ export async function requestCashMovement(
     "Status",
     "Department",
     "Note",
+  ]);
+  ensureHeaders(auditHeaders, [
+    "Audit_ID",
+    "Timestamp",
+    "Actor_ID",
+    "Action",
+    "Entity_Type",
+    "Entity_ID",
+    "Patient_ID",
+    "Before_Value",
+    "After_Value",
+    "Reason",
+    "Organization_ID",
+    "Clinic_ID",
+    "Branch_ID",
+    "Record_ID",
+    "Encounter_ID",
+    "Provider_ID",
+    "Source_System",
+    "Source_Type",
+    "AI_Generated",
+    "Human_Verified",
+    "Schema_Version",
+    "Provenance_Timestamp",
+    "Department",
   ]);
   const noteIdx = headerIndex(headers, "Note");
   const idIdx = headerIndex(headers, "Movement_ID");
@@ -269,16 +316,21 @@ export async function requestCashMovement(
     Requested_At: now.timestamp,
     Updated_At: now.timestamp,
   });
-  const sheetId = await movementSheetId(workbook);
-  await batchUpdateSpreadsheet(workbook, [appendRowRequest(sheetId, row)]);
-  await appendCashAudit({
-    workbook,
+
+  const auditRow = buildCashAuditRow(auditHeaders, {
+    now,
     actorId: context.staffId,
     action: "CASH_MOVEMENT_REQUESTED",
     movementId,
     department,
     afterValue: JSON.stringify({ from: "Reception", to: input.toCustodian, amount }),
   });
+
+  const requests: SpreadsheetBatchRequest[] = [
+    appendRowRequest(movementSheetIdVal, row),
+    appendRowRequest(auditSheetIdVal, auditRow),
+  ];
+  await batchUpdateSpreadsheet(workbook, requests);
   return { movementId, duplicate: false };
 }
 
@@ -342,10 +394,19 @@ export async function decideCashMovement(input: {
     throw new Error("INVALID_RECEIVED_AMOUNT");
   }
 
-  const snapshot = await fetchSheetRanges(workbook, ["21_Cash_Movement"]);
-  const rows = snapshot["21_Cash_Movement"] || [];
-  if (rows.length < 2) throw new Error("CONTROL_NOT_FOUND");
+  const ids = await sheetIds(workbook);
+  const movementSheetIdVal = requireSheetId(ids, "21_Cash_Movement");
+  const auditSheetIdVal = requireSheetId(ids, "20_Data_Audit");
+
+  const [movementSnapshot, auditSnapshot] = await Promise.all([
+    fetchSheetRanges(workbook, ["21_Cash_Movement"]),
+    fetchSheetRanges(workbook, ["20_Data_Audit"]),
+  ]);
+  const rows = movementSnapshot["21_Cash_Movement"] || [];
+  const auditRows = auditSnapshot["20_Data_Audit"] || [];
+  if (rows.length < 2 || auditRows.length < 1) throw new Error("CONTROL_NOT_FOUND");
   const headers = rows[0];
+  const auditHeaders = auditRows[0];
   ensureHeaders(headers, [
     "Movement_ID",
     "Status",
@@ -359,6 +420,31 @@ export async function decideCashMovement(input: {
     "Accepted_At",
     "Completed_At",
     "Updated_At",
+  ]);
+  ensureHeaders(auditHeaders, [
+    "Audit_ID",
+    "Timestamp",
+    "Actor_ID",
+    "Action",
+    "Entity_Type",
+    "Entity_ID",
+    "Patient_ID",
+    "Before_Value",
+    "After_Value",
+    "Reason",
+    "Organization_ID",
+    "Clinic_ID",
+    "Branch_ID",
+    "Record_ID",
+    "Encounter_ID",
+    "Provider_ID",
+    "Source_System",
+    "Source_Type",
+    "AI_Generated",
+    "Human_Verified",
+    "Schema_Version",
+    "Provenance_Timestamp",
+    "Department",
   ]);
 
   const idIdx = headerIndex(headers, "Movement_ID");
@@ -383,33 +469,32 @@ export async function decideCashMovement(input: {
   const requested = money(at(row, amountIdx));
   const rowNumber = dataIndex + 2;
   const now = dhakaClockParts();
-  const sheetId = await movementSheetId(workbook);
-  const requests: SpreadsheetBatchRequest[] = [
-    updateCellRequest(sheetId, rowNumber, statusIdx + 1, decision === "accept" ? "Accepted" : "Rejected"),
-    updateCellRequest(sheetId, rowNumber, confirmedByIdx + 1, input.actorId),
-    updateCellRequest(sheetId, rowNumber, confirmedAtIdx + 1, now.timestamp),
-    updateCellRequest(sheetId, rowNumber, updatedAtIdx + 1, now.timestamp),
-  ];
-
-  if (decision === "accept") {
-    const received = input.receivedAmount ?? requested;
-    requests.push(
-      updateCellRequest(sheetId, rowNumber, receivedAmountIdx + 1, received),
-      updateCellRequest(sheetId, rowNumber, differenceIdx + 1, received - requested),
-      updateCellRequest(sheetId, rowNumber, acceptedByIdx + 1, input.actorId),
-      updateCellRequest(sheetId, rowNumber, acceptedAtIdx + 1, now.timestamp),
-      updateCellRequest(sheetId, rowNumber, completedAtIdx + 1, now.timestamp)
-    );
-  }
-
-  await batchUpdateSpreadsheet(workbook, requests);
   const departmentRaw = at(row, departmentIdx);
   const department: ClinicDepartment =
     departmentRaw === "Dental" || departmentRaw === "Physio"
       ? departmentRaw
       : departmentForWorkbook(workbook);
-  await appendCashAudit({
-    workbook,
+
+  const requests: SpreadsheetBatchRequest[] = [
+    updateCellRequest(movementSheetIdVal, rowNumber, statusIdx + 1, decision === "accept" ? "Accepted" : "Rejected"),
+    updateCellRequest(movementSheetIdVal, rowNumber, confirmedByIdx + 1, input.actorId),
+    updateCellRequest(movementSheetIdVal, rowNumber, confirmedAtIdx + 1, now.timestamp),
+    updateCellRequest(movementSheetIdVal, rowNumber, updatedAtIdx + 1, now.timestamp),
+  ];
+
+  if (decision === "accept") {
+    const received = input.receivedAmount ?? requested;
+    requests.push(
+      updateCellRequest(movementSheetIdVal, rowNumber, receivedAmountIdx + 1, received),
+      updateCellRequest(movementSheetIdVal, rowNumber, differenceIdx + 1, received - requested),
+      updateCellRequest(movementSheetIdVal, rowNumber, acceptedByIdx + 1, input.actorId),
+      updateCellRequest(movementSheetIdVal, rowNumber, acceptedAtIdx + 1, now.timestamp),
+      updateCellRequest(movementSheetIdVal, rowNumber, completedAtIdx + 1, now.timestamp)
+    );
+  }
+
+  const auditRow = buildCashAuditRow(auditHeaders, {
+    now,
     actorId: input.actorId,
     action: decision === "accept" ? "CASH_MOVEMENT_ACCEPTED" : "CASH_MOVEMENT_REJECTED",
     movementId,
@@ -419,4 +504,7 @@ export async function decideCashMovement(input: {
       ? JSON.stringify({ status: "Accepted", requested, received: input.receivedAmount ?? requested })
       : "Rejected",
   });
+
+  requests.push(appendRowRequest(auditSheetIdVal, auditRow));
+  await batchUpdateSpreadsheet(workbook, requests);
 }

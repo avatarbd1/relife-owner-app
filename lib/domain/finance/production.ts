@@ -139,24 +139,26 @@ export async function requestExpense(
   context: AccessContext,
   input: ExpenseRequestInput
 ): Promise<{ expenseId: string; duplicate: boolean }> {
-  const result = await requestSheetsExpense(context, input);
-  await syncFinance({
-    requestId: input.requestId,
-    action: "finance.expense.request",
-    entityType: "Expense",
-    entityId: result.expenseId,
-    department: input.department,
-    status: "Pending",
-    amount: Number(input.amount),
-    actorId: context.staffId,
-    payload: {
-      category: normalize(input.category),
-      expenseType: input.expenseType || "Clinic Expense",
-      note: normalize(input.note),
-      sheetsDuplicate: result.duplicate,
-    },
+  return withMutationLock(`finance:expense:${input.department}`, async () => {
+    const result = await requestSheetsExpense(context, input);
+    await syncFinance({
+      requestId: input.requestId,
+      action: "finance.expense.request",
+      entityType: "Expense",
+      entityId: result.expenseId,
+      department: input.department,
+      status: "Pending",
+      amount: Number(input.amount),
+      actorId: context.staffId,
+      payload: {
+        category: normalize(input.category),
+        expenseType: input.expenseType || "Clinic Expense",
+        note: normalize(input.note),
+        sheetsDuplicate: result.duplicate,
+      },
+    });
+    return result;
   });
-  return result;
 }
 
 export async function decideExpense(input: {
@@ -166,38 +168,40 @@ export async function decideExpense(input: {
   actorId: string;
   reason?: string;
 }): Promise<void> {
-  const expected = input.decision === "approve" ? "Approved" : "Rejected";
-  let duplicate = false;
-  try {
-    await decideSheetsExpense(input);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (message !== "CONTROL_ALREADY_DECIDED" || financeDbMode() === "sheets") throw error;
-    const actual = await currentSheetStatus({
-      workbook: input.workbook,
-      sheet: "07_Expenses",
-      idHeader: "Expense_ID",
-      id: input.expenseId,
-    });
-    if (normalized(actual) !== normalized(expected)) throw error;
-    duplicate = true;
-  }
+  return withMutationLock(`finance:expense:${input.expenseId}`, async () => {
+    const expected = input.decision === "approve" ? "Approved" : "Rejected";
+    let duplicate = false;
+    try {
+      await decideSheetsExpense(input);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message !== "CONTROL_ALREADY_DECIDED" || financeDbMode() === "sheets") throw error;
+      const actual = await currentSheetStatus({
+        workbook: input.workbook,
+        sheet: "07_Expenses",
+        idHeader: "Expense_ID",
+        id: input.expenseId,
+      });
+      if (normalized(actual) !== normalized(expected)) throw error;
+      duplicate = true;
+    }
 
-  await syncFinance({
-    requestId: `FINEXDEC_${safeRequestPart(input.expenseId)}_${input.decision}`,
-    action:
-      input.decision === "approve"
-        ? "finance.expense.approve"
-        : "finance.expense.reject",
-    entityType: "Expense",
-    entityId: input.expenseId,
-    department: departmentForWorkbook(input.workbook),
-    status: expected,
-    actorId: input.actorId,
-    payload: {
-      reason: normalize(input.reason),
-      sheetsDuplicate: duplicate,
-    },
+    await syncFinance({
+      requestId: `FINEXDEC_${safeRequestPart(input.expenseId)}_${input.decision}`,
+      action:
+        input.decision === "approve"
+          ? "finance.expense.approve"
+          : "finance.expense.reject",
+      entityType: "Expense",
+      entityId: input.expenseId,
+      department: departmentForWorkbook(input.workbook),
+      status: expected,
+      actorId: input.actorId,
+      payload: {
+        reason: normalize(input.reason),
+        sheetsDuplicate: duplicate,
+      },
+    });
   });
 }
 
@@ -205,45 +209,49 @@ export async function payApprovedExpense(
   context: AccessContext,
   input: ExpensePayInput
 ): Promise<{ alreadyPaid: boolean }> {
-  const result = await paySheetsApprovedExpense(context, input);
-  await syncFinance({
-    requestId: `FINEXPAY_${safeRequestPart(input.expenseId)}`,
-    action: "finance.expense.pay",
-    entityType: "Expense",
-    entityId: input.expenseId,
-    department: input.department,
-    status: "Paid",
-    actorId: context.staffId,
-    payload: {
-      paidFrom: input.paidFrom,
-      sheetsDuplicate: result.alreadyPaid,
-    },
+  return withMutationLock(`finance:expense:${input.expenseId}`, async () => {
+    const result = await paySheetsApprovedExpense(context, input);
+    await syncFinance({
+      requestId: `FINEXPAY_${safeRequestPart(input.expenseId)}`,
+      action: "finance.expense.pay",
+      entityType: "Expense",
+      entityId: input.expenseId,
+      department: input.department,
+      status: "Paid",
+      actorId: context.staffId,
+      payload: {
+        paidFrom: input.paidFrom,
+        sheetsDuplicate: result.alreadyPaid,
+      },
+    });
+    return result;
   });
-  return result;
 }
 
 export async function requestCashMovement(
   context: AccessContext,
   input: CashRequestInput
 ): Promise<{ movementId: string; duplicate: boolean }> {
-  const result = await requestSheetsCashMovement(context, input);
-  await syncFinance({
-    requestId: input.requestId,
-    action: "finance.cash.request",
-    entityType: "CashMovement",
-    entityId: result.movementId,
-    department: input.department,
-    status: "Pending",
-    amount: Number(input.amount),
-    actorId: context.staffId,
-    payload: {
-      fromCustodian: "Reception",
-      toCustodian: input.toCustodian,
-      note: normalize(input.note),
-      sheetsDuplicate: result.duplicate,
-    },
+  return withMutationLock(`finance:cash:${input.department}`, async () => {
+    const result = await requestSheetsCashMovement(context, input);
+    await syncFinance({
+      requestId: input.requestId,
+      action: "finance.cash.request",
+      entityType: "CashMovement",
+      entityId: result.movementId,
+      department: input.department,
+      status: "Pending",
+      amount: Number(input.amount),
+      actorId: context.staffId,
+      payload: {
+        fromCustodian: "Reception",
+        toCustodian: input.toCustodian,
+        note: normalize(input.note),
+        sheetsDuplicate: result.duplicate,
+      },
+    });
+    return result;
   });
-  return result;
 }
 
 export async function decideCashMovement(input: {
@@ -253,39 +261,41 @@ export async function decideCashMovement(input: {
   actorId: string;
   receivedAmount?: number;
 }): Promise<void> {
-  const expected = input.decision === "accept" ? "Accepted" : "Rejected";
-  let duplicate = false;
-  try {
-    await decideSheetsCashMovement(input);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (message !== "CONTROL_ALREADY_DECIDED" || financeDbMode() === "sheets") throw error;
-    const actual = await currentSheetStatus({
-      workbook: input.workbook,
-      sheet: "21_Cash_Movement",
-      idHeader: "Movement_ID",
-      id: input.movementId,
-    });
-    if (normalized(actual) !== normalized(expected)) throw error;
-    duplicate = true;
-  }
+  return withMutationLock(`finance:cash:${input.movementId}`, async () => {
+    const expected = input.decision === "accept" ? "Accepted" : "Rejected";
+    let duplicate = false;
+    try {
+      await decideSheetsCashMovement(input);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message !== "CONTROL_ALREADY_DECIDED" || financeDbMode() === "sheets") throw error;
+      const actual = await currentSheetStatus({
+        workbook: input.workbook,
+        sheet: "21_Cash_Movement",
+        idHeader: "Movement_ID",
+        id: input.movementId,
+      });
+      if (normalized(actual) !== normalized(expected)) throw error;
+      duplicate = true;
+    }
 
-  await syncFinance({
-    requestId: `FINCMDEC_${safeRequestPart(input.movementId)}_${input.decision}`,
-    action:
-      input.decision === "accept"
-        ? "finance.cash.accept"
-        : "finance.cash.reject",
-    entityType: "CashMovement",
-    entityId: input.movementId,
-    department: departmentForWorkbook(input.workbook),
-    status: expected,
-    amount: input.receivedAmount,
-    actorId: input.actorId,
-    payload: {
-      receivedAmount: input.receivedAmount,
-      sheetsDuplicate: duplicate,
-    },
+    await syncFinance({
+      requestId: `FINCMDEC_${safeRequestPart(input.movementId)}_${input.decision}`,
+      action:
+        input.decision === "accept"
+          ? "finance.cash.accept"
+          : "finance.cash.reject",
+      entityType: "CashMovement",
+      entityId: input.movementId,
+      department: departmentForWorkbook(input.workbook),
+      status: expected,
+      amount: input.receivedAmount,
+      actorId: input.actorId,
+      payload: {
+        receivedAmount: input.receivedAmount,
+        sheetsDuplicate: duplicate,
+      },
+    });
   });
 }
 
@@ -293,7 +303,6 @@ export async function paySalary(
   context: AccessContext,
   input: SalaryPayInput
 ): Promise<{ paymentId: string; duplicate: boolean }> {
-  const result = await paySheetsSalary(context, input);
   const directory = await getWebStaffDirectory();
   const staff = directory.find(
     (item) => item.staffId === normalize(input.staffId) && item.status === "Active"
@@ -302,21 +311,25 @@ export async function paySalary(
   if (staff.primaryDepartment !== "Physio" && staff.primaryDepartment !== "Dental") {
     throw new Error("STAFF_DEPARTMENT_UNSUPPORTED");
   }
-  await syncFinance({
-    requestId: input.requestId,
-    action: "finance.salary.pay",
-    entityType: "SalaryPayment",
-    entityId: result.paymentId,
-    department: staff.primaryDepartment,
-    status: "Paid",
-    amount: Number(input.amount),
-    actorId: context.staffId,
-    staffId: normalize(input.staffId),
-    payload: {
-      paidFrom: input.paidFrom,
-      note: normalize(input.note),
-      sheetsDuplicate: result.duplicate,
-    },
+
+  return withMutationLock(`finance:salary:${staff.staffId}`, async () => {
+    const result = await paySheetsSalary(context, input);
+    await syncFinance({
+      requestId: input.requestId,
+      action: "finance.salary.pay",
+      entityType: "SalaryPayment",
+      entityId: result.paymentId,
+      department: staff.primaryDepartment,
+      status: "Paid",
+      amount: Number(input.amount),
+      actorId: context.staffId,
+      staffId: normalize(input.staffId),
+      payload: {
+        paidFrom: input.paidFrom,
+        note: normalize(input.note),
+        sheetsDuplicate: result.duplicate,
+      },
+    });
+    return result;
   });
-  return result;
 }
