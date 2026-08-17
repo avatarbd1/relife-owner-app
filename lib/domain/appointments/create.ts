@@ -8,6 +8,7 @@ import {
   validateSupabaseBookingPlan,
   type SupabaseValidatedBookingPlan,
 } from "@/lib/data/supabaseChamber";
+import { applyTherapistCapacityValidation } from "@/lib/domain/appointments/therapistCapacity";
 import type { AccessContext } from "@/lib/webos/access";
 import {
   createPhysioBooking,
@@ -71,6 +72,7 @@ function conflictType(value: string): BookingConflict["type"] {
   if (value === "gender_required") return "gender_required";
   if (value === "gender_rule") return "gender_rule";
   if (value === "machine_busy") return "machine_busy";
+  if (value === "therapist_busy") return "therapist_busy" as BookingConflict["type"];
   if (value === "bed_busy" || value === "no_bed") return "no_bed";
   return "schema";
 }
@@ -98,6 +100,23 @@ function addDatabaseConflicts(
     // surface a suggestion that may already be occupied in the cutover store.
     suggestions: [],
   };
+}
+
+function throwValidationConflict(validation: BookingValidationResult): never {
+  const primary = validation.conflicts[0];
+  const error = new Error(
+    `APPOINTMENT_CONFLICT:${primary?.type || "other"}:${primary?.message || "Booking conflict"}`
+  );
+  (error as Error & { validation?: BookingValidationResult }).validation = validation;
+  throw error;
+}
+
+async function sheetValidationWithTherapist(
+  context: AccessContext,
+  input: UnifiedPhysioBookingInput
+): Promise<BookingValidationResult> {
+  const validation = await validatePhysioBooking(context, input);
+  return applyTherapistCapacityValidation(input, validation);
 }
 
 async function syncReference(
@@ -168,7 +187,7 @@ export async function validateUnifiedPhysioBooking(
   context: AccessContext,
   input: UnifiedPhysioBookingInput
 ): Promise<BookingValidationResult> {
-  const sheets = await validatePhysioBooking(context, input);
+  const sheets = await sheetValidationWithTherapist(context, input);
   if (chamberDbMode() !== "supabase") return sheets;
   if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
   if (!sheets.isValid) return sheets;
@@ -183,6 +202,10 @@ export async function createUnifiedPhysioBooking(
   input: UnifiedPhysioBookingInput
 ): Promise<{ appointmentId: string; validation: BookingValidationResult }> {
   if (chamberDbMode() !== "supabase") {
+    // The API date-scoped mutation lock keeps this capacity pre-check and the
+    // existing atomic Sheets append in one serialized booking critical section.
+    const validation = await sheetValidationWithTherapist(context, input);
+    if (!validation.isValid) throwValidationConflict(validation);
     return createPhysioBooking(context, input);
   }
   if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
@@ -190,15 +213,8 @@ export async function createUnifiedPhysioBooking(
 
   // Re-run the proven Sheets rules on submit. The Edge transaction then checks
   // the Supabase side again under a tenant/date advisory lock before inserting.
-  const validation = await validatePhysioBooking(context, input);
-  if (!validation.isValid) {
-    const primary = validation.conflicts[0];
-    const error = new Error(
-      `APPOINTMENT_CONFLICT:${primary?.type || "other"}:${primary?.message || "Booking conflict"}`
-    );
-    (error as Error & { validation?: BookingValidationResult }).validation = validation;
-    throw error;
-  }
+  const validation = await sheetValidationWithTherapist(context, input);
+  if (!validation.isValid) throwValidationConflict(validation);
 
   await syncReference(context, validation);
   try {
