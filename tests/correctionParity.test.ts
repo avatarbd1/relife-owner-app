@@ -1,0 +1,49 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+function source(path: string): string {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+test("own correction list reads both Physio and Dental payments", () => {
+  const corrections = source("lib/webos/ownCorrections.ts");
+  assert.match(corrections, /\["Physio", "Dental"\] as ClinicDepartment\[\]/);
+  assert.match(corrections, /workbookFor\(department\)/);
+  assert.match(corrections, /payment\.correct_own_today/);
+});
+
+test("own same-day correction reverses patient Paid and Due before deleting payment", () => {
+  const corrections = source("lib/webos/ownCorrections.ts");
+  assert.match(corrections, /const newPaid = Math\.max\(0, currentPaid - amount\)/);
+  assert.match(corrections, /const restoredDueRaw = currentDue \+ amount \+ discount/);
+  assert.match(corrections, /updateCellRequest\(patientSheetId, patientRowNumber, paidIdx \+ 1, newPaid\)/);
+  assert.match(corrections, /updateCellRequest\(patientSheetId, patientRowNumber, dueIdx \+ 1, newDue\)/);
+  assert.match(corrections, /requests\.push\(deleteRowRequest\(paymentSheetId, paymentRowNumber\)\)/);
+});
+
+test("correction fails closed for another staff member, stale due, or non-latest payment", () => {
+  const corrections = source("lib/webos/ownCorrections.ts");
+  assert.match(corrections, /OWN_ENTRY_REQUIRED/);
+  assert.match(corrections, /STALE_PAYMENT_STATE/);
+  assert.match(corrections, /PAYMENT_NOT_LATEST_FOR_PATIENT/);
+  assert.match(corrections, /TODAY_ONLY_CORRECTION/);
+});
+
+test("Dental correction writes Dental audit/delete provenance instead of Physio identifiers", () => {
+  const corrections = source("lib/webos/ownCorrections.ts");
+  assert.match(corrections, /department === "Dental" \? "dental" : "physio"/);
+  assert.match(corrections, /department === "Dental" \? "RELIFE-DENTAL" : "RELIFE-PHYSIO"/);
+  assert.match(corrections, /Clinic_ID: clinic/);
+  assert.match(corrections, /Department: department/);
+});
+
+test("corrections API requires department and exact receipt confirmation", () => {
+  const route = source("app/api/corrections/route.ts");
+  const client = source("components/OwnCorrectionsClient.tsx");
+  assert.match(route, /deleteOwnLatestTodayPayment/);
+  assert.match(route, /department: body\.department/);
+  assert.match(route, /CONFIRMATION_MISMATCH/);
+  assert.match(client, /department: entry\.department/);
+  assert.match(client, /confirmReceiptNo: entry\.receiptNo/);
+});
