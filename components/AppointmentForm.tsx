@@ -306,7 +306,10 @@ export default function AppointmentForm({
   return (
     <div className="relative">
       {selectedPatient && (
-        <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-4 border-b border-slate-200 bg-gradient-to-b from-blue-50 to-white px-4 py-2.5 shadow-sm">
+        <div
+          className="sticky z-10 -mx-4 -mt-4 mb-4 border-b border-slate-200 bg-gradient-to-b from-blue-50 to-white px-4 py-2.5 shadow-sm"
+          style={{ top: "calc(max(env(safe-area-inset-top), 0.55rem) + 3.125rem)" }}
+        >
           <p className="text-xs text-slate-600">
             <span className="font-semibold text-blue-700">{selectedPatient.department}</span>
             <span className="mx-1.5">·</span>
