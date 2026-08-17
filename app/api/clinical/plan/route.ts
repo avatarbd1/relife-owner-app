@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { createTreatmentPlan } from "@/lib/webos/clinical";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function code(message: string) {
   if (message === "ACCESS_DENIED") return 403;
@@ -17,14 +18,17 @@ export async function POST(request: NextRequest) {
     const context = await requireCurrentAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await createTreatmentPlan(context, {
-      patientId: body.patientId,
-      diagnosis: body.diagnosis,
-      totalSessions: Number(body.totalSessions),
-      exercisePlan: body.exercisePlan,
-      electrotherapyPlan: body.electrotherapyPlan,
-      manualTherapyPlan: body.manualTherapyPlan,
-    });
+    const patientId = String(body.patientId || "").trim();
+    const result = await withMutationLock(`patient:Physio:${patientId}`, () =>
+      createTreatmentPlan(context, {
+        patientId,
+        diagnosis: body.diagnosis,
+        totalSessions: Number(body.totalSessions),
+        exercisePlan: body.exercisePlan,
+        electrotherapyPlan: body.electrotherapyPlan,
+        manualTherapyPlan: body.manualTherapyPlan,
+      })
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "PLAN_CREATE_FAILED";
