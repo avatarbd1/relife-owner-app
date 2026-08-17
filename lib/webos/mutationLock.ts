@@ -1,13 +1,28 @@
 import "server-only";
 
+import { createClient } from "@supabase/supabase-js";
+
 const mutationLocks = new Map<string, Promise<void>>();
+
+function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+function getInstanceId(): string {
+  return process.env.INSTANCE_ID || `render-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 /**
  * Serialize mutations that must perform a read-check-write sequence against
- * Google Sheets. This protects the current single-instance Render deployment
- * from duplicate/capacity races. It is intentionally process-local; if the web
- * service is ever scaled above one instance, replace this with a distributed
- * lock or a datastore-enforced uniqueness constraint before scaling.
+ * Google Sheets. Hybrid approach:
+ * - Primary: Distributed lock via Supabase (multi-instance safe)
+ * - Fallback: Process-local Map (single-instance fast path, or if Supabase unavailable)
+ *
+ * Google Sheets mutations happen outside DB transaction, so we use a lease-based
+ * distributed lock with timeout/expiry for safety.
  */
 export async function withMutationLock<T>(
   key: string,
@@ -16,21 +31,88 @@ export async function withMutationLock<T>(
   const normalizedKey = key.trim().toLowerCase();
   if (!normalizedKey) return fn();
 
-  const previous = mutationLocks.get(normalizedKey) || Promise.resolve();
+  const supabase = getSupabaseClient();
+  const instanceId = getInstanceId();
+
+  // Try distributed lock first (multi-instance safe)
+  if (supabase) {
+    return await withDistributedLock(normalizedKey, instanceId, fn, supabase);
+  }
+
+  // Fallback to process-local lock (single-instance or degraded mode)
+  return await withProcessLocalLock(normalizedKey, fn);
+}
+
+async function withDistributedLock<T>(
+  key: string,
+  instanceId: string,
+  fn: () => Promise<T>,
+  supabase: any
+): Promise<T> {
+  const lockTimeout = 30; // seconds
+  let lockToken: string | null = null;
+
+  try {
+    // Attempt to acquire distributed lock
+    const { data, error: acquireError } = await supabase.rpc("acquire_distributed_lock", {
+      p_lock_key: key,
+      p_owner_id: instanceId,
+      p_timeout_seconds: lockTimeout,
+    });
+
+    if (acquireError) {
+      console.warn("Distributed lock acquire failed, falling back to process-local:", acquireError);
+      return await withProcessLocalLock(key, fn);
+    }
+
+    if (!data?.acquired_by_caller) {
+      // Lock held by another instance, wait and retry
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return await withDistributedLock(key, instanceId, fn, supabase);
+    }
+
+    lockToken = data.token;
+
+    // Execute function under lock
+    try {
+      return await fn();
+    } finally {
+      // Release lock
+      if (lockToken) {
+        await supabase.rpc("release_distributed_lock", {
+          p_lock_key: key,
+          p_owner_id: instanceId,
+          p_token: lockToken,
+        }).catch((err: unknown) => {
+          console.error("Failed to release distributed lock:", err);
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Distributed lock error, falling back to process-local:", error);
+    return await withProcessLocalLock(key, fn);
+  }
+}
+
+async function withProcessLocalLock<T>(
+  key: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const previous = mutationLocks.get(key) || Promise.resolve();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
   const current = previous.then(() => gate);
-  mutationLocks.set(normalizedKey, current);
+  mutationLocks.set(key, current);
 
   await previous;
   try {
     return await fn();
   } finally {
     release();
-    if (mutationLocks.get(normalizedKey) === current) {
-      mutationLocks.delete(normalizedKey);
+    if (mutationLocks.get(key) === current) {
+      mutationLocks.delete(key);
     }
   }
 }
