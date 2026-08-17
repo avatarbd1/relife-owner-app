@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -26,6 +28,12 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
+      - name: PR impact and user-flow gate
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
+        run: node scripts/validate-pr-impact.mjs
       - name: Lint
         run: npm run lint
       - name: Domain tests
