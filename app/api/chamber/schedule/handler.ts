@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  createChamberScheduleBooking,
-  validateChamberSchedule,
-  type ChamberScheduleInput,
-} from "@/lib/domain/chamber/scheduler";
+  createUnifiedPhysioBooking,
+  validateUnifiedPhysioBooking,
+  type UnifiedPhysioBookingInput,
+} from "@/lib/domain/appointments/create";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
+import { withMutationLock } from "@/lib/webos/mutationLock";
+import { getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -56,13 +58,12 @@ function errorResponse(error: unknown): NextResponse {
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
-function parseInput(body: Record<string, unknown>): ChamberScheduleInput {
+function parseInput(body: Record<string, unknown>): UnifiedPhysioBookingInput {
   return {
     patientId: String(body.patientId || ""),
     date: String(body.date || ""),
     time: String(body.time || ""),
     therapist: String(body.therapist || ""),
-    requestedBedId: String(body.requestedBedId || ""),
     modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
     remarks: String(body.remarks || ""),
     requestId: String(body.requestId || ""),
@@ -93,12 +94,23 @@ export async function chamberSchedulePost(request: NextRequest) {
 
     if (action === "validate") {
       assertCanPerform(context, "appointment.create", "Physio");
-      const validation = await validateChamberSchedule(context, input);
+      const patient = await getPatientForContext(context, input.patientId);
+      if (!patient || patient.department !== "Physio") {
+        return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
+      }
+      const validation = await validateUnifiedPhysioBooking(context, input);
       return NextResponse.json({ ok: true, validation });
     }
     if (action === "create") {
       assertCanPerform(context, "appointment.create", "Physio");
-      const result = await createChamberScheduleBooking(context, input);
+      const patient = await getPatientForContext(context, input.patientId);
+      if (!patient || patient.department !== "Physio") {
+        return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
+      }
+      const lockKey = `appointment-create:${String(input.date || "")}`;
+      const result = await withMutationLock(lockKey, () =>
+        createUnifiedPhysioBooking(context, input)
+      );
       return NextResponse.json({ ok: true, ...result });
     }
 

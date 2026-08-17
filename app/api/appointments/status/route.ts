@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateUnifiedAppointmentStatus } from "@/lib/domain/appointments/status";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function code(message: string): number {
@@ -25,11 +26,15 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await updateUnifiedAppointmentStatus(context, {
-      appointmentId: body.appointmentId,
-      department: body.department,
-      status: body.status,
-    });
+    const appointmentId = String(body.appointmentId || "").trim();
+    const lockKey = `appointment-update:${appointmentId}`;
+    const result = await withMutationLock(lockKey, () =>
+      updateUnifiedAppointmentStatus(context, {
+        appointmentId,
+        department: body.department,
+        status: body.status,
+      })
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "APPOINTMENT_STATUS_FAILED";

@@ -59,32 +59,39 @@ Chamber is a **Physio-only operational domain**. No Dental patient enters chambe
 
 ## Appointment Authority Consolidation
 
-### Physio Booking Command
-
-Current state: Two separate Physio booking paths exist during migration.
+### Physio Booking Command (Consolidated in V1-C)
 
 **Canonical Command:** `createUnifiedPhysioBooking()`
-- Entry point: `/api/appointments` (POST)
-- Alternative entry point: `/api/chamber/schedule` (POST, action=create)
-- Lock: `appointment-create:${date}` (date-scoped, serializes bookings on same date)
-- Dependency: `createSupabaseValidatedBooking()` for Supabase mode or Sheets append for sheet mode
-- Concurrency guarantee: Same-date slot conflicts prevented, duplicate requests blocked via requestId
 
-**Compatibility aliases (deprecated, same handler):**
-- `/api/chamber/fixed-hour/route.ts` → chamberSchedulePost()
-- `/api/chamber/hourly-booking/route.ts` → chamberSchedulePost()
+**Entry points (all delegate to same command):**
+- `/api/appointments` (POST) — Primary entry point
+- `/api/chamber/schedule` (POST, action=create) — Delegates to createUnifiedPhysioBooking
+- `/api/chamber/fixed-hour/route.ts` → `/api/chamber/schedule` → createUnifiedPhysioBooking
+- `/api/chamber/hourly-booking/route.ts` → `/api/chamber/schedule` → createUnifiedPhysioBooking
 
-**Dental Booking Command:** `createAppointment()`
+**Lock:** `appointment-create:${date}` (date-scoped, serializes bookings on same date)
+
+**Validation:** Single canonical `validateUnifiedPhysioBooking()` shared by all entry points
+
+**Concurrency guarantee:** Same-date slot conflicts prevented, duplicate requests blocked via requestId
+
+**Mode support:**
+- Sheets mode: Atomic append with therapist capacity check
+- Supabase mode: Edge-validated advisory lock before insert
+
+**Consolidation Invariant (V1-C):** All Physio booking routes to one command with shared validation, locking, and idempotency. No second Physio writer evolves independently. Fixed-hour/hourly-booking are compatibility aliases only (no separate implementation).
+
+### Dental Booking Command
+
+**Canonical Command:** `createAppointment()`
 - Entry point: `/api/appointments` (POST)
 - Lock: `appointment-create:${date}` (same lock as Physio, date-scoped)
 - No separate chamber scheduler (Dental does not use Physio chamber resource pool)
 - Authorization: assertCanPerform(context, "appointment.create", patient.department)
 
-**Consolidation Invariant:** All Physio booking must route through one command. No second Physio writer should evolve independently. All paths must share the same validation, concurrency, and authorization boundaries.
-
 ## Appointment Concurrency Hardening
 
-### Lock Scope: Date-Scoped Per-Department
+### Lock Scope: Appointment Creation (Date-Scoped)
 
 **Lock key:** `appointment-create:${date}`
 
@@ -105,9 +112,31 @@ Current state: Two separate Physio booking paths exist during migration.
 - Fail-closed in production mode (required=true)
 - Lease-based semantics with heartbeat renewal ~10s, 30s deadline
 
-### Appointment Status/Update Mutations
+**Applies to:** createPhysioBooking (via /api/appointments or /api/chamber/schedule)
 
-Appointment status updates (reschedule, cancel, no-show) must also be audited for read-check-write races. Current implementation calls `updateUnifiedAppointmentStatus()` which validates department match via patient record fetch before proceeding. Lock scope: per-appointment (if future optimization needed).
+### Appointment Status/Update Mutations (V1-C Hardening)
+
+**Lock key:** `appointment-update:${appointmentId}`
+
+**Critical section covers:**
+1. Appointment record fetch (read)
+2. Department match validation
+3. Status transition validation
+4. Status update write
+5. Audit log append
+
+**Properties:**
+- Per-appointment serialization (different appointments proceed in parallel)
+- Prevents concurrent status modification races
+- Validates department consistency before write
+- Fail-closed in production mode
+
+**Entry point:** `POST /api/appointments/status`
+
+**Protection against:**
+- Concurrent status write races
+- Status change before department check completes
+- Audit inconsistency from concurrent writes
 
 ## Chamber Concurrency Hardening
 
