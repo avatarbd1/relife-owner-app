@@ -336,35 +336,56 @@ function PlanForm({
 function SessionForm({
   patientId,
   activePlan,
+  sessions,
   onSaved,
   online,
 }: {
   patientId: string;
   activePlan: Workspace["activePlan"];
+  sessions: Workspace["sessions"];
   onSaved: (message: string) => void;
   online: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [painBefore, setPainBefore] = useState("");
   const [painAfter, setPainAfter] = useState("");
+  const [response, setResponse] = useState("");
+  const [modification, setModification] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const lastSession = sessions[0];
+  const painTrend = lastSession
+    ? {
+        lastBefore: painNumber(lastSession.painBefore),
+        lastAfter: painNumber(lastSession.painAfter),
+      }
+    : null;
+
+  function copyFromLastSession() {
+    if (!lastSession) return;
+    haptic("tap");
+    setResponse(lastSession.response || "");
+    setModification(lastSession.modification || "");
+    setRemarks(lastSession.remarks || "");
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!online) return onSaved("✕ Internet connection required");
-    const form = new FormData(event.currentTarget);
     setBusy(true);
     try {
       const result = await post("/api/clinical/session", {
         patientId,
         painBefore,
         painAfter,
-        response: form.get("response"),
-        modification: form.get("modification"),
-        remarks: form.get("remarks"),
+        response,
+        modification,
+        remarks,
       });
-      event.currentTarget.reset();
       setPainBefore("");
       setPainAfter("");
+      setResponse("");
+      setModification("");
+      setRemarks("");
       onSaved(`✓ Session ${String(result.sessionNo || "")} saved`);
     } catch (error) {
       onSaved(`✕ ${error instanceof Error ? error.message : "Session save failed"}`);
@@ -398,20 +419,69 @@ function SessionForm({
         <ProgressBar value={planProgress} label="Plan progress" className="mt-3" />
       </div>
 
+      {lastSession && painTrend && (
+        <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+          <p className="text-[11px] font-semibold text-amber-900">Last session · {lastSession.date}</p>
+          <div className="mt-2 flex gap-2">
+            {painTrend.lastBefore !== null && (
+              <div className="flex-1">
+                <p className="text-[10px] text-amber-700">Before</p>
+                <StatusBadge tone={painTone(String(painTrend.lastBefore))}>{painTrend.lastBefore}/10</StatusBadge>
+              </div>
+            )}
+            {painTrend.lastAfter !== null && (
+              <div className="flex-1">
+                <p className="text-[10px] text-amber-700">After</p>
+                <StatusBadge tone={painTone(String(painTrend.lastAfter))}>{painTrend.lastAfter}/10</StatusBadge>
+              </div>
+            )}
+          </div>
+          {lastSession.response && (
+            <p className="mt-2 text-[11px] leading-4 text-amber-800"><strong>Response:</strong> {lastSession.response.slice(0, 80)}…</p>
+          )}
+        </div>
+      )}
+
       <PainScale value={painBefore} onChange={setPainBefore} label="Pain before · 1–10" />
       <PainScale value={painAfter} onChange={setPainAfter} label="Pain after · 1–10" />
 
       <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Response to treatment</label>
-        <textarea name="response" placeholder="Response to treatment" className={textareaClass} />
+        <div className="mb-1.5 flex items-center justify-between gap-3">
+          <label className="block text-xs font-semibold text-slate-700">Response to treatment</label>
+          {lastSession && (
+            <button
+              type="button"
+              onClick={copyFromLastSession}
+              className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 underline"
+            >
+              📋 Copy from last
+            </button>
+          )}
+        </div>
+        <textarea
+          value={response}
+          onChange={(e) => setResponse(e.target.value)}
+          placeholder="Response to treatment"
+          className={textareaClass}
+        />
       </div>
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Modification / progression</label>
-        <textarea name="modification" placeholder="Progression, regression, changes…" className={textareaClass} />
+        <textarea
+          value={modification}
+          onChange={(e) => setModification(e.target.value)}
+          placeholder="Progression, regression, changes…"
+          className={textareaClass}
+        />
       </div>
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Daily note</label>
-        <textarea name="remarks" placeholder="Daily treatment note / remarks" className={textareaClass} />
+        <textarea
+          value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="Daily treatment note / remarks"
+          className={textareaClass}
+        />
       </div>
       <button
         disabled={busy || !online}
@@ -615,7 +685,13 @@ export default function ClinicalWorkspaceClient({
         <div className="space-y-4 relife-fade-in">
           <Panel title="Today treatment / daily note" subtitle="Pain before/after, response and progression" badge={canExecute ? <StatusBadge tone="success">Execution</StatusBadge> : <StatusBadge tone="neutral">Read only</StatusBadge>}>
             {canExecute ? (
-              <SessionForm patientId={workspace.patient.patientId} activePlan={workspace.activePlan} onSaved={saved} online={online} />
+              <SessionForm
+                patientId={workspace.patient.patientId}
+                activePlan={workspace.activePlan}
+                sessions={workspace.sessions}
+                onSaved={saved}
+                online={online}
+              />
             ) : latestSession ? (
               <SessionSummary session={latestSession} />
             ) : (
