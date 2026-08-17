@@ -9,7 +9,6 @@ import {
   workbookForDepartment,
 } from "@/lib/config/relifeSystem";
 import {
-  appendSheetValues,
   batchUpdateSpreadsheet,
   fetchSheetRanges,
   getSheetProperties,
@@ -145,55 +144,6 @@ function requireSheetId(map: Map<string, number>, title: string): number {
   return id;
 }
 
-async function appendPaymentAudit(input: {
-  workbook: Workbook;
-  actorId: string;
-  receiptNo: string;
-  patientId: string;
-  department: ClinicDepartment;
-  amount: number;
-  discount: number;
-  due: number;
-  paymentMethod: string;
-}): Promise<void> {
-  const now = dhakaClockParts();
-  const clinic = ledgerClinicId(input.department);
-  try {
-    await appendSheetValues(input.workbook, "'20_Data_Audit'!A:W", [[
-      `AUD-${randomUUID()}`,
-      now.timestamp,
-      input.actorId,
-      "PAYMENT_CREATED",
-      "Payment",
-      input.receiptNo,
-      input.patientId,
-      "",
-      JSON.stringify({
-        amount: input.amount,
-        discount: input.discount,
-        due: input.due,
-        paymentMethod: input.paymentMethod,
-      }),
-      "Finance domain action",
-      RELIFE_SYSTEM.organizationId,
-      clinic,
-      RELIFE_SYSTEM.branchId,
-      relifeRecordId(input.department, input.receiptNo),
-      "",
-      input.actorId,
-      RELIFE_SYSTEM.sourceSystem,
-      RELIFE_SYSTEM.sourceType,
-      false,
-      true,
-      RELIFE_SYSTEM.schemaVersion,
-      now.provenance,
-      input.department,
-    ]]);
-  } catch (error) {
-    console.error("Finance payment audit append failed:", error);
-  }
-}
-
 export async function createPayment(
   context: AccessContext,
   input: PaymentCreateInput
@@ -235,6 +185,15 @@ export async function createPayment(
     };
   }
 
+  const ids = await sheetIds(workbook);
+  const patientSheetId = requireSheetId(ids, "02_Patients");
+  const paymentSheetId = requireSheetId(ids, "06_Payments");
+  const auditSheetId = requireSheetId(ids, "20_Data_Audit");
+  const auditSnapshot = await fetchSheetRanges(workbook, ["20_Data_Audit"]);
+  const auditRows = auditSnapshot["20_Data_Audit"] || [];
+  if (auditRows.length < 1) throw new Error("SCHEMA_MISMATCH");
+  const auditHeaders = auditRows[0];
+
   const patientHeaders = patientRows[0];
   ensureHeaders(patientHeaders, [
     "Patient_ID",
@@ -257,6 +216,31 @@ export async function createPayment(
     "Payment_Method",
     "Received_By",
     "Remarks",
+  ]);
+  ensureHeaders(auditHeaders, [
+    "Audit_ID",
+    "Timestamp",
+    "Actor_ID",
+    "Action",
+    "Entity_Type",
+    "Entity_ID",
+    "Patient_ID",
+    "Before_Value",
+    "After_Value",
+    "Reason",
+    "Organization_ID",
+    "Clinic_ID",
+    "Branch_ID",
+    "Record_ID",
+    "Encounter_ID",
+    "Provider_ID",
+    "Source_System",
+    "Source_Type",
+    "AI_Generated",
+    "Human_Verified",
+    "Schema_Version",
+    "Provenance_Timestamp",
+    "Department",
   ]);
 
   const patientIdIdx = headerIndex(patientHeaders, "Patient_ID");
@@ -335,10 +319,37 @@ export async function createPayment(
     Schema_Version: RELIFE_SYSTEM.schemaVersion,
     Provenance_Timestamp: now.provenance,
   });
+  const auditRow = rowForHeaders(auditHeaders, {
+    Audit_ID: `AUD-${randomUUID()}`,
+    Timestamp: now.timestamp,
+    Actor_ID: context.staffId,
+    Action: "PAYMENT_CREATED",
+    Entity_Type: "Payment",
+    Entity_ID: receiptNo,
+    Patient_ID: patientId,
+    Before_Value: "",
+    After_Value: JSON.stringify({
+      amount,
+      discount,
+      due: newDue,
+      paymentMethod: method,
+    }),
+    Reason: "Finance domain action",
+    Organization_ID: RELIFE_SYSTEM.organizationId,
+    Clinic_ID: ledgerClinicId(department),
+    Branch_ID: RELIFE_SYSTEM.branchId,
+    Record_ID: relifeRecordId(department, receiptNo),
+    Encounter_ID: "",
+    Provider_ID: context.staffId,
+    Source_System: RELIFE_SYSTEM.sourceSystem,
+    Source_Type: RELIFE_SYSTEM.sourceType,
+    AI_Generated: false,
+    Human_Verified: true,
+    Schema_Version: RELIFE_SYSTEM.schemaVersion,
+    Provenance_Timestamp: now.provenance,
+    Department: department,
+  });
 
-  const ids = await sheetIds(workbook);
-  const patientSheetId = requireSheetId(ids, "02_Patients");
-  const paymentSheetId = requireSheetId(ids, "06_Payments");
   const requests: SpreadsheetBatchRequest[] = [
     updateCellRequest(patientSheetId, rowNumber, paidIdx + 1, newPaid),
     updateCellRequest(patientSheetId, rowNumber, dueIdx + 1, newDue),
@@ -349,18 +360,8 @@ export async function createPayment(
     requests.push(updateCellRequest(patientSheetId, rowNumber, advanceIdx + 1, newAdvance));
   }
   requests.push(appendRowRequest(paymentSheetId, paymentRow));
+  requests.push(appendRowRequest(auditSheetId, auditRow));
 
   await batchUpdateSpreadsheet(workbook, requests);
-  await appendPaymentAudit({
-    workbook,
-    actorId: context.staffId,
-    receiptNo,
-    patientId,
-    department,
-    amount,
-    discount,
-    due: newDue,
-    paymentMethod: method,
-  });
   return { receiptNo, due: newDue, duplicate: false };
 }
