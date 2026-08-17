@@ -73,9 +73,11 @@ function dhakaNow(ref = new Date()) {
   }).formatToParts(ref);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const date = `${values.year}-${values.month}-${values.day}`;
+  const time = `${values.hour}:${values.minute}`;
   return {
     date,
-    timestamp: `${date} ${values.hour}:${values.minute}`,
+    time,
+    timestamp: `${date} ${time}`,
     provenance: ref.toISOString(),
   };
 }
@@ -140,23 +142,23 @@ function appendRowRequest(sheetId: number, row: SheetValue[]): SpreadsheetBatchR
   };
 }
 
-function deleteRowRequest(sheetId: number, rowNumber: number): SpreadsheetBatchRequest {
-  return {
-    deleteDimension: {
-      range: {
-        sheetId,
-        dimension: "ROWS",
-        startIndex: rowNumber - 1,
-        endIndex: rowNumber,
-      },
-    },
-  };
-}
-
 function requireSheetId(map: Map<string, number>, title: string): number {
   const id = map.get(title);
   if (typeof id !== "number") throw new Error("CORRECTION_SCHEMA_MISMATCH");
   return id;
+}
+
+function reversalReceipt(existing: Set<string>): string {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const id = `RVW${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+    if (!existing.has(id)) return id;
+  }
+  throw new Error("ID_ALLOCATION_FAILED");
+}
+
+function reversalOf(remarks: string): string {
+  const match = /(?:^|\s|\|)REVERSAL_OF:([A-Za-z0-9_-]+)/i.exec(remarks);
+  return match ? match[1] : "";
 }
 
 async function listDepartmentEntries(
@@ -177,7 +179,15 @@ async function listDepartmentEntries(
   const receiptIdx = idx("Receipt_No", "Receipt");
   const departmentIdx = idx("Department");
   const receivedByIdx = idx("Received_By", "Created_By", "Staff", "Staff_Name");
+  const remarksIdx = idx("Remarks");
   if (dateIdx < 0 || receiptIdx < 0 || receivedByIdx < 0) return [];
+
+  const reversedReceipts = new Set(
+    rows
+      .slice(1)
+      .map((row) => reversalOf(at(row, remarksIdx)))
+      .filter(Boolean)
+  );
 
   return rows
     .slice(1)
@@ -185,10 +195,12 @@ async function listDepartmentEntries(
       if (at(row, dateIdx) !== today) return [];
       const rowDepartment = at(row, departmentIdx);
       if (rowDepartment && normalized(rowDepartment) !== normalized(department)) return [];
+      const remarks = at(row, remarksIdx);
+      if (reversalOf(remarks)) return [];
       const receivedBy = at(row, receivedByIdx);
       if (!identityMatches(receivedBy, staffId, fullName)) return [];
       const receiptNo = at(row, receiptIdx);
-      if (!receiptNo) return [];
+      if (!receiptNo || reversedReceipts.has(receiptNo)) return [];
       return [{
         receiptNo,
         department,
@@ -278,9 +290,11 @@ export async function deleteOwnLatestTodayPayment(
   const departmentIdx = pidx("Department");
   const patientIdIdx = pidx("Patient_ID");
   const dateIdx = pidx("Date");
+  const slIdx = pidx("SL");
   const amountIdx = pidx("Amount");
   const discountIdx = pidx("Discount");
   const duePaymentIdx = pidx("Due");
+  const remarksIdx = pidx("Remarks");
   const receivedByIdx = pidx("Received_By", "Created_By", "Staff", "Staff_Name");
   if ([receiptIdx, patientIdIdx, dateIdx, receivedByIdx].some((index) => index < 0)) {
     throw new Error("CORRECTION_SCHEMA_MISMATCH");
@@ -291,7 +305,6 @@ export async function deleteOwnLatestTodayPayment(
     .findIndex((row) => at(row, receiptIdx) === receiptNo);
   if (dataIndex < 0) throw new Error("PAYMENT_NOT_FOUND");
   const paymentRow = paymentRows[dataIndex + 1];
-  const paymentRowNumber = dataIndex + 2;
   const rowDepartment = at(paymentRow, departmentIdx);
   if (rowDepartment && normalized(rowDepartment) !== normalized(department)) {
     throw new Error("ACCESS_DENIED");
@@ -307,6 +320,12 @@ export async function deleteOwnLatestTodayPayment(
   ) {
     throw new Error("OWN_ENTRY_REQUIRED");
   }
+
+  const reversalMarker = `REVERSAL_OF:${receiptNo}`;
+  const alreadyReversed = paymentRows
+    .slice(1)
+    .some((row) => at(row, remarksIdx).includes(reversalMarker));
+  if (alreadyReversed) throw new Error("PAYMENT_ALREADY_REVERSED");
 
   const patientId = at(paymentRow, patientIdIdx);
   if (!patientId) throw new Error("PAYMENT_PATIENT_MISSING");
@@ -431,7 +450,7 @@ export async function deleteOwnLatestTodayPayment(
       rowForHeaders(deleteRows[0], {
         Timestamp: now.timestamp,
         Deleted_By: context.staffId,
-        Type: amount > 0 ? "Payment" : "Session",
+        Type: amount > 0 ? "Payment Reversal" : "Session Reversal",
         Receipt_No: receiptNo,
         Patient_ID: patientId,
         Patient_Name: at(paymentRow, pidx("Patient_Name")),
@@ -453,6 +472,49 @@ export async function deleteOwnLatestTodayPayment(
       })
     )
   );
+
+  const existingReceipts = new Set(
+    paymentRows.slice(1).map((row) => at(row, receiptIdx)).filter(Boolean)
+  );
+  const reversalReceiptNo = reversalReceipt(existingReceipts);
+  const dailySl =
+    paymentRows
+      .slice(1)
+      .filter((row) => at(row, dateIdx) === now.date)
+      .reduce((max, row) => Math.max(max, num(at(row, slIdx))), 0) + 1;
+  requests.push(
+    appendRowRequest(
+      paymentSheetId,
+      rowForHeaders(ph, {
+        Receipt_No: reversalReceiptNo,
+        Date: now.date,
+        SL: dailySl,
+        Patient_ID: patientId,
+        Patient_Name: at(paymentRow, pidx("Patient_Name")),
+        Department: department,
+        Amount: -amount,
+        Discount: -discount,
+        Due: newDue,
+        Payment_Method: at(paymentRow, pidx("Payment_Method")) || "Cash",
+        Received_By: context.staffId,
+        Remarks: `${reversalMarker} | append-only correction`,
+        Time: now.time,
+        Session_Type: at(paymentRow, pidx("Session_Type")),
+        Organization_ID: "RELIFE",
+        Clinic_ID: clinic,
+        Branch_ID: "AMTALI-01",
+        Record_ID: `${clinic}:${reversalReceiptNo}`,
+        Provider_ID: context.staffId,
+        Source_System: "web_pwa",
+        Source_Type: "payment_reversal",
+        AI_Generated: false,
+        Human_Verified: true,
+        Schema_Version: "relife-uda-v1",
+        Provenance_Timestamp: now.provenance,
+      })
+    )
+  );
+
   const auditId = `AUD-${randomUUID()}`;
   requests.push(
     appendRowRequest(
@@ -461,18 +523,21 @@ export async function deleteOwnLatestTodayPayment(
         Audit_ID: auditId,
         Timestamp: now.timestamp,
         Actor_ID: context.staffId,
-        Action: "payment.delete_own_today_with_reversal",
+        Action: "payment.reverse_own_today_append_only",
         Entity_Type: "Payment",
         Entity_ID: receiptNo,
         Patient_ID: patientId,
         Before_Value: rawData,
         After_Value: JSON.stringify({
+          reversalReceiptNo,
           newPaid,
           newDue,
           newAdvance,
+          reversedAmount: amount,
+          reversedDiscount: discount,
           reversedSessions: sessions,
         }),
-        Reason: "Telegram parity: own same-day latest-entry correction",
+        Reason: "Append-only own same-day latest-entry correction; original payment preserved",
         Organization_ID: "RELIFE",
         Clinic_ID: clinic,
         Branch_ID: "AMTALI-01",
@@ -488,7 +553,6 @@ export async function deleteOwnLatestTodayPayment(
       })
     )
   );
-  requests.push(deleteRowRequest(paymentSheetId, paymentRowNumber));
   await batchUpdateSpreadsheet(workbook, requests);
 
   return {
