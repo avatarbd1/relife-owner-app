@@ -14,4 +14,6 @@ Automated evidence: `tests/paymentConcurrency.test.ts`.
 
 Known boundary: the lock is process-local. Multi-instance/distributed locking remains explicitly deferred to PR #92.
 
+CI note: this update retriggers validation after the PR impact/user-flow body was finalized.
+
 Rollback: revert PR #90 merge commit. This restores the pre-PR payment execution path without changing Sheet schema or existing payment data.
