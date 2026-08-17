@@ -7,6 +7,10 @@ import {
   getSalaryPayments,
   getCashMovements,
 } from "@/lib/data";
+import {
+  cashBusinessDate,
+  isCashCustodyLedgerDate,
+} from "@/lib/domain/finance/cashBusinessDay";
 import type { Scope } from "@/lib/types";
 
 export interface ScopedCashPosition {
@@ -17,17 +21,6 @@ export interface ScopedCashPosition {
 }
 
 type Custodian = "Reception" | "HomeTreasury" | "Bank";
-
-function bdDateKey(ref: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(ref);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-}
 
 function normalizedDate(value: string | undefined): string {
   return String(value || "").trim().slice(0, 10);
@@ -99,16 +92,13 @@ export async function getScopedCashPosition(
     getExpenses(),
     getSalaryPayments(),
   ]);
-  const today = bdDateKey(now);
-  const month = today.slice(0, 7);
-  const inCurrentMonthToDate = (date: string) => {
-    const key = normalizedDate(date);
-    return key.startsWith(month) && key <= today;
-  };
+  const asOfBusinessDate = cashBusinessDate(now);
+  const inCustodyLedgerToDate = (date: string) =>
+    isCashCustodyLedgerDate(normalizedDate(date), asOfBusinessDate);
 
   for (const payment of payments) {
     if (!scopeAllowsDepartment(scope, payment.department)) continue;
-    if (!inCurrentMonthToDate(payment.date)) continue;
+    if (!inCustodyLedgerToDate(payment.date)) continue;
     applyDelta(
       position,
       payment.paymentMethod === "Cash" ? "Reception" : "Bank",
@@ -118,7 +108,7 @@ export async function getScopedCashPosition(
 
   for (const expense of expenses) {
     if (!scopeAllowsDepartment(scope, expense.department)) continue;
-    if (!inCurrentMonthToDate(expense.date) || !isPaid(expense.status)) continue;
+    if (!inCustodyLedgerToDate(expense.date) || !isPaid(expense.status)) continue;
     applyDelta(
       position,
       normalizeCustodian(expense.paidFrom || expense.paymentMethod),
@@ -128,13 +118,13 @@ export async function getScopedCashPosition(
 
   for (const salary of salaryPayments) {
     if (!scopeAllowsDepartment(scope, salary.department)) continue;
-    if (!inCurrentMonthToDate(effectivePaidDate(salary)) || !isPaid(salary.status)) continue;
+    if (!inCustodyLedgerToDate(effectivePaidDate(salary)) || !isPaid(salary.status)) continue;
     applyDelta(position, normalizeCustodian(salary.paidFrom), -salary.amount);
   }
 
   for (const movement of movements) {
     if (!scopeAllowsDepartment(scope, movement.department)) continue;
-    if (!inCurrentMonthToDate(movement.date)) continue;
+    if (!inCustodyLedgerToDate(movement.date)) continue;
     if (String(movement.status || "").trim().toLowerCase() !== "accepted") continue;
     const amount = movement.receivedAmount ?? movement.amount;
     applyDelta(position, normalizeCustodian(movement.fromCustodian), -amount);

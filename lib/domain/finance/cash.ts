@@ -17,6 +17,7 @@ import {
   type SpreadsheetBatchRequest,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import { cashBusinessDate } from "@/lib/domain/finance/cashBusinessDay";
 import type { ClinicDepartment } from "@/lib/domain/finance/expenses";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
@@ -236,11 +237,13 @@ export async function requestCashMovement(
 
   const existingIds = new Set(rows.slice(1).map((row) => at(row, idIdx)).filter(Boolean));
   const movementId = nextEntityId(existingIds);
-  const now = dhakaClockParts();
+  const clockRef = new Date();
+  const now = dhakaClockParts(clockRef);
+  const businessDate = cashBusinessDate(clockRef);
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
   const row = rowForHeaders(headers, {
     Movement_ID: movementId,
-    Date: now.date,
+    Date: businessDate,
     From_Custodian: "Reception",
     To_Custodian: input.toCustodian,
     Amount: amount,
