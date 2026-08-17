@@ -131,3 +131,5 @@ Before merge/deploy:
 - V1-A finance behavior must remain green.
 - Latest PR head must pass impact gate, lint, domain tests, and production build.
 - No fake production patient, clinical, appointment or finance write is required for verification.
+
+Validation authority: GitHub CI on the exact PR head is required before merge readiness is reported.
