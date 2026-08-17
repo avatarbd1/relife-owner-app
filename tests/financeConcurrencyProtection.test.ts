@@ -11,6 +11,17 @@ interface FakeLock {
   acquired_at: Date;
 }
 
+interface AcquireLockResponse {
+  lock_key: string;
+  owner_id: string;
+  token: string;
+  acquired_at: string;
+  expires_at: string;
+  status: string;
+  acquired_by_caller: boolean;
+  is_expired: boolean;
+}
+
 class FakeSupabaseClient {
   private locks = new Map<string, FakeLock>();
 
@@ -173,8 +184,9 @@ async function withDistributedLock<T>(
         throw new Error(`Supabase RPC failed: ${acquireError.message}`);
       }
 
-      if ((data as any)?.acquired_by_caller) {
-        lockToken = (data as any).token;
+      const acquireResponse = data as AcquireLockResponse;
+      if (acquireResponse?.acquired_by_caller) {
+        lockToken = acquireResponse.token;
         ownerId = uniqueOwnerId;
 
         try {
@@ -187,7 +199,7 @@ async function withDistributedLock<T>(
                   p_token: lockToken,
                   p_timeout_seconds: lockTimeout,
                 });
-              } catch (error) {
+              } catch {
                 // Silently handle renewal errors
               }
             }
@@ -206,7 +218,7 @@ async function withDistributedLock<T>(
                 p_owner_id: ownerId,
                 p_token: lockToken,
               });
-            } catch (error) {
+            } catch {
               // Silently handle release errors
             }
           }
@@ -316,7 +328,7 @@ describe("Finance concurrency protection - real lock semantics", () => {
       await withDistributedLock("exception-test", "instance1", async () => {
         throw new Error("test error");
       }, fakeSupabase);
-    } catch (error) {
+    } catch {
       errorThrown = true;
     }
 
@@ -439,12 +451,21 @@ describe("Finance concurrency protection - real lock semantics", () => {
 
     let renewCalls = 0;
     const originalRpc = fakeSupabase.rpc.bind(fakeSupabase);
-    (fakeSupabase as any).rpc = async function (method: string, params: Record<string, unknown>) {
+
+    // Wrap rpc to count renewal calls
+    const wrappedRpc = async (method: string, params: Record<string, unknown>) => {
       if (method === "renew_distributed_lock") {
         renewCalls++;
       }
       return originalRpc(method, params);
     };
+
+    // Replace rpc method while preserving type safety
+    Object.defineProperty(fakeSupabase, "rpc", {
+      value: wrappedRpc,
+      writable: true,
+      configurable: true,
+    });
 
     // Acquire and hold for 11+ seconds (renewal interval is ~10s for 30s lease)
     await withDistributedLock("renewal-test", "instance1", async () => {
