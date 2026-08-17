@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { findActivePatientConflict } from "@/lib/domain/chamber/patientConcurrency";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import {
   completeChamberRuntimeSession,
@@ -11,6 +12,7 @@ import { assignChamberTherapist } from "@/lib/webos/chamberAssignment";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function statusFor(message: string): number {
   if (["ACCESS_DENIED", "THERAPIST_NOT_ASSIGNED"].includes(message)) return 403;
@@ -19,6 +21,7 @@ function statusFor(message: string): number {
   if (
     message.startsWith("CHAMBER_CAPACITY:") ||
     message.startsWith("CHAMBER_RUNTIME_CONFLICT:") ||
+    message.startsWith("CHAMBER_PATIENT_ALREADY_ACTIVE:") ||
     message.startsWith("RESOURCE_BUSY:") ||
     ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING", "APPOINTMENT_NOT_ACTIVE"].includes(message)
   ) return 409;
@@ -53,7 +56,43 @@ export async function POST(request: NextRequest) {
 
     const action = String(body.action || "");
     if (action === "receive") {
-      const result = await receiveChamberRuntimePatient(context, body.appointmentId);
+      const appointmentId = String(body.appointmentId || "").trim();
+      // Serialize receive across appointments so two taps for different bookings
+      // of the same patient cannot both pass the active-patient snapshot check.
+      const result = await withMutationLock("chamber-receive", async () => {
+        const snapshot = await getChamberRuntimeSnapshot(context);
+        const target = snapshot.queue.find((item) => item.appointmentId === appointmentId);
+        if (target) {
+          const activity = [
+            ...snapshot.stations.flatMap((station) =>
+              station.session
+                ? [{
+                    appointmentId: station.session.appointmentId,
+                    patientId: station.session.patientId,
+                    status: station.session.status,
+                  }]
+                : []
+            ),
+            ...snapshot.queue.flatMap((item) =>
+              item.sessionId
+                ? [{
+                    appointmentId: item.appointmentId,
+                    patientId: item.patientId,
+                    status: item.sessionStatus,
+                  }]
+                : []
+            ),
+          ];
+          const conflict = findActivePatientConflict(
+            { appointmentId, patientId: target.patientId },
+            activity
+          );
+          if (conflict) {
+            throw new Error(`CHAMBER_PATIENT_ALREADY_ACTIVE:${conflict.appointmentId}`);
+          }
+        }
+        return receiveChamberRuntimePatient(context, appointmentId);
+      });
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "assign_therapist") {
