@@ -114,7 +114,7 @@ test("Treatment-plan and session read-check-write logic remains inside the locke
   const session = clinical.slice(sessionStart);
 
   assert.match(plan, /fetchSheetRanges\("physio", \["12_Treatment_Plans"\]\)/);
-  assert.match(plan, /status\.toLowerCase\(\) === "active"/);
+  assert.match(plan, /at\(rows\[i\], statusIdx\)\.toLowerCase\(\) === "active"/);
   assert.match(plan, /value: "Superseded"/);
 
   assert.match(session, /fetchSheetRanges\("physio", \["12_Treatment_Plans", "05_Treatments"\]\)/);
