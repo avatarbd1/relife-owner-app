@@ -2,29 +2,16 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import DailyOperationsClient from "@/components/DailyOperationsClient";
 import { PageHeading } from "@/components/WorkspaceUI";
-import { getPayments } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { getDailyOperationsSnapshot } from "@/lib/webos/attendance";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 function department(value: string): Department | null {
   if (value === "Physio" || value === "Dental" || value === "All") return value;
   return null;
-}
-
-function paymentInScope(scope: Scope, value: Department): boolean {
-  if (value === "All") return false;
-  if (scope === "combined") return value === "Physio" || value === "Dental";
-  return value === (scope === "physio" ? "Physio" : "Dental");
-}
-
-function paymentSessionCount(remarks?: string): number {
-  const match = /(?:^|\|)\s*Sessions:\s*(\d+)/i.exec(String(remarks || ""));
-  if (!match) return 1;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
 const LABEL: Record<Scope, string> = {
@@ -41,10 +28,7 @@ export default async function DailyPage() {
     cookieStore.get("relife_scope")?.value
   );
 
-  const [snapshot, payments] = await Promise.all([
-    getDailyOperationsSnapshot(context, scope),
-    getPayments(),
-  ]);
+  const snapshot = await getDailyOperationsSnapshot(context, scope);
 
   const safeSnapshot = snapshot.attendance.canReadTeam
     ? {
@@ -61,25 +45,10 @@ export default async function DailyPage() {
       }
     : snapshot;
 
-  const todayPayments = payments.filter(
-    (payment) =>
-      payment.date.trim().slice(0, 10) === safeSnapshot.date &&
-      paymentInScope(scope, payment.department)
-  );
-  const patientKeys = new Set(
-    todayPayments
-      .map((payment) => {
-        const identity = payment.patientId.trim() || payment.patientName.trim();
-        return identity ? `${payment.department}:${identity}` : "";
-      })
-      .filter(Boolean)
-  );
+  const clinicalActivity = await getDailyClinicalActivity(scope, safeSnapshot.date);
   const activityCounts = {
-    patients: patientKeys.size,
-    sessions: todayPayments.reduce(
-      (sum, payment) => sum + paymentSessionCount(payment.remarks),
-      0
-    ),
+    patients: clinicalActivity.patients,
+    sessions: clinicalActivity.sessions,
     appointments: safeSnapshot.appointmentCounts.total,
   };
 
@@ -87,7 +56,7 @@ export default async function DailyPage() {
     <div>
       <PageHeading
         title="Daily Operations"
-        subtitle={`${safeSnapshot.date} · ${LABEL[scope]} · attendance & patient flow`}
+        subtitle={`${safeSnapshot.date} · ${LABEL[scope]} · attendance & completed clinical work`}
         action={
           <Link
             href="/appointments"

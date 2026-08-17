@@ -108,6 +108,21 @@ test("Chamber completion attempts an audited clinical treatment note", () => {
   assert.match(note, /clinical\.session\.auto_from_chamber/);
 });
 
+test("Home and Daily Ops count completed clinical work instead of payment session remarks", () => {
+  const home = source("app/(dashboard)/home/page.tsx");
+  const daily = source("app/(dashboard)/daily/page.tsx");
+  const activity = source("lib/webos/dailyClinicalActivity.ts");
+
+  for (const page of [home, daily]) {
+    assert.match(page, /getDailyClinicalActivity/);
+    assert.doesNotMatch(page, /paymentSessionCount/);
+    assert.doesNotMatch(page, /todayPayments/);
+  }
+  assert.match(activity, /05_Treatments/);
+  assert.match(home, /Patients treated/);
+  assert.match(home, /Sessions done/);
+});
+
 test("Patient File cache is cleared after create, edit and payment writes", () => {
   const patients = source("lib/patients.ts");
   const createPatient = source("app/api/patients/route.ts");
