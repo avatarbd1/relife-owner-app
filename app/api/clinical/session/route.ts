@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     const patientId = String(body.patientId || "").trim();
-    const result = await withMutationLock(`clinical-session:${patientId}`, () =>
+    const result = await withMutationLock(`patient:Physio:${patientId}`, () =>
       recordTreatmentSession(context, {
         patientId,
         painBefore: body.painBefore,
