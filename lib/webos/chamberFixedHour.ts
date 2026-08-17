@@ -2,6 +2,11 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
+import {
+  therapistIntervalsForTimeline,
+  therapistIntervalsOverlap,
+  type TherapistTimelineStepLike,
+} from "@/lib/domain/appointments/therapistCapacityRules";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { appendRowsWithAudit, type SheetCellValue, type SheetRowAppend } from "@/lib/webos/sheetTransaction";
@@ -316,17 +321,17 @@ function buildTimeline(startMinute: number, selected: string[], options: FixedMo
     };
   });
   const remainingMin = Math.max(0, SESSION_MINUTES - totalSelectedMin);
-  if (remainingMin > 0) {
+  if (chosen.length === 0 && remainingMin > 0) {
     timeline.push({
-      sequence: timeline.length + 1,
-      name: chosen.length ? "Therapist time" : "Therapist session",
+      sequence: 1,
+      name: "Therapist session",
       value: "THERAPIST-TIME",
       resourceId: "",
-      durationMin: remainingMin,
-      startMinute: cursor,
-      endMinute: cursor + remainingMin,
-      startTime: sheetTime(cursor),
-      endTime: sheetTime(cursor + remainingMin),
+      durationMin: SESSION_MINUTES,
+      startMinute,
+      endMinute: startMinute + SESSION_MINUTES,
+      startTime: sheetTime(startMinute),
+      endTime: sheetTime(startMinute + SESSION_MINUTES),
     });
   }
   return { timeline, totalSelectedMin, remainingMin };
@@ -378,6 +383,29 @@ function parseReservations(rows: string[][]): Reservation[] {
   });
 }
 
+function parseTherapistSteps(rows: string[][]): Map<string, TherapistTimelineStepLike[]> {
+  const result = new Map<string, TherapistTimelineStepLike[]>();
+  if (rows.length < 2) return result;
+  const h = rows[0];
+  const appointmentIdx = headerIndex(h, "Appointment_ID");
+  const nameIdx = headerIndex(h, "Step_Name");
+  const resourceIdx = headerIndex(h, "Resource_ID");
+  const startIdx = headerIndex(h, "Start_Minute");
+  const endIdx = headerIndex(h, "End_Minute");
+  for (const row of rows.slice(1)) {
+    const appointmentId = at(row, appointmentIdx);
+    if (!appointmentId) continue;
+    const step: TherapistTimelineStepLike = {
+      name: at(row, nameIdx),
+      resourceId: at(row, resourceIdx),
+      startMinute: Number(at(row, startIdx) || 0),
+      endMinute: Number(at(row, endIdx) || 0),
+    };
+    result.set(appointmentId, [...(result.get(appointmentId) || []), step]);
+  }
+  return result;
+}
+
 async function loadState() {
   const snapshot = await fetchSheetRanges("physio", [APPOINTMENT_SHEET, PLAN_SHEET, RESOURCE_SHEET, RESERVATION_SHEET, TIMELINE_SHEET, CONFLICT_SHEET]);
   const appointmentRows = snapshot[APPOINTMENT_SHEET] || [];
@@ -390,13 +418,14 @@ async function loadState() {
   ensureHeaders(appointmentRows[0], ["Appointment_ID", "Date", "Time", "Patient_ID", "Therapist", "Status", "Remarks", "Assigned_Bed_ID", "Modalities_JSON", "Expected_Duration_Min", "Timeline_ID"]);
   ensureHeaders(resourceRows[0], ["Resource_ID", "Resource_Name", "Resource_Type", "Enabled", "Default_Duration_Min"]);
   ensureHeaders(reservationRows[0], ["Reservation_ID", "Appointment_ID", "Date", "Resource_ID", "Start_Minute", "End_Minute", "Status"]);
-  ensureHeaders(timelineRows[0], ["Timeline_Step_ID", "Timeline_ID", "Appointment_ID", "Sequence", "Step_Name", "Duration_Min"]);
+  ensureHeaders(timelineRows[0], ["Timeline_Step_ID", "Timeline_ID", "Appointment_ID", "Sequence", "Step_Name", "Duration_Min", "Start_Minute", "End_Minute"]);
   ensureHeaders(conflictRows[0], ["Conflict_ID", "Patient_ID", "Conflict_Type", "Detail"]);
   const appointments = parseAppointments(appointmentRows);
   return {
     appointmentRows, planRows, resourceRows, reservationRows, timelineRows, conflictRows,
     appointments,
     reservations: parseReservations(reservationRows),
+    therapistSteps: parseTherapistSteps(timelineRows),
     options: parseResources(resourceRows),
   };
 }
@@ -431,8 +460,33 @@ export async function validateFixedHourBooking(context: AccessContext, input: Fi
 
   const overlapping = state.appointments.filter((item) => item.date === date && activeAppointment(item.status) && overlaps(slotStartMinute, slotEndMinute, item.startMinute, item.endMinute));
   if (overlapping.some((item) => item.patientId === patient.patientId)) conflicts.push({ type: "duplicate", message: "Patient already has an overlapping appointment in this hour." });
-  const therapistBusy = overlapping.find((item) => normalized(item.therapist) === normalized(therapist));
-  if (therapistBusy) conflicts.push({ type: "therapist_busy", message: `${therapist} already has ${therapistBusy.patientName || therapistBusy.patientId} in this hour.` });
+  const candidateTherapist = therapistIntervalsForTimeline(plan.timeline.map((step) => ({
+    name: step.name,
+    resourceId: step.resourceId,
+    startMinute: step.startMinute,
+    endMinute: step.endMinute,
+  })));
+  const therapistBusy = overlapping.find((item) => {
+    if (normalized(item.therapist) !== normalized(therapist)) return false;
+    const existingTherapist = therapistIntervalsForTimeline(
+      state.therapistSteps.get(item.appointmentId) || [],
+      { startMinute: item.startMinute, endMinute: item.endMinute }
+    );
+    return Boolean(therapistIntervalsOverlap(candidateTherapist, existingTherapist));
+  });
+  if (therapistBusy) {
+    const existingTherapist = therapistIntervalsForTimeline(
+      state.therapistSteps.get(therapistBusy.appointmentId) || [],
+      { startMinute: therapistBusy.startMinute, endMinute: therapistBusy.endMinute }
+    );
+    const collision = therapistIntervalsOverlap(candidateTherapist, existingTherapist);
+    conflicts.push({
+      type: "therapist_busy",
+      message: collision
+        ? `${therapist} is already needed by ${therapistBusy.patientName || therapistBusy.patientId} during ${sheetTime(collision.startMinute)}–${sheetTime(collision.endMinute)}.`
+        : `${therapist} is already needed by ${therapistBusy.patientName || therapistBusy.patientId}.`,
+    });
+  }
   const bedBusy = overlapping.find((item) => item.bedId === requestedBedId);
   if (bedBusy) conflicts.push({ type: "bed_busy", message: `${bedLabel(requestedBedId)} is already booked for ${bedBusy.patientName || bedBusy.patientId}.` });
 
@@ -557,7 +611,7 @@ export async function createFixedHourBooking(context: AccessContext, input: Fixe
     Modalities_JSON: JSON.stringify(selected),
     Expected_Duration_Min: SESSION_MINUTES,
     Timeline_ID: timelineId,
-    Booking_Validation_Version: "chamber-fixed-hour-v1",
+    Booking_Validation_Version: "chamber-fixed-hour-v2",
   });
 
   const appends: SheetRowAppend[] = [{ sheet: APPOINTMENT_SHEET, row: appointmentRow }];
@@ -632,6 +686,6 @@ export async function createFixedHourBooking(context: AccessContext, input: Fixe
     }
   }
 
-  await appendRowsWithAudit("physio", appends, auditRow(context, "appointment.create_fixed_hour", "Appointment", appointmentId, patient.patientId, JSON.stringify({ appointmentId, bed: validation.requestedBedId, slot: validation.slotLabel, modalities: selected, timeline: validation.timeline.map((step) => ({ name: step.name, durationMin: step.durationMin })) }), "Chamber fixed 60-minute booking", now));
+  await appendRowsWithAudit("physio", appends, auditRow(context, "appointment.create_fixed_hour", "Appointment", appointmentId, patient.patientId, JSON.stringify({ appointmentId, bed: validation.requestedBedId, slot: validation.slotLabel, modalities: selected, timeline: validation.timeline.map((step) => ({ name: step.name, durationMin: step.durationMin })) }), "Chamber fixed-hour booking with duration-aware therapist capacity", now));
   return { appointmentId, validation };
 }
