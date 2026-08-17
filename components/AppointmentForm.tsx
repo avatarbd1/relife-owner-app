@@ -118,6 +118,7 @@ export default function AppointmentForm({
   const [validationBusy, setValidationBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [modalitiesExpanded, setModalitiesExpanded] = useState(false);
 
   const patientId = patientText.split("—")[0]?.trim() || "";
   const selectedPatient = patients.find((patient) => patient.patientId === patientId);
@@ -303,10 +304,28 @@ export default function AppointmentForm({
   const physioReady = selectedPatient?.department !== "Physio" || Boolean(validation?.isValid);
 
   return (
-    <form onSubmit={submit} className="space-y-4">
-      <div>
-        <p className="text-xs font-semibold text-slate-700">Department</p>
-        <div className="mt-2 grid grid-cols-3 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
+    <div className="relative">
+      {selectedPatient && (
+        <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-4 border-b border-slate-200 bg-gradient-to-b from-blue-50 to-white px-4 py-2.5 shadow-sm">
+          <p className="text-xs text-slate-600">
+            <span className="font-semibold text-blue-700">{selectedPatient.department}</span>
+            <span className="mx-1.5">·</span>
+            <span className="font-semibold text-slate-900">{selectedPatient.fullName}</span>
+            <span className="mx-1.5">·</span>
+            <span className="text-slate-500">{selectedPatient.patientId}</span>
+            {therapist && (
+              <>
+                <span className="mx-1.5">·</span>
+                <span className="text-slate-600">{therapist}</span>
+              </>
+            )}
+          </p>
+        </div>
+      )}
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <p className="text-xs font-semibold text-slate-700">Department</p>
+          <div className="mt-2 grid grid-cols-3 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
           {(["All", "Physio", "Dental"] as const).map((item) => (
             <button
               key={item}
@@ -385,41 +404,61 @@ export default function AppointmentForm({
       )}
 
       {selectedPatient?.department === "Physio" && (
-        <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div><p className="text-xs font-semibold text-slate-900">Treatment modalities</p><p className="mt-0.5 text-[11px] text-slate-500">Tap order = planned sequence. Machine duration comes from live Chamber Resources.</p></div>
-            {profileBusy && <Spinner size="sm" label="Loading treatment plan" />}
-          </div>
-          {needsTraction && <div className="mt-2"><StatusBadge tone="warning">Active plan requires Traction Bed</StatusBadge></div>}
-          {suggestedModalities.length > 0 && (
-            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-blue-50 p-2.5">
-              <p className="text-[11px] text-blue-800">Plan suggestion: {suggestedModalities.map((value) => modalityOptions.find((item) => item.value === value)?.label || value).join(" → ")}</p>
-              <button type="button" onClick={() => { setModalities(suggestedModalities); haptic("tap"); }} className="shrink-0 rounded-lg bg-blue-800 px-2.5 py-1.5 text-[10px] font-semibold text-white">Use plan</button>
+        <section className="rounded-xl border border-slate-200 bg-slate-50/70">
+          <button
+            type="button"
+            onClick={() => { setModalitiesExpanded(!modalitiesExpanded); haptic("tap"); }}
+            className="relife-interactive w-full px-3 py-3 text-left hover:bg-slate-100/50"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-slate-900">Treatment modalities</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  {modalities.length > 0 ? `${modalities.length} selected · ${selectedOptions.reduce((sum, opt) => sum + opt.durationMin, 0)} min` : "Tap to expand"}
+                </p>
+                {suggestedModalities.length > 0 && <p className="mt-1 text-[10px] text-blue-700">📋 {suggestedModalities.map((value) => modalityOptions.find((item) => item.value === value)?.label || value).join(" → ")}</p>}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {profileBusy && <Spinner size="sm" label="Loading" />}
+                <span className={`text-lg transition-transform ${modalitiesExpanded ? "rotate-180" : ""}`}>▼</span>
+              </div>
+            </div>
+          </button>
+
+          {modalitiesExpanded && (
+            <div className="border-t border-slate-200 p-3">
+              {needsTraction && <div className="mb-3"><StatusBadge tone="warning">Active plan requires Traction Bed</StatusBadge></div>}
+              {suggestedModalities.length > 0 && (
+                <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-blue-50 p-2.5">
+                  <p className="text-[11px] text-blue-800">Plan suggestion</p>
+                  <button type="button" onClick={() => { setModalities(suggestedModalities); haptic("tap"); }} className="shrink-0 rounded-lg bg-blue-800 px-2.5 py-1.5 text-[10px] font-semibold text-white">Use</button>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {modalityOptions.map((option) => {
+                  const selectedIndex = modalities.indexOf(option.value);
+                  const active = selectedIndex >= 0;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => toggleModality(option.value)}
+                      className={`relative min-h-14 rounded-xl border px-3 py-2 text-left transition-colors ${active ? "border-blue-800 bg-blue-800 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      {active && <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1 text-[10px] font-bold">{selectedIndex + 1}</span>}
+                      <span className="block pr-5 text-xs font-semibold">{option.label}</span>
+                      <span className={`mt-1 block text-[10px] ${active ? "text-blue-100" : "text-slate-400"}`}>{option.durationMin} min{option.machine ? " · single-use" : " · concurrent"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                <span>{selectedOptions.length ? selectedOptions.map((item) => item.label).join(" → ") : "No modality selected: generic 30 min slot"}</span>
+                {modalities.length > 0 && <button type="button" onClick={() => setModalities([])} className="font-semibold text-red-700">Clear</button>}
+              </div>
             </div>
           )}
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {modalityOptions.map((option) => {
-              const selectedIndex = modalities.indexOf(option.value);
-              const active = selectedIndex >= 0;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggleModality(option.value)}
-                  className={`relative min-h-14 rounded-xl border px-3 py-2 text-left transition-colors ${active ? "border-blue-800 bg-blue-800 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
-                >
-                  {active && <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1 text-[10px] font-bold">{selectedIndex + 1}</span>}
-                  <span className="block pr-5 text-xs font-semibold">{option.label}</span>
-                  <span className={`mt-1 block text-[10px] ${active ? "text-blue-100" : "text-slate-400"}`}>{option.durationMin} min{option.machine ? " · single-use" : " · concurrent"}</span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-            <span>{selectedOptions.length ? selectedOptions.map((item) => item.label).join(" → ") : "No modality selected: generic 30 min slot"}</span>
-            {modalities.length > 0 && <button type="button" onClick={() => setModalities([])} className="font-semibold text-red-700">Clear</button>}
-          </div>
         </section>
       )}
 
@@ -487,6 +526,7 @@ export default function AppointmentForm({
         {busy && <Spinner size="sm" className="border-white/40 border-t-white" label="Creating appointment" />}
         {busy ? "Creating appointment…" : selectedPatient?.department === "Physio" ? "Confirm safe booking" : "Create appointment"}
       </button>
-    </form>
+      </form>
+    </div>
   );
 }
