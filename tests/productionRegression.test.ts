@@ -86,6 +86,17 @@ test("Chamber booking always opens in one viewport and gender fixes stay inside 
   assert.match(assist, /router\.refresh\(\)/);
 });
 
+test("new Physio registration requires gender while Dental can remain optional", () => {
+  const route = source("app/api/patients/route.ts");
+  const form = source("components/PatientRegistrationForm.tsx");
+  assert.match(route, /department === "Physio"/);
+  assert.match(route, /INVALID_PATIENT_GENDER/);
+  assert.match(form, /physioGenderRequired = department === "Physio"/);
+  assert.match(form, /Gender \{physioGenderRequired \? "\*" : "\(optional\)"\}/);
+  assert.match(form, /allowClear=\{!physioGenderRequired\}/);
+  assert.match(form, /physioGenderRequired && !gender/);
+});
+
 test("Chamber completion attempts an audited clinical treatment note", () => {
   const route = source("app/api/chamber/route.ts");
   const note = source("lib/webos/chamberClinicalNote.ts");
