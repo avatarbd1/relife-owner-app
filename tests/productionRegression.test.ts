@@ -68,7 +68,7 @@ test("appointments honor scope exception focus and calendar continuity", () => {
   assert.match(client, /Fix patient gender/);
 });
 
-test("Chamber pending badge and booking helper land on actionable UI", () => {
+test("Chamber booking always opens in one viewport and gender fixes stay inside the warning", () => {
   const nav = source("components/BottomNav.tsx");
   const tabs = source("components/ChamberWorkspaceTabs.tsx");
   const assist = source("components/ChamberBookingAssist.tsx");
@@ -76,8 +76,25 @@ test("Chamber pending badge and booking helper land on actionable UI", () => {
   assert.match(tabs, /ChamberBookingAssist/);
   assert.match(assist, /patient gender must be set/);
   assert.match(assist, /JSON\.stringify\(\{ gender \}\)/);
-  assert.match(assist, /alignItems = "flex-start"/);
+  assert.match(assist, /dialog\.style\.top = "68px"/);
+  assert.match(assist, /dialog\.style\.bottom = "72px"/);
+  assert.match(assist, /sheet\.style\.height = "100%"/);
+  assert.match(assist, /createPortal/);
+  assert.match(assist, /data-relife-gender-fix/);
+  assert.match(assist, /Set gender here/);
+  assert.doesNotMatch(assist, /fixed left-3 right-3/);
   assert.match(assist, /router\.refresh\(\)/);
+});
+
+test("new Physio registration requires gender while Dental can remain optional", () => {
+  const route = source("app/api/patients/route.ts");
+  const form = source("components/PatientRegistrationForm.tsx");
+  assert.match(route, /department === "Physio"/);
+  assert.match(route, /INVALID_PATIENT_GENDER/);
+  assert.match(form, /physioGenderRequired = department === "Physio"/);
+  assert.match(form, /Gender \{physioGenderRequired \? "\*" : "\(optional\)"\}/);
+  assert.match(form, /allowClear=\{!physioGenderRequired\}/);
+  assert.match(form, /physioGenderRequired && !gender/);
 });
 
 test("Chamber completion attempts an audited clinical treatment note", () => {

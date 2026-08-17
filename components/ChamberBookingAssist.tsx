@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { haptic } from "@/lib/interactions";
 
 type DialogState = {
@@ -20,9 +21,27 @@ function patientIdFromInput(value: string): string {
   return value.split("—")[0]?.trim() || "";
 }
 
+function genderFixTarget(dialog: HTMLElement): HTMLElement | null {
+  const warning = dialog.querySelector<HTMLElement>(
+    '[class*="border-red-200"][class*="bg-red-50"]'
+  );
+  if (!warning) return null;
+  const text = (warning.textContent || "").toLowerCase();
+  if (!text.includes("gender")) return null;
+
+  const existing = warning.querySelector<HTMLElement>("[data-relife-gender-fix]");
+  if (existing) return existing;
+
+  const target = document.createElement("div");
+  target.dataset.relifeGenderFix = "1";
+  warning.appendChild(target);
+  return target;
+}
+
 export default function ChamberBookingAssist() {
   const router = useRouter();
   const [dialogState, setDialogState] = useState<DialogState>(EMPTY);
+  const [target, setTarget] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState<"Male" | "Female" | null>(null);
   const [message, setMessage] = useState("");
 
@@ -35,18 +54,34 @@ export default function ChamberBookingAssist() {
       );
       if (!dialog) {
         document.body.style.overflow = previousOverflow;
+        setTarget(null);
         setDialogState((current) => (current.open ? EMPTY : current));
         return;
       }
 
       document.body.style.overflow = "hidden";
+
+      // Mobile booking always occupies the same viewport: below the app header
+      // and above bottom navigation. This overrides the legacy bottom-sheet
+      // alignment so page scroll position can never decide where the form opens.
+      dialog.style.position = "fixed";
+      dialog.style.top = "68px";
+      dialog.style.right = "0";
+      dialog.style.bottom = "72px";
+      dialog.style.left = "0";
+      dialog.style.height = "auto";
       dialog.style.alignItems = "flex-start";
-      dialog.style.paddingTop = "max(env(safe-area-inset-top), 8px)";
-      dialog.style.overflowY = "auto";
+      dialog.style.justifyContent = "center";
+      dialog.style.padding = "0";
+      dialog.style.overflow = "hidden";
 
       const sheet = dialog.firstElementChild as HTMLElement | null;
       if (sheet) {
-        sheet.style.maxHeight = "calc(100dvh - 12px)";
+        sheet.style.width = "100%";
+        sheet.style.height = "100%";
+        sheet.style.maxHeight = "100%";
+        sheet.style.overflowY = "auto";
+        sheet.style.borderRadius = "0";
         if (sheet.dataset.relifeViewportReady !== "1") {
           sheet.dataset.relifeViewportReady = "1";
           sheet.scrollTop = 0;
@@ -62,6 +97,7 @@ export default function ChamberBookingAssist() {
         text.includes("Gender missing") ||
         text.toLowerCase().includes("patient gender must be set");
 
+      setTarget(genderMissing ? genderFixTarget(dialog) : null);
       setDialogState((current) => {
         if (
           current.open &&
@@ -123,6 +159,7 @@ export default function ChamberBookingAssist() {
   }
 
   if (
+    !target ||
     !dialogState.open ||
     !dialogState.patientId ||
     !dialogState.genderMissing
@@ -130,20 +167,16 @@ export default function ChamberBookingAssist() {
     return null;
   }
 
-  return (
-    <div
-      className="fixed left-3 right-3 z-[95] rounded-xl border border-amber-300 bg-amber-50 p-3 shadow-xl"
-      style={{ top: "calc(env(safe-area-inset-top) + 64px)" }}
-      role="status"
-    >
+  return createPortal(
+    <div className="mt-3 border-t border-red-200 pt-3" role="status">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-bold text-amber-950">Gender required</p>
-          <p className="mt-0.5 truncate text-[10px] text-amber-800">
-            {dialogState.patientId} · tap once to correct
+          <p className="text-[11px] font-bold text-red-900">Set gender here</p>
+          <p className="mt-0.5 truncate text-[10px] text-red-700">
+            {dialogState.patientId} · required for shared room safety
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="grid shrink-0 grid-cols-2 gap-2">
           <button
             type="button"
             disabled={busy !== null}
@@ -171,6 +204,7 @@ export default function ChamberBookingAssist() {
           {message}
         </p>
       )}
-    </div>
+    </div>,
+    target
   );
 }

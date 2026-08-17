@@ -17,7 +17,7 @@ function errorResponse(error: unknown): NextResponse {
       { status: 409 }
     );
   }
-  if (["INVALID_DEPARTMENT", "INVALID_PATIENT_NAME"].includes(message)) {
+  if (["INVALID_DEPARTMENT", "INVALID_PATIENT_NAME", "INVALID_PATIENT_GENDER"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
   if (message === "SCHEMA_MISMATCH") {
@@ -33,6 +33,10 @@ function normalizePhone(value: unknown): string {
   return digits;
 }
 
+function normalizeGender(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
@@ -45,8 +49,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
+    const department = String(body.department || "").trim();
+    const gender = normalizeGender(body.gender);
+    if (department === "Physio" && !["Male", "Female"].includes(gender)) {
+      throw new Error("INVALID_PATIENT_GENDER");
+    }
+
     const phone = normalizePhone(body.phone);
-    const lockKey = `patient-create:${String(body.department || "unknown")}:${phone || "no-phone"}`;
+    const lockKey = `patient-create:${department || "unknown"}:${phone || "no-phone"}`;
     const result = await withMutationLock(lockKey, () =>
       registerPatient(context, {
         department: body.department,
