@@ -43,7 +43,7 @@ export function resolveLockStrategy(
   if (mode === "required") {
     if (!hasDistributedClient) {
       throw new Error(
-        "DISTRIBUTED_LOCK_MODE=required but distributed lock service is not configured. " +
+        "DISTRIBUTED_LOCK_MODE=required but Supabase not configured through the distributed lock service. " +
           "Set RELIFE_MUTATION_LOCK_SECRET or use DISTRIBUTED_LOCK_MODE=compatibility"
       );
     }
