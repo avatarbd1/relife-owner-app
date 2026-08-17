@@ -1,108 +1,123 @@
-import { describe, it, before } from "node:test";
-import { ok, equal } from "node:assert";
+import { readFileSync } from "node:fs";
+import { strict as assert } from "node:assert";
+import { describe, it } from "node:test";
 
-// Fake Supabase client for testing distributed lock logic
-interface FakeLock {
-  lock_key: string;
-  owner_id: string;
+import {
+  lockBackoffMs,
+  resolveLockStrategy,
+  withDistributedLeaseLock,
+  type DistributedLockRpcClient,
+} from "../lib/webos/mutationLockCore.ts";
+
+type FakeLock = {
+  ownerId: string;
   token: string;
-  expires_at: Date;
-  status: "active" | "released" | "expired";
-  acquired_at: Date;
-}
+  expiresAt: number;
+  status: "active" | "released";
+};
 
-interface AcquireLockResponse {
-  lock_key: string;
-  owner_id: string;
-  token: string;
-  acquired_at: string;
-  expires_at: string;
-  status: string;
-  acquired_by_caller: boolean;
-  is_expired: boolean;
-}
-
-class FakeSupabaseClient {
+class FakeLockClient implements DistributedLockRpcClient {
   private locks = new Map<string, FakeLock>();
+  private tokenCounter = 0;
+  private acquireOwners = new Map<string, Set<string>>();
+  renewCalls = 0;
+  failAcquireMessage = "";
+  rejectRenewal = false;
 
-  async rpc(
-    method: string,
-    params: Record<string, unknown>
-  ): Promise<{ data: unknown; error: { message: string } | null }> {
-    if (method === "acquire_distributed_lock") {
-      return this.acquireLock(params);
-    } else if (method === "release_distributed_lock") {
-      return this.releaseLock(params);
-    } else if (method === "renew_distributed_lock") {
-      return this.renewLock(params);
-    }
-    return { data: null, error: { message: "Unknown method" } };
+  async rpc(method: string, params: Record<string, unknown>) {
+    if (method === "acquire_distributed_lock") return this.acquire(params);
+    if (method === "renew_distributed_lock") return this.renew(params);
+    if (method === "release_distributed_lock") return this.release(params);
+    return { data: null, error: { message: `unknown RPC ${method}` } };
   }
 
-  private acquireLock(params: Record<string, unknown>) {
-    const key = params.p_lock_key as string;
-    const ownerId = params.p_owner_id as string;
-    const timeoutSeconds = (params.p_timeout_seconds as number) || 30;
+  private acquire(params: Record<string, unknown>) {
+    if (this.failAcquireMessage) {
+      return { data: null, error: { message: this.failAcquireMessage } };
+    }
 
+    const key = String(params.p_lock_key);
+    const ownerId = String(params.p_owner_id);
+    const timeoutSeconds = Number(params.p_timeout_seconds);
+    const owners = this.acquireOwners.get(key) ?? new Set<string>();
+    owners.add(ownerId);
+    this.acquireOwners.set(key, owners);
+
+    const now = Date.now();
     const existing = this.locks.get(key);
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + timeoutSeconds * 1000);
-
-    // Can acquire if: no lock exists, previous lock released, or lease expired
-    const canAcquire =
-      !existing ||
-      existing.status === "released" ||
-      existing.expires_at <= now;
-
-    if (canAcquire) {
-      const token = Math.random().toString(36).slice(2, 18);
-      const lock: FakeLock = {
-        lock_key: key,
-        owner_id: ownerId,
+    if (!existing || existing.status === "released" || existing.expiresAt <= now) {
+      const token = `token-${++this.tokenCounter}`;
+      this.locks.set(key, {
+        ownerId,
         token,
-        expires_at: expiresAt,
+        expiresAt: now + timeoutSeconds * 1000,
         status: "active",
-        acquired_at: now,
-      };
-      this.locks.set(key, lock);
+      });
       return {
         data: {
           lock_key: key,
           owner_id: ownerId,
           token,
-          acquired_at: now.toISOString(),
-          expires_at: expiresAt.toISOString(),
-          status: "active",
           acquired_by_caller: true,
           is_expired: false,
+          status: "active",
         },
         error: null,
       };
     }
 
-    // Lock held by someone else
     return {
       data: {
         lock_key: key,
-        owner_id: existing!.owner_id,
-        token: existing!.token,
-        acquired_at: existing!.acquired_at.toISOString(),
-        expires_at: existing!.expires_at.toISOString(),
-        status: existing!.status,
+        owner_id: existing.ownerId,
+        token: existing.token,
         acquired_by_caller: false,
         is_expired: false,
+        status: existing.status,
       },
       error: null,
     };
   }
 
-  private releaseLock(params: Record<string, unknown>) {
-    const key = params.p_lock_key as string;
-    const ownerId = params.p_owner_id as string;
-    const token = params.p_token as string;
+  private renew(params: Record<string, unknown>) {
+    this.renewCalls += 1;
+    if (this.rejectRenewal) {
+      return { data: { renewed: false }, error: null };
+    }
 
+    const key = String(params.p_lock_key);
+    const ownerId = String(params.p_owner_id);
+    const token = String(params.p_token);
+    const timeoutSeconds = Number(params.p_timeout_seconds);
     const lock = this.locks.get(key);
-    if (lock && lock.owner_id === ownerId && lock.token === token) {
+    const now = Date.now();
+
+    if (
+      lock &&
+      lock.status === "active" &&
+      lock.ownerId === ownerId &&
+      lock.token === token &&
+      lock.expiresAt > now
+    ) {
+      lock.expiresAt = now + timeoutSeconds * 1000;
+      return { data: { renewed: true }, error: null };
+    }
+
+    return { data: { renewed: false }, error: null };
+  }
+
+  private release(params: Record<string, unknown>) {
+    const key = String(params.p_lock_key);
+    const ownerId = String(params.p_owner_id);
+    const token = String(params.p_token);
+    const lock = this.locks.get(key);
+
+    if (
+      lock &&
+      lock.status === "active" &&
+      lock.ownerId === ownerId &&
+      lock.token === token
+    ) {
       lock.status = "released";
       return { data: true, error: null };
     }
@@ -110,396 +125,295 @@ class FakeSupabaseClient {
     return { data: false, error: null };
   }
 
-  private renewLock(params: Record<string, unknown>) {
-    const key = params.p_lock_key as string;
-    const ownerId = params.p_owner_id as string;
-    const token = params.p_token as string;
-    const timeoutSeconds = (params.p_timeout_seconds as number) || 30;
-
+  expire(key: string) {
     const lock = this.locks.get(key);
-    if (lock && lock.owner_id === ownerId && lock.token === token) {
-      const now = new Date();
-      lock.expires_at = new Date(now.getTime() + timeoutSeconds * 1000);
-      return {
-        data: {
-          renewed: true,
-          lock: {
-            lock_key: key,
-            owner_id: ownerId,
-            token,
-            expires_at: lock.expires_at.toISOString(),
-            status: "active",
-          },
+    if (lock) lock.expiresAt = Date.now() - 1;
+  }
+
+  hold(key: string) {
+    this.locks.set(key, {
+      ownerId: "other-owner",
+      token: "other-token",
+      expiresAt: Date.now() + 60_000,
+      status: "active",
+    });
+  }
+
+  ownersFor(key: string): Set<string> {
+    return this.acquireOwners.get(key) ?? new Set<string>();
+  }
+}
+
+function options(instanceId: string, randomId: string) {
+  return {
+    instanceId,
+    randomId: () => randomId,
+    leaseSeconds: 5,
+    acquisitionTimeoutMs: 1000,
+    renewalIntervalMs: 20,
+  };
+}
+
+describe("distributed mutation lock core", () => {
+  it("required mode fails closed without a distributed client", () => {
+    assert.throws(
+      () => resolveLockStrategy("required", false, false),
+      /Supabase not configured/
+    );
+    assert.equal(resolveLockStrategy("required", false, true), "distributed");
+  });
+
+  it("compatibility fallback requires explicit opt-in", () => {
+    assert.throws(
+      () => resolveLockStrategy("compatibility", false, false),
+      /ENABLE_PROCESS_LOCAL_LOCK_FALLBACK/
+    );
+    assert.equal(resolveLockStrategy("compatibility", true, false), "process-local");
+    assert.equal(resolveLockStrategy("compatibility", true, true), "distributed");
+  });
+
+  it("fails closed when the acquire RPC returns an error", async () => {
+    const client = new FakeLockClient();
+    client.failAcquireMessage = "database unavailable";
+    await assert.rejects(
+      withDistributedLeaseLock("finance:test", async () => undefined, client, options("i1", "a")),
+      /database unavailable/
+    );
+  });
+
+  it("uses bounded exponential backoff", () => {
+    assert.equal(lockBackoffMs(0), 100);
+    assert.ok(lockBackoffMs(1) > lockBackoffMs(0));
+    assert.equal(lockBackoffMs(100), 5000);
+  });
+
+  it("serializes same-key operations", async () => {
+    const client = new FakeLockClient();
+    const order: string[] = [];
+
+    const first = withDistributedLeaseLock(
+      "finance:same",
+      async () => {
+        order.push("first-start");
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        order.push("first-end");
+      },
+      client,
+      options("instance", "first")
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const second = withDistributedLeaseLock(
+      "finance:same",
+      async () => {
+        order.push("second-start");
+        order.push("second-end");
+      },
+      client,
+      options("instance", "second")
+    );
+
+    await Promise.all([first, second]);
+    assert.deepEqual(order, ["first-start", "first-end", "second-start", "second-end"]);
+  });
+
+  it("allows different keys to execute concurrently", async () => {
+    const client = new FakeLockClient();
+    const order: string[] = [];
+
+    const first = withDistributedLeaseLock(
+      "finance:key-a",
+      async () => {
+        order.push("a-start");
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        order.push("a-end");
+      },
+      client,
+      options("instance", "a")
+    );
+    const second = withDistributedLeaseLock(
+      "finance:key-b",
+      async () => {
+        order.push("b-start");
+        order.push("b-end");
+      },
+      client,
+      options("instance", "b")
+    );
+
+    await Promise.all([first, second]);
+    assert.ok(order.indexOf("b-start") < order.indexOf("a-end"));
+  });
+
+  it("releases the lock when the protected callback throws", async () => {
+    const client = new FakeLockClient();
+    await assert.rejects(
+      withDistributedLeaseLock(
+        "finance:error",
+        async () => {
+          throw new Error("callback failed");
         },
-        error: null,
-      };
-    }
-
-    return {
-      data: { renewed: false, reason: "lock not found or token mismatch" },
-      error: null,
-    };
-  }
-
-  clear() {
-    this.locks.clear();
-  }
-}
-
-// Real distributed lock implementation (from production)
-async function withDistributedLock<T>(
-  key: string,
-  instanceId: string,
-  fn: () => Promise<T>,
-  supabase: FakeSupabaseClient
-): Promise<T> {
-  const lockTimeout = 30; // seconds
-  const deadline = Date.now() + 30000;
-  let lockToken: string | null = null;
-  let ownerId: string | null = null;
-  let retryCount = 0;
-  const maxRetries = 300;
-
-  const uniqueOwnerId = `${instanceId}:${Math.random().toString(36).slice(2, 18)}`;
-
-  while (retryCount < maxRetries) {
-    if (Date.now() > deadline) {
-      throw new Error(
-        `Failed to acquire distributed lock for key '${key}' within 30000ms deadline. ` +
-        `Retried ${retryCount} times.`
-      );
-    }
-
-    try {
-      const { data, error: acquireError } = await supabase.rpc(
-        "acquire_distributed_lock",
-        {
-          p_lock_key: key,
-          p_owner_id: uniqueOwnerId,
-          p_timeout_seconds: lockTimeout,
-        }
-      );
-
-      if (acquireError) {
-        throw new Error(`Supabase RPC failed: ${acquireError.message}`);
-      }
-
-      const acquireResponse = data as AcquireLockResponse;
-      if (acquireResponse?.acquired_by_caller) {
-        lockToken = acquireResponse.token;
-        ownerId = uniqueOwnerId;
-
-        try {
-          const renewalInterval = setInterval(async () => {
-            if (lockToken && ownerId) {
-              try {
-                await supabase.rpc("renew_distributed_lock", {
-                  p_lock_key: key,
-                  p_owner_id: ownerId,
-                  p_token: lockToken,
-                  p_timeout_seconds: lockTimeout,
-                });
-              } catch {
-                // Silently handle renewal errors
-              }
-            }
-          }, Math.floor((lockTimeout * 1000) / 3));
-
-          try {
-            return await fn();
-          } finally {
-            clearInterval(renewalInterval);
-          }
-        } finally {
-          if (lockToken && ownerId) {
-            try {
-              await supabase.rpc("release_distributed_lock", {
-                p_lock_key: key,
-                p_owner_id: ownerId,
-                p_token: lockToken,
-              });
-            } catch {
-              // Silently handle release errors
-            }
-          }
-        }
-      }
-
-      // Lock held, backoff
-      const backoffMs = Math.min(100 * Math.pow(1.5, retryCount), 5000);
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      retryCount++;
-    } catch (error) {
-      throw new Error(
-        `Distributed lock acquisition failed for key '${key}': ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-  }
-
-  throw new Error(
-    `Failed to acquire distributed lock for key '${key}' after ${maxRetries} retries within 30000ms.`
-  );
-}
-
-describe("Finance concurrency protection - real lock semantics", () => {
-  let fakeSupabase: FakeSupabaseClient;
-
-  before(() => {
-    fakeSupabase = new FakeSupabaseClient();
-  });
-
-  it("required mode fails immediately if Supabase unavailable", async () => {
-    // Production code verified: throws if mode=required and no client
-    ok(true, "production code enforces: throws if mode=required and no client");
-  });
-
-  it("exponential backoff formula limits retry frequency", async () => {
-    const backoffs: number[] = [];
-    for (let i = 0; i < 5; i++) {
-      const backoff = Math.min(100 * Math.pow(1.5, i), 5000);
-      backoffs.push(backoff);
-    }
-
-    // Verify progression
-    ok(backoffs[0] < backoffs[1], "backoff[0] < backoff[1]");
-    ok(backoffs[1] < backoffs[2], "backoff[1] < backoff[2]");
-    ok(backoffs[4] <= 5000, "backoff[4] capped at 5000");
-    ok(backoffs[4] > backoffs[3], "capping doesn't break progression");
-  });
-
-  it("same-key operations serialize (second waits for first)", async () => {
-    fakeSupabase.clear();
-    const order: string[] = [];
-
-    const p1 = withDistributedLock("serialize-test", "instance1", async () => {
-      order.push("first-start");
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      order.push("first-end");
-    }, fakeSupabase);
-
-    // Start second before first completes
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const p2 = withDistributedLock("serialize-test", "instance1", async () => {
-      order.push("second-start");
-      order.push("second-end");
-    }, fakeSupabase);
-
-    await p1;
-    await p2;
-
-    equal(order[0], "first-start", "first runs first");
-    equal(order[1], "first-end", "first completes before second starts");
-    equal(order[2], "second-start", "second starts after first");
-    equal(order[3], "second-end", "second completes");
-  });
-
-  it("different-key operations run in parallel", async () => {
-    fakeSupabase.clear();
-    const order: string[] = [];
-
-    const p1 = withDistributedLock("parallel-key1", "instance1", async () => {
-      order.push("key1-start");
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      order.push("key1-end");
-    }, fakeSupabase);
-
-    const p2 = withDistributedLock("parallel-key2", "instance1", async () => {
-      order.push("key2-start");
-      order.push("key2-end");
-    }, fakeSupabase);
-
-    await p1;
-    await p2;
-
-    ok(order.includes("key1-start"), "key1 starts");
-    ok(
-      order.indexOf("key2-start") < order.indexOf("key1-end"),
-      "key2 starts before key1 ends (parallel)"
+        client,
+        options("instance", "one")
+      ),
+      /callback failed/
     );
+
+    let ran = false;
+    await withDistributedLeaseLock(
+      "finance:error",
+      async () => {
+        ran = true;
+      },
+      client,
+      options("instance", "two")
+    );
+    assert.equal(ran, true);
   });
 
-  it("exception in callback releases lock", async () => {
-    fakeSupabase.clear();
+  it("uses a unique owner identity for concurrent calls from one instance", async () => {
+    const client = new FakeLockClient();
+    const first = withDistributedLeaseLock(
+      "finance:owner",
+      async () => new Promise((resolve) => setTimeout(resolve, 30)),
+      client,
+      options("same-instance", "owner-a")
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = withDistributedLeaseLock(
+      "finance:owner",
+      async () => undefined,
+      client,
+      options("same-instance", "owner-b")
+    );
 
-    let errorThrown = false;
-    try {
-      await withDistributedLock("exception-test", "instance1", async () => {
-        throw new Error("test error");
-      }, fakeSupabase);
-    } catch {
-      errorThrown = true;
-    }
-
-    ok(errorThrown, "error was thrown");
-
-    // Second acquisition should succeed (lock released after exception)
-    let acquired = false;
-    await withDistributedLock("exception-test", "instance1", async () => {
-      acquired = true;
-    }, fakeSupabase);
-
-    ok(acquired, "lock was released after exception");
+    await Promise.all([first, second]);
+    assert.equal(client.ownersFor("finance:owner").size, 2);
   });
 
-  it("same instance concurrent calls use unique owner IDs", async () => {
-    fakeSupabase.clear();
-    const order: string[] = [];
-
-    const p1 = withDistributedLock("unique-owner", "same-instance", async () => {
-      order.push("first-start");
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      order.push("first-end");
-    }, fakeSupabase);
-
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    const p2 = withDistributedLock("unique-owner", "same-instance", async () => {
-      order.push("second-start");
-      order.push("second-end");
-    }, fakeSupabase);
-
-    await p1;
-    await p2;
-
-    // Verify serialization despite same instance
-    equal(order[0], "first-start");
-    equal(order[1], "first-end", "second waits for first to release");
-    equal(order[2], "second-start");
-  });
-
-  it("wrong token cannot release lock", async () => {
-    fakeSupabase.clear();
-
-    await withDistributedLock("token-test", "instance1", async () => {
-      // Attempt to release with wrong token
-      const { data: releaseResult } = await fakeSupabase.rpc(
-        "release_distributed_lock",
-        {
-          p_lock_key: "token-test",
-          p_owner_id: "instance1:wrong",
+  it("rejects release attempts with the wrong token", async () => {
+    const client = new FakeLockClient();
+    await withDistributedLeaseLock(
+      "finance:token",
+      async () => {
+        const result = await client.rpc("release_distributed_lock", {
+          p_lock_key: "finance:token",
+          p_owner_id: "wrong-owner",
           p_token: "wrong-token",
-        }
-      );
-      ok(releaseResult === false, "wrong token cannot release");
-    }, fakeSupabase);
+        });
+        assert.equal(result.data, false);
+      },
+      client,
+      options("instance", "token-owner")
+    );
   });
 
-  it("stale lease can be reacquired", async () => {
-    fakeSupabase.clear();
-
-    // Create an expired lock manually
-    const expiredKey = "expired-lock";
-    await fakeSupabase.rpc("acquire_distributed_lock", {
-      p_lock_key: expiredKey,
-      p_owner_id: "crashed-instance",
-      p_timeout_seconds: 1,
+  it("recovers an expired stale lease", async () => {
+    const client = new FakeLockClient();
+    await client.rpc("acquire_distributed_lock", {
+      p_lock_key: "finance:stale",
+      p_owner_id: "crashed-owner",
+      p_timeout_seconds: 5,
     });
+    client.expire("finance:stale");
 
-    // Wait for expiry
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-
-    // Should be able to acquire despite previous lock
     let acquired = false;
-    await withDistributedLock(expiredKey, "recovery-instance", async () => {
-      acquired = true;
-    }, fakeSupabase);
-
-    ok(acquired, "expired lease can be reacquired");
+    await withDistributedLeaseLock(
+      "finance:stale",
+      async () => {
+        acquired = true;
+      },
+      client,
+      options("recovery", "new-owner")
+    );
+    assert.equal(acquired, true);
   });
 
-  it("unexpired lease cannot be acquired by different owner", async () => {
-    fakeSupabase.clear();
-
-    const lockKey = "protected-lock";
-
-    // Instance 1 acquires
-    const holder = withDistributedLock(
-      lockKey,
-      "instance1",
+  it("does not steal an unexpired lease", async () => {
+    const client = new FakeLockClient();
+    const order: string[] = [];
+    const first = withDistributedLeaseLock(
+      "finance:protected",
       async () => {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        order.push("holder");
+        await new Promise((resolve) => setTimeout(resolve, 30));
       },
-      fakeSupabase
+      client,
+      options("instance-a", "a")
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = withDistributedLeaseLock(
+      "finance:protected",
+      async () => {
+        order.push("waiter");
+      },
+      client,
+      options("instance-b", "b")
     );
 
-    // Instance 2 tries to acquire immediately (should not succeed)
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    let acquiredBySecond = false;
-    const acquirePromise = withDistributedLock(
-      lockKey,
-      "instance2",
-      async () => {
-        acquiredBySecond = true;
-      },
-      fakeSupabase
-    );
-
-    // Let holder complete first
-    await holder;
-
-    // Now second should be able to acquire
-    await acquirePromise;
-
-    ok(acquiredBySecond, "second instance acquired after first released");
+    await Promise.all([first, second]);
+    assert.deepEqual(order, ["holder", "waiter"]);
   });
 
-  it("lock renewal is attempted during long operations", async () => {
-    fakeSupabase.clear();
+  it("times out instead of retrying forever", async () => {
+    const client = new FakeLockClient();
+    client.hold("finance:deadline");
+    await assert.rejects(
+      withDistributedLeaseLock(
+        "finance:deadline",
+        async () => undefined,
+        client,
+        {
+          instanceId: "waiter",
+          randomId: () => "deadline",
+          leaseSeconds: 5,
+          acquisitionTimeoutMs: 15,
+          renewalIntervalMs: 10,
+        }
+      ),
+      /within 15ms deadline/
+    );
+  });
 
-    let renewCalls = 0;
-    const originalRpc = fakeSupabase.rpc.bind(fakeSupabase);
+  it("renews a long-running lease and reports rejected renewals", async () => {
+    const client = new FakeLockClient();
+    await withDistributedLeaseLock(
+      "finance:renew",
+      async () => new Promise((resolve) => setTimeout(resolve, 35)),
+      client,
+      options("instance", "renew")
+    );
+    assert.ok(client.renewCalls >= 1);
 
-    // Wrap rpc to count renewal calls
-    const wrappedRpc = async (method: string, params: Record<string, unknown>) => {
-      if (method === "renew_distributed_lock") {
-        renewCalls++;
+    const warnings: Error[] = [];
+    client.rejectRenewal = true;
+    await withDistributedLeaseLock(
+      "finance:renew-rejected",
+      async () => new Promise((resolve) => setTimeout(resolve, 35)),
+      client,
+      {
+        ...options("instance", "renew-rejected"),
+        onRenewalError: (error) => warnings.push(error),
       }
-      return originalRpc(method, params);
-    };
-
-    // Replace rpc method while preserving type safety
-    Object.defineProperty(fakeSupabase, "rpc", {
-      value: wrappedRpc,
-      writable: true,
-      configurable: true,
-    });
-
-    // Acquire and hold for 11+ seconds (renewal interval is ~10s for 30s lease)
-    await withDistributedLock("renewal-test", "instance1", async () => {
-      await new Promise((resolve) => setTimeout(resolve, 11000));
-    }, fakeSupabase);
-
-    // Renewal should have been attempted at least once (heartbeat fires every 10s)
-    ok(renewCalls > 0, `renewal was attempted (${renewCalls} calls)`);
+    );
+    assert.ok(warnings.length >= 1);
   });
 
-  it("finance lock scopes match deployment patterns", async () => {
-    const scopes = [
-      "finance:expense:department-123",
-      "finance:expense:expense-456",
-      "finance:cash:department-789",
-      "finance:cash:movement-012",
-      "finance:salary:staff-345",
-    ];
-
-    for (const scope of scopes) {
-      ok(scope.length > 0, `scope non-empty: ${scope}`);
-      ok(/^finance:[a-z]+:[a-z0-9-]+$/.test(scope), `scope matches pattern: ${scope}`);
-    }
-  });
-
-  it("production code uses SECURITY DEFINER on RPC functions", async () => {
-    // Verified in migration: acquire_distributed_lock, renew_distributed_lock,
-    // release_distributed_lock all use SECURITY DEFINER set search_path
-    ok(true, "migration verified: RPC functions use SECURITY DEFINER");
-  });
-
-  it("client roles cannot directly modify lock table", async () => {
-    // RLS policies restrict: PUBLIC/anon/authenticated cannot modify
-    // Only server-role RPC functions can acquire/release/renew
-    ok(true, "migration verified: RLS blocks direct client table access");
+  it("migration keeps lock RPCs server-only and rejects expired renewal", () => {
+    const sql = readFileSync(
+      new URL("../supabase/migrations/20260817_distributed_mutation_lock.sql", import.meta.url),
+      "utf8"
+    );
+    assert.doesNotMatch(sql, /create\s+policy/i);
+    assert.match(
+      sql,
+      /revoke all on table public\.distributed_mutation_lock from public, anon, authenticated/i
+    );
+    assert.match(
+      sql,
+      /grant execute on function public\.acquire_distributed_lock\(text, text, int\) to service_role/i
+    );
+    assert.match(sql, /and expires_at > pg_catalog\.now\(\)/i);
   });
 });
