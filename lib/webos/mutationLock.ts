@@ -1,7 +1,6 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import {
   resolveLockStrategy,
@@ -16,26 +15,65 @@ const PROCESS_LOCAL_FALLBACK_ENABLED =
   process.env.ENABLE_PROCESS_LOCAL_LOCK_FALLBACK === "true";
 const LOCK_ACQUISITION_TIMEOUT_MS = 30000;
 const LOCK_LEASE_SECONDS = 120;
+const LOCK_EDGE_TIMEOUT_MS = 8000;
+const DEFAULT_LOCK_EDGE_URL =
+  "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-mutation-lock";
 
-function getSupabaseClient(): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
+type EdgePayload = {
+  data?: unknown;
+  error?: { message?: unknown } | null;
+};
 
 function getInstanceId(): string {
   return process.env.INSTANCE_ID || `render-${randomUUID()}`;
 }
 
-function asLockRpcClient(supabase: SupabaseClient): DistributedLockRpcClient {
+function getLockRpcClient(): DistributedLockRpcClient | null {
+  const secret = process.env.RELIFE_MUTATION_LOCK_SECRET?.trim();
+  const url = (
+    process.env.RELIFE_SUPABASE_MUTATION_LOCK_URL || DEFAULT_LOCK_EDGE_URL
+  ).trim();
+  if (!secret || !url) return null;
+
   return {
     async rpc(method, params) {
-      const { data, error } = await supabase.rpc(method, params);
-      return {
-        data,
-        error: error ? { message: error.message } : null,
-      };
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), LOCK_EDGE_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-relife-lock-key": secret,
+          },
+          body: JSON.stringify({ method, params }),
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => ({}))) as EdgePayload;
+        const message = String(
+          payload.error?.message || `HTTP ${response.status}`
+        );
+        if (!response.ok) {
+          return { data: null, error: { message } };
+        }
+        return {
+          data: payload.data,
+          error: payload.error ? { message } : null,
+        };
+      } catch (error) {
+        return {
+          data: null,
+          error: {
+            message:
+              error instanceof Error
+                ? error.message
+                : "DISTRIBUTED_LOCK_EDGE_UNAVAILABLE",
+          },
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
     },
   };
 }
@@ -43,9 +81,10 @@ function asLockRpcClient(supabase: SupabaseClient): DistributedLockRpcClient {
 /**
  * Serialize read-check-write mutations against Google Sheets.
  *
- * required (default): Supabase/Postgres lease lock is mandatory and failures
- * fail closed. compatibility: process-local fallback is available only when
- * explicitly enabled for local/test/single-instance operation.
+ * required (default): Supabase/Postgres lease lock via a server-authenticated
+ * Edge Function is mandatory and failures fail closed. compatibility:
+ * process-local fallback is available only when explicitly enabled for
+ * local/test/single-instance operation.
  */
 export async function withMutationLock<T>(
   key: string,
@@ -54,16 +93,16 @@ export async function withMutationLock<T>(
   const normalizedKey = key.trim().toLowerCase();
   if (!normalizedKey) return fn();
 
-  const supabase = getSupabaseClient();
+  const client = getLockRpcClient();
   const strategy = resolveLockStrategy(
     DISTRIBUTED_LOCK_MODE,
     PROCESS_LOCAL_FALLBACK_ENABLED,
-    Boolean(supabase)
+    Boolean(client)
   );
 
-  if (strategy === "distributed" && supabase) {
+  if (strategy === "distributed" && client) {
     try {
-      return await withDistributedLeaseLock(normalizedKey, fn, asLockRpcClient(supabase), {
+      return await withDistributedLeaseLock(normalizedKey, fn, client, {
         instanceId: getInstanceId(),
         leaseSeconds: LOCK_LEASE_SECONDS,
         acquisitionTimeoutMs: LOCK_ACQUISITION_TIMEOUT_MS,
