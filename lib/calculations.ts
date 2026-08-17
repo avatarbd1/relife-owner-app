@@ -53,6 +53,60 @@ function normalizedDate(value: string | undefined): string {
   return String(value || "").trim().slice(0, 10);
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isoDateParts(value: string): { year: number; month: number; day: number } | null {
+  if (!ISO_DATE.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+type MonthSegment = {
+  ref: Date;
+  days: number;
+  daysInMonth: number;
+};
+
+function dateRangeMonthSegments(startDate: string, endDate: string): MonthSegment[] {
+  const start = isoDateParts(startDate);
+  const end = isoDateParts(endDate);
+  if (!start || !end || startDate > endDate) throw new Error("INVALID_DATE_RANGE");
+
+  const rangeEnd = Date.UTC(end.year, end.month - 1, end.day);
+  let cursor = Date.UTC(start.year, start.month - 1, start.day);
+  const segments: MonthSegment[] = [];
+
+  while (cursor <= rangeEnd) {
+    const cursorDate = new Date(cursor);
+    const year = cursorDate.getUTCFullYear();
+    const monthIndex = cursorDate.getUTCMonth();
+    const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const monthEnd = Date.UTC(year, monthIndex, daysInMonth);
+    const segmentEnd = Math.min(monthEnd, rangeEnd);
+    const days = Math.floor((segmentEnd - cursor) / 86_400_000) + 1;
+    segments.push({
+      ref: new Date(Date.UTC(year, monthIndex, 15, 12)),
+      days,
+      daysInMonth,
+    });
+    cursor = segmentEnd + 86_400_000;
+  }
+
+  return segments;
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function isSameMonth(dateStr: string, ref: Date): boolean {
   return normalizedDate(dateStr).startsWith(bdDateKey(ref).slice(0, 7));
 }
@@ -243,6 +297,7 @@ export async function getDateRangeCollection(
   endDate: string,
   scope: Scope
 ): Promise<TodaysCollection> {
+  dateRangeMonthSegments(startDate, endDate);
   const payments = await getPayments();
   const inRange = payments.filter(
     (p) => normalizedDate(p.date) >= startDate && normalizedDate(p.date) <= endDate
@@ -327,6 +382,7 @@ export async function getDateRangeBusinessPosition(
   endDate: string,
   scope: Scope
 ): Promise<MonthBusinessPosition> {
+  const segments = dateRangeMonthSegments(startDate, endDate);
   const [payments, expenses, staff] = await Promise.all([
     getPayments(),
     getExpenses(),
@@ -344,28 +400,41 @@ export async function getDateRangeBusinessPosition(
     .filter((e) => rangeFilter(e.date) && isVariableClinicExpense(e))
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const fixedSalaryCommitment = inScope(staff, scope)
+  const monthlySalaryCommitment = inScope(staff, scope)
     .filter(isSalaryCommitmentStaff)
     .reduce((sum, s) => sum + s.salary, 0);
 
-  // For date ranges, fixed overhead is prorated (not charged for partial month)
-  const fixedOverheadDaily = (await getFixedOverhead(scope, expenses, new Date())) / 30;
-  const dayCount = Math.max(
-    1,
-    (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24) + 1
+  const fixedSalaryCommitment = roundMoney(
+    segments.reduce(
+      (sum, segment) =>
+        sum + (monthlySalaryCommitment * segment.days) / segment.daysInMonth,
+      0
+    )
   );
-  const fixedOverhead = fixedOverheadDaily * dayCount;
 
-  const totalBusinessLiability =
-    variableClinicExpense + fixedOverhead + fixedSalaryCommitment;
+  const monthlyOverheads = await Promise.all(
+    segments.map((segment) => getFixedOverhead(scope, expenses, segment.ref))
+  );
+  const fixedOverhead = roundMoney(
+    monthlyOverheads.reduce(
+      (sum, monthlyOverhead, index) =>
+        sum +
+        (monthlyOverhead * segments[index].days) / segments[index].daysInMonth,
+      0
+    )
+  );
+
+  const totalBusinessLiability = roundMoney(
+    variableClinicExpense + fixedOverhead + fixedSalaryCommitment
+  );
 
   return {
-    monthCollection,
-    variableClinicExpense,
+    monthCollection: roundMoney(monthCollection),
+    variableClinicExpense: roundMoney(variableClinicExpense),
     fixedOverhead,
     fixedSalaryCommitment,
     totalBusinessLiability,
-    surplusOrUncovered: monthCollection - totalBusinessLiability,
+    surplusOrUncovered: roundMoney(monthCollection - totalBusinessLiability),
   };
 }
 
