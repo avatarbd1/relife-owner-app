@@ -333,7 +333,7 @@ function parseResources(rows: string[][]): BookingModalityOption[] {
   options.push({
     value: "MANUAL",
     label: "Manual Therapy",
-    durationMin: 5,
+    durationMin: 10,
     resourceId: "",
     resourceName: "",
     machine: false,
