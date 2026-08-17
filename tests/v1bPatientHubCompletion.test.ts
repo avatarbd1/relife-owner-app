@@ -28,7 +28,7 @@ test("Dental registration explicitly keeps phone optional and blank phones bypas
   assert.ok(phoneInput, "primary phone input must exist");
   assert.doesNotMatch(phoneInput, /\brequired\b/);
 
-  assert.match(register, /const phone = normalizePhone\(input\.phone\);\s*if \(phone\) \{/s);
+  assert.match(register, /const phone = normalizePhone\(input\.phone\);\s*if \(phone\) \{/);
   assert.match(register, /Phone: quotePhone\(input\.phone \|\| ""\)/);
   assert.doesNotMatch(register, /PHONE_REQUIRED|INVALID_PHONE/);
 });
