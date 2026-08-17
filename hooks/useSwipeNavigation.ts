@@ -17,7 +17,11 @@ type SwipeNavigationOptions = {
   threshold?: number;
   maxDurationMs?: number;
   edgeGuardPx?: number;
+  directionLockPx?: number;
+  horizontalDominance?: number;
 };
+
+type GestureAxis = "pending" | "horizontal" | "vertical";
 
 function routeMatches(pathname: string, matches: string[]): boolean {
   return matches.some(
@@ -29,12 +33,12 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return Boolean(
     target.closest(
-      "a,button,input,textarea,select,summary,[contenteditable='true'],[role='slider'],[data-swipe-nav-ignore]"
+      "a,button,input,textarea,select,summary,form,table,[contenteditable='true'],[role='button'],[role='slider'],[role='dialog'],[data-swipe-nav-ignore]"
     )
   );
 }
 
-function isHorizontalScroller(target: EventTarget | null): boolean {
+function isScrollableRegion(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   let node: Element | null = target;
   while (node && node !== document.body) {
@@ -43,7 +47,10 @@ function isHorizontalScroller(target: EventTarget | null): boolean {
       const canScrollX =
         (style.overflowX === "auto" || style.overflowX === "scroll") &&
         node.scrollWidth > node.clientWidth + 4;
-      if (canScrollX) return true;
+      const canScrollY =
+        (style.overflowY === "auto" || style.overflowY === "scroll") &&
+        node.scrollHeight > node.clientHeight + 4;
+      if (canScrollX || canScrollY) return true;
     }
     node = node.parentElement;
   }
@@ -53,9 +60,11 @@ function isHorizontalScroller(target: EventTarget | null): boolean {
 export function useSwipeNavigation({
   pathname,
   routes,
-  threshold = 52,
+  threshold = 96,
   maxDurationMs = 800,
   edgeGuardPx = 24,
+  directionLockPx = 14,
+  horizontalDominance = 1.5,
 }: SwipeNavigationOptions) {
   const router = useRouter();
   const startRef = useRef<{
@@ -63,6 +72,7 @@ export function useSwipeNavigation({
     y: number;
     at: number;
     ignored: boolean;
+    axis: GestureAxis;
   } | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [swipeProgress, setSwipeProgress] = useState(0);
@@ -93,6 +103,12 @@ export function useSwipeNavigation({
       }
     }
 
+    function cancelGesture(start: NonNullable<typeof startRef.current>) {
+      start.axis = "vertical";
+      setSwipeProgress(0);
+      setSwipeDirection(null);
+    }
+
     function onTouchStart(event: TouchEvent) {
       if (event.touches.length !== 1 || isNavigating) {
         resetGesture();
@@ -109,7 +125,8 @@ export function useSwipeNavigation({
         ignored:
           nearSystemEdge ||
           isInteractiveTarget(event.target) ||
-          isHorizontalScroller(event.target),
+          isScrollableRegion(event.target),
+        axis: "pending",
       };
     }
 
@@ -117,18 +134,26 @@ export function useSwipeNavigation({
       const start = startRef.current;
       const touch = event.touches[0];
       if (!start || !touch || start.ignored || isNavigating) return;
+      if (start.axis === "vertical") return;
 
       const deltaX = touch.clientX - start.x;
       const deltaY = touch.clientY - start.y;
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
 
-      if (absX < 10 || absX <= absY * 1.15) {
-        if (absY > absX) {
-          setSwipeProgress(0);
-          setSwipeDirection(null);
+      if (start.axis === "pending") {
+        if (absX < directionLockPx && absY < directionLockPx) return;
+
+        if (absY >= directionLockPx && absY > absX * 1.2) {
+          cancelGesture(start);
+          return;
         }
-        return;
+
+        if (absX >= directionLockPx && absX >= absY * horizontalDominance) {
+          start.axis = "horizontal";
+        } else {
+          return;
+        }
       }
 
       const direction: SwipeDirection = deltaX < 0 ? "next" : "previous";
@@ -146,7 +171,7 @@ export function useSwipeNavigation({
     function onTouchEnd(event: TouchEvent) {
       const start = startRef.current;
       startRef.current = null;
-      if (!start || start.ignored || isNavigating) {
+      if (!start || start.ignored || start.axis === "vertical" || isNavigating) {
         setSwipeProgress(0);
         setSwipeDirection(null);
         return;
@@ -166,10 +191,10 @@ export function useSwipeNavigation({
       const deltaY = touch.clientY - start.y;
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
-      const velocity = absX / duration;
-      const validDistance = absX >= threshold || (absX >= 32 && velocity >= 0.55);
+      const validDistance = absX >= threshold;
+      const validDirection = absX >= absY * horizontalDominance;
 
-      if (!validDistance || absX <= absY * 1.2) {
+      if (!validDistance || !validDirection) {
         setSwipeProgress(0);
         setSwipeDirection(null);
         return;
@@ -200,7 +225,18 @@ export function useSwipeNavigation({
       document.removeEventListener("touchend", onTouchEnd);
       document.removeEventListener("touchcancel", resetGesture);
     };
-  }, [edgeGuardPx, isNavigating, maxDurationMs, pathname, routeKey, router, routes, threshold]);
+  }, [
+    directionLockPx,
+    edgeGuardPx,
+    horizontalDominance,
+    isNavigating,
+    maxDurationMs,
+    pathname,
+    routeKey,
+    router,
+    routes,
+    threshold,
+  ]);
 
   return {
     isNavigating,

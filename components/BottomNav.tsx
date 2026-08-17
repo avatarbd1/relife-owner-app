@@ -129,7 +129,7 @@ export default function BottomNav({
   } = useSwipeNavigation({
     pathname,
     routes: swipeRoutes,
-    threshold: 52,
+    threshold: 96,
   });
 
   useEffect(() => {
