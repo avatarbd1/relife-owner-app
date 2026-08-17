@@ -300,7 +300,19 @@ export default function PaymentsWorkspaceClient({
             {[ ["Receipt #", receipt?.receiptNo || "Assigned on save"], ["Patient", `${selected.fullName} · ${selected.patientId}`], ["Department", selected.department], ["Gross", bdt(grossNumber)], ["Discount", bdt(discount)], ["Net cash", bdt(net)], ["Method", method], ["Projected due", bdt(previewDue)] ].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-3 px-3 py-2.5"><span className="text-xs text-slate-500">{label}</span><span className={`text-xs font-semibold text-right ${label === "Net cash" ? "text-blue-900" : "text-slate-900"}`}>{value}</span></div>)}
           </div>
           <button type="button" disabled={busy || !online || net < 0} onClick={savePayment} className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow-md hover:bg-blue-900 disabled:shadow-none">{busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving payment" />}{busy ? "Saving…" : "Confirm payment"}</button>
-          {receipt && <div className="mt-3 grid grid-cols-3 gap-2"><button type="button" onClick={copyReceipt} className="min-h-11 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy</button><button type="button" onClick={() => window.print()} className="min-h-11 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">Print / PDF</button><button type="button" onClick={shareReceipt} className="min-h-11 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">Share</button></div>}
+          {receipt && (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Link
+                href={`/appointments/new?patientId=${encodeURIComponent(receipt.patientId)}&department=${receipt.department}`}
+                className="flex min-h-11 items-center justify-center rounded-lg bg-emerald-700 px-2 text-center text-xs font-semibold text-white hover:bg-emerald-800"
+              >
+                Next appointment
+              </Link>
+              <button type="button" onClick={copyReceipt} className="min-h-11 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy</button>
+              <button type="button" onClick={() => window.print()} className="min-h-11 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">Print / PDF</button>
+              <button type="button" onClick={shareReceipt} className="min-h-11 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">Share</button>
+            </div>
+          )}
         </section>
       )}
 
