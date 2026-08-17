@@ -1,220 +1,86 @@
 # V1-A Implementation Status
 
-## Changes Made
+## Status
 
-### 1. lib/domain/finance/expenses.ts ✅
+V1-A Core Data Integrity is code-complete on PR #92 and awaiting merge/deployment approval.
 
-**Completed**:
-- ✅ Removed `appendSheetValues` import (no longer needed for separate audit calls)
-- ✅ Replaced `appendExpenseAudit()` function with `buildExpenseAuditRow()` helper
-- ✅ Added `sheetIds()` and `requireSheetId()` helper functions
-- ✅ Updated `requestExpense()` to atomize audit in same batch
-- ✅ Updated `decideExpense()` to atomize audit in same batch
-- ✅ Updated `payApprovedExpense()` to atomize audit in same batch
+Current scope is limited to finance integrity and shared mutation locking. No Patient Hub, Chamber, Dental access, or product-surface work is included here.
 
-**Pattern Applied** (all 3 operations):
-```typescript
-// Before (broken):
-await batchUpdateSpreadsheet(workbook, [primary_mutation]);
-await appendExpenseAudit(...);  // Separate call, fails silently
+## Completed
 
-// After (fixed):
-const auditRow = buildExpenseAuditRow(auditHeaders, {...});
-const requests = [primary_mutation, appendRowRequest(auditSheetId, auditRow)];
-await batchUpdateSpreadsheet(workbook, requests);  // All-or-nothing
-```
+### Expense
+- `requestExpense()` writes the expense row and audit row in one Google Sheets batch.
+- `decideExpense()` writes status changes and audit in one batch.
+- `payApprovedExpense()` writes payment state and audit in one batch.
+- Separate `appendExpenseAudit()` / `appendSheetValues()` audit writes were removed.
+- Audit schema is validated before the primary mutation.
 
-**Verified Atomicity**:
-- All audit columns mapped via `rowForHeaders()` 
-- Audit row built BEFORE batch
-- Audit row included in single `batchUpdateSpreadsheet()` call
-- No separate network call to audit sheet
-- Batch failure propagates (no silent catch)
+### Cash Movement
+- `requestCashMovement()` writes movement + audit in one batch.
+- `decideCashMovement()` writes decision state + audit in one batch.
+- Separate `appendCashAudit()` path was removed.
+- Audit schema is validated before mutation.
 
----
+### Salary
+- `paySalary()` writes salary payment + audit in one batch.
+- Separate `appendSalaryAudit()` path was removed.
+- Audit schema is validated before mutation.
 
-### 2. lib/domain/finance/cash.ts ⏳ NEEDS COMPLETION
+### Lock coverage
+The production wrapper uses `withMutationLock()` for conflicting finance mutations:
 
-**Remaining Work**:
-- Remove `appendSheetValues` import
-- Replace `appendCashAudit()` with `buildCashAuditRow()` helper
-- Add `sheetIds()` and `requireSheetId()` helpers
-- Update `requestCashMovement()` - atomize audit
-- Update `decideCashMovement()` - atomize audit
+- `requestExpense`: department scope for ID allocation.
+- `decideExpense`: expense ID scope.
+- `payApprovedExpense`: same expense ID scope as decision.
+- `requestCashMovement`: department scope for ID allocation.
+- `decideCashMovement`: movement ID scope.
+- `paySalary`: staff ID scope.
 
-**Status**: Same atomization pattern as expenses, ready to apply
+Unrelated records remain able to execute concurrently.
 
----
+### Distributed locking
+`withMutationLock()` now uses a Supabase/Postgres lease lock in `required` mode.
 
-### 3. lib/domain/finance/salary.ts ⏳ NEEDS COMPLETION
+Properties:
+- fail-closed when distributed locking is required but unavailable;
+- unique owner ID per acquisition;
+- token-bound acquire / renew / release;
+- stale lease takeover after expiry;
+- bounded acquisition deadline with exponential backoff;
+- heartbeat renewal for long-running external Google Sheets operations;
+- process-local fallback only in explicit compatibility mode;
+- lock RPCs restricted to the Supabase `service_role`.
 
-**Remaining Work**:
-- Remove `appendSheetValues` import
-- Replace `appendSalaryAudit()` with `buildSalaryAuditRow()` helper
-- Add `sheetIds()` and `requireSheetId()` helpers
-- Update `paySalary()` - atomize audit
+The testable production algorithm lives in `lib/webos/mutationLockCore.ts`; `lib/webos/mutationLock.ts` provides the server-only environment/Supabase wrapper.
 
-**Status**: Same pattern as above
+## Verification
 
----
+Latest GitHub CI on the V1-A branch verifies:
+- PR impact + user-flow gate: PASS
+- lint: PASS
+- domain tests: PASS
+- build: PASS
+- total tests: 134 PASS
 
-### 4. lib/domain/finance/production.ts ⏳ NEEDS LOCK WRAPPERS
+The distributed-lock suite executes the production lock core rather than a copied lock implementation. It covers required-mode fail-closed behavior, compatibility gating, RPC errors, same-key serialization, different-key parallelism, callback failure release, unique owner identity, token validation, stale lease recovery, acquisition timeout, heartbeat renewal, and migration access restrictions.
 
-**Required Changes**:
-- `requestExpense()` wrapper: Add withMutationLock(`finance:expense:${department}`)
-- `decideExpense()` wrapper: Add withMutationLock based on workbook
-- `payApprovedExpense()` wrapper: Add withMutationLock(`finance:expense:${department}`)
-- `requestCashMovement()` wrapper: Add withMutationLock(`finance:cash:${department}`)
-- `decideCashMovement()` wrapper: Add withMutationLock based on workbook
-- `paySalary()` wrapper: Add withMutationLock(`finance:salary:${department}`)
+## Deployment Preconditions
 
-**Model to Copy From** (already done):
-```typescript
-export async function createPayment(context, input) {
-  const department = departmentFromPatientId(input.patientId);
-  return withMutationLock(`finance:payment:${department}:${patientId}`, async () => {
-    const result = await createSheetsPayment(context, input);
-    await syncFinance(...);
-    return result;
-  });
-}
-```
+Do not merge/deploy V1-A until both are confirmed:
 
----
+1. The Supabase migration `supabase/migrations/20260817_distributed_mutation_lock.sql` is applied to the production Supabase project.
+2. Render has server-side values for `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` before the new default `DISTRIBUTED_LOCK_MODE=required` code goes live.
 
-### 5. Tests ⏳ NEEDS CREATION
+The migration is additive and does not alter existing finance data. No fake production finance transaction is required for validation.
 
-**Test Files Required**:
-- `tests/expenseAtomicityBatch.test.ts` - Verify audit row in batch
-- `tests/cashAtomicityBatch.test.ts` - Verify audit row in batch
-- `tests/salaryAtomicityBatch.test.ts` - Verify audit row in batch
-- `tests/expenseConcurrencyLock.test.ts` - Concurrent requests with lock
-- `tests/cashConcurrencyLock.test.ts` - Concurrent requests with lock
-- `tests/salaryConcurrencyLock.test.ts` - Concurrent requests with lock
-- `tests/financeAuditBatchComposition.test.ts` - Complex scenario tests
+## Not Included in V1-A
 
-**Test Pattern** (to implement):
-```typescript
-describe("Expense atomicity", () => {
-  it("includes audit row in batch request", async () => {
-    // Mock batchUpdateSpreadsheet
-    // Call requestExpense()
-    // Verify batchUpdateSpreadsheet called with 2 rows: [expense, audit]
-    // Verify appendSheetValues was NOT called
-  });
+- Patient/Access workflow consolidation (V1-B)
+- Appointment/Chamber authority consolidation (V1-C)
+- Product-surface/notification/PWA hardening (V1-D)
 
-  it("fails batch if audit headers missing", async () => {
-    // Mock 20_Data_Audit with no headers
-    // Call requestExpense()
-    // Expect SCHEMA_MISMATCH before batch
-  });
+## Rollback Principle
 
-  it("prevents concurrent requests with lock", async () => {
-    // Call requestExpense twice simultaneously
-    // Verify second waits for first
-    // Verify no ID collision
-  });
-});
-```
+If V1-A is merged and must be reverted, revert the complete PR merge rather than resetting shared `main`. If the Supabase lock migration was already applied, the unused lock table/functions may remain safely in place or be removed later with a dedicated migration; do not destructively roll back production finance data.
 
----
-
-## V1-A Scope Summary
-
-### What V1-A Covers:
-1. ✅ Atomize expense audit (request + decide + pay operations)
-2. ✅ Atomize cash audit (request + decide operations)  
-3. ✅ Atomize salary audit (pay operation)
-4. ✅ Add concurrency locks to all three
-5. ✅ Remove separated appendExpenseAudit/appendCashAudit/appendSalaryAudit functions
-6. ✅ Preserve all business logic
-7. ✅ Add comprehensive regression tests
-8. ✅ Update documentation
-
-### What V1-A Does NOT Change:
-- Payment mutation (already fixed in PR #91)
-- Expense business rules
-- Cash business rules
-- Salary business rules
-- API routes
-- Client UI
-- Permission enforcement
-- Appointment/Chamber/Clinical
-- Patient operations
-
----
-
-## Success Criteria (V1-A Definition of Done)
-
-- [ ] All three finance domains atomize audit rows in batch requests
-- [ ] No appendExpenseAudit/appendCashAudit/appendSalaryAudit functions remain
-- [ ] All expense/cash/salary mutations wrapped with withMutationLock
-- [ ] Lock scopes documented and tested
-- [ ] 10+ regression tests pass
-- [ ] Build succeeds
-- [ ] Lint passes
-- [ ] No logic changes to business rules
-- [ ] PR body includes: changes summary, impacted areas, regression tests, rollback procedure
-- [ ] CI passes
-
----
-
-## Remaining Implementation Steps
-
-1. **Complete Cash atomization** (30 min)
-   - Replace appendCashAudit with buildCashAuditRow
-   - Update requestCashMovement and decideCashMovement
-
-2. **Complete Salary atomization** (20 min)
-   - Replace appendSalaryAudit with buildSalaryAuditRow
-   - Update paySalary
-
-3. **Add lock wrappers to production.ts** (20 min)
-   - Wrap all 6 functions with withMutationLock
-
-4. **Write comprehensive tests** (2-3 hours)
-   - Atomicity verification tests
-   - Concurrency tests
-   - Edge case tests
-
-5. **Verify build + lint** (30 min)
-
-6. **Create PR** (30 min)
-   - Detailed PR body with required sections
-   - Test evidence
-   - Rollback procedure
-
----
-
-## Files Changed in V1-A
-
-```
-lib/domain/finance/
-  ├─ expenses.ts (COMPLETED)
-  ├─ cash.ts (PARTIAL - needs completion)
-  ├─ salary.ts (NEEDS START)
-  └─ production.ts (NEEDS LOCKS)
-
-tests/
-  └─ [6 new test files needed]
-
-docs/
-  └─ V1A_IMPLEMENTATION_STATUS.md (this file)
-```
-
----
-
-## Known Risks & Mitigation
-
-| Risk | Mitigation |
-|------|-----------|
-| Lock deadlock | Use timeout, test concurrent unrelated ops |
-| Missing audit columns | Pre-check all columns exist (done in schema validation) |
-| Batch partial failure | Sheets API guarantees all-or-nothing, verified in tests |
-| Idempotency broken | Preserve requestId markers, test double-tap scenario |
-| Regression in business logic | Zero logic changes, only audit atomization pattern applied |
-
----
-
-*Last Updated: 2026-08-17*
-*Current Status: Expense atomization complete, cash/salary/locks in progress*
+*Updated: 2026-08-18*
