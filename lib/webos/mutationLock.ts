@@ -1,10 +1,12 @@
 import "server-only";
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const mutationLocks = new Map<string, Promise<void>>();
 
-function getSupabaseClient() {
+type SupabaseClientType = SupabaseClient;
+
+function getSupabaseClient(): SupabaseClientType | null {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
@@ -47,7 +49,7 @@ async function withDistributedLock<T>(
   key: string,
   instanceId: string,
   fn: () => Promise<T>,
-  supabase: any
+  supabase: SupabaseClientType
 ): Promise<T> {
   const lockTimeout = 30; // seconds
   let lockToken: string | null = null;
@@ -79,13 +81,14 @@ async function withDistributedLock<T>(
     } finally {
       // Release lock
       if (lockToken) {
-        await supabase.rpc("release_distributed_lock", {
+        const { error: releaseError } = await supabase.rpc("release_distributed_lock", {
           p_lock_key: key,
           p_owner_id: instanceId,
           p_token: lockToken,
-        }).catch((err: unknown) => {
-          console.error("Failed to release distributed lock:", err);
         });
+        if (releaseError) {
+          console.error("Failed to release distributed lock:", releaseError);
+        }
       }
     }
   } catch (error) {
