@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { addQuickAssessment } from "@/lib/webos/clinical";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function code(message: string) {
   if (message === "ACCESS_DENIED") return 403;
@@ -17,11 +18,14 @@ export async function POST(request: NextRequest) {
     const context = await requireCurrentAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await addQuickAssessment(context, {
-      patientId: body.patientId,
-      category: body.category,
-      findings: body.findings,
-    });
+    const patientId = String(body.patientId || "").trim();
+    const result = await withMutationLock(`patient:Physio:${patientId}`, () =>
+      addQuickAssessment(context, {
+        patientId,
+        category: body.category,
+        findings: body.findings,
+      })
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ASSESSMENT_CREATE_FAILED";
