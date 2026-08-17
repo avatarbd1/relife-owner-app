@@ -95,6 +95,15 @@ function parsePatients(rows: string[][], fallback: Department): PatientRecord[] 
 let patientCache: { createdAt: number; promise: Promise<PatientRecord[]> } | undefined;
 const CACHE_MS = 30_000;
 
+/**
+ * Clear the short-lived patient read cache after any successful write that can
+ * change what the Patient File shows. This keeps create/edit/payment redirects
+ * consistent without removing the cache for normal read-heavy navigation.
+ */
+export function invalidatePatientsCache(): void {
+  patientCache = undefined;
+}
+
 async function loadPatients(): Promise<PatientRecord[]> {
   if (!hasPrivateSheetsCredentials()) return [];
 

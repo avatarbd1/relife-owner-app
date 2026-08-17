@@ -90,3 +90,16 @@ test("Chamber completion attempts an audited clinical treatment note", () => {
   assert.match(note, /\[CHAMBER_SESSION:/);
   assert.match(note, /clinical\.session\.auto_from_chamber/);
 });
+
+test("Patient File cache is cleared after create, edit and payment writes", () => {
+  const patients = source("lib/patients.ts");
+  const createPatient = source("app/api/patients/route.ts");
+  const editPatient = source("app/api/patients/[patientId]/route.ts");
+  const payment = source("app/api/finance/payment/route.ts");
+
+  assert.match(patients, /export function invalidatePatientsCache/);
+  assert.match(patients, /patientCache = undefined/);
+  for (const route of [createPatient, editPatient, payment]) {
+    assert.match(route, /invalidatePatientsCache\(\)/);
+  }
+});

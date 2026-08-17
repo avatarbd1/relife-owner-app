@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 import { withMutationLock } from "@/lib/webos/mutationLock";
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
         remarks: body.remarks,
       })
     );
+    invalidatePatientsCache();
     if (body.department === "Physio") {
       try {
         await consumePhysioInventorySystem(["Patient Card"], context.staffId, "Auto-Registration");

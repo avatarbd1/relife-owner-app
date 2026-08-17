@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { updatePatientProfile } from "@/lib/webos/patientUpdate";
@@ -55,6 +56,7 @@ export async function PATCH(
         status: body.status,
       })
     );
+    invalidatePatientsCache();
 
     let chamberSynced = true;
     try {
