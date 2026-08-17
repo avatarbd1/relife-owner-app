@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPayment } from "@/lib/domain/finance/production";
+import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
       remarks: body.remarks,
       requestId: body.requestId,
     });
+    invalidatePatientsCache();
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
