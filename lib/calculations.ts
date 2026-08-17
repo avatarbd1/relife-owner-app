@@ -24,6 +24,11 @@ import {
   isVariableClinicExpense,
   type FinanceDepartment,
 } from "@/lib/domain/finance/policy";
+import {
+  dateRangeMonthSegments,
+  prorateMonthlyAmount,
+  roundMoney,
+} from "@/lib/domain/finance/dateRange";
 
 function inScope<T extends { department: Department }>(
   rows: T[],
@@ -108,11 +113,6 @@ function normalizeCustodian(value: string | undefined): Custodian | null {
   return null;
 }
 
-// ---------------------------------------------------------------------
-// Current Cash Position — current month, carried from every cash effect.
-// payment -> Reception or Digital/Bank; paid expense/salary -> subtract from
-// Paid_From; accepted transfer -> subtract source and add destination.
-// ---------------------------------------------------------------------
 export interface CashPosition {
   reception: number;
   homeTreasury: number;
@@ -132,7 +132,6 @@ export async function getCashPosition(
 
   const movements = await getCashMovements();
 
-  // Preserve seed-only development behavior. Production live data is fail-closed.
   if (!IS_LIVE_DATA) {
     for (const movement of movements as unknown as Array<{
       bucket?: string;
@@ -214,10 +213,6 @@ export async function getCashPosition(
   return position;
 }
 
-// ---------------------------------------------------------------------
-// Today's Collection
-// Source: 06_Payments only. Treatment status is NOT used for collection.
-// ---------------------------------------------------------------------
 export interface TodaysCollection {
   physio: number;
   dental: number;
@@ -238,9 +233,26 @@ export async function getTodaysCollection(
   return { physio, dental, combined: physio + dental };
 }
 
-// ---------------------------------------------------------------------
-// This Month's Business Position
-// ---------------------------------------------------------------------
+export async function getDateRangeCollection(
+  startDate: string,
+  endDate: string,
+  scope: Scope
+): Promise<TodaysCollection> {
+  dateRangeMonthSegments(startDate, endDate);
+  const payments = await getPayments();
+  const inRange = payments.filter(
+    (p) => normalizedDate(p.date) >= startDate && normalizedDate(p.date) <= endDate
+  );
+  const scoped = inScope(inRange, scope);
+  const physio = scoped
+    .filter((p) => p.department === "Physio")
+    .reduce((sum, p) => sum + p.amount, 0);
+  const dental = scoped
+    .filter((p) => p.department === "Dental")
+    .reduce((sum, p) => sum + p.amount, 0);
+  return { physio, dental, combined: physio + dental };
+}
+
 export interface MonthBusinessPosition {
   monthCollection: number;
   variableClinicExpense: number;
@@ -303,11 +315,64 @@ export async function getMonthBusinessPosition(
   };
 }
 
-// ---------------------------------------------------------------------
-// Salary card
-// Fixed commitment: 08_Staff.Salary, excluding Owner.
-// Paid/advance: department-specific 13_Salary rows.
-// ---------------------------------------------------------------------
+export async function getDateRangeBusinessPosition(
+  startDate: string,
+  endDate: string,
+  scope: Scope
+): Promise<MonthBusinessPosition> {
+  const segments = dateRangeMonthSegments(startDate, endDate);
+  const [payments, expenses, staff] = await Promise.all([
+    getPayments(),
+    getExpenses(),
+    getStaff(),
+  ]);
+
+  const rangeFilter = (date: string) =>
+    normalizedDate(date) >= startDate && normalizedDate(date) <= endDate;
+
+  const monthCollection = inScope(payments, scope)
+    .filter((p) => rangeFilter(p.date))
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  const variableClinicExpense = inScope(expenses, scope)
+    .filter((e) => rangeFilter(e.date) && isVariableClinicExpense(e))
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const monthlySalaryCommitment = inScope(staff, scope)
+    .filter(isSalaryCommitmentStaff)
+    .reduce((sum, s) => sum + s.salary, 0);
+
+  const fixedSalaryCommitment = prorateMonthlyAmount(
+    monthlySalaryCommitment,
+    segments
+  );
+
+  const monthlyOverheads = await Promise.all(
+    segments.map((segment) => getFixedOverhead(scope, expenses, segment.ref))
+  );
+  const fixedOverhead = roundMoney(
+    monthlyOverheads.reduce(
+      (sum, monthlyOverhead, index) =>
+        sum +
+        (monthlyOverhead * segments[index].days) / segments[index].daysInMonth,
+      0
+    )
+  );
+
+  const totalBusinessLiability = roundMoney(
+    variableClinicExpense + fixedOverhead + fixedSalaryCommitment
+  );
+
+  return {
+    monthCollection: roundMoney(monthCollection),
+    variableClinicExpense: roundMoney(variableClinicExpense),
+    fixedOverhead,
+    fixedSalaryCommitment,
+    totalBusinessLiability,
+    surplusOrUncovered: roundMoney(monthCollection - totalBusinessLiability),
+  };
+}
+
 export interface SalaryStatus {
   fixedCommitment: number;
   paidOrAdvance: number;
