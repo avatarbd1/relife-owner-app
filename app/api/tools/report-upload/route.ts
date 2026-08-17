@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { uploadPatientReport } from "@/lib/webos/reportDrive";
+import { uploadPatientReportToPrivateStorage } from "@/lib/webos/reportStorage";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "REPORT_FILE_REQUIRED" }, { status: 400 });
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const result = await uploadPatientReport(context, {
+    const result = await uploadPatientReportToPrivateStorage(context, {
       patientId,
       fileName: file.name,
       mimeType: file.type,
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
         ? 403
         : message.includes("PATIENT")
           ? 404
-          : message.includes("DRIVE") || message.includes("SCHEMA")
+          : message.includes("STORAGE") || message.includes("SCHEMA")
             ? 503
             : 400;
     if (status >= 500) console.error("Report upload failed", error);
