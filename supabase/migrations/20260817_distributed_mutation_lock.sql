@@ -32,11 +32,11 @@ create policy "acquire_lock" on public.distributed_mutation_lock
   for insert
   with check (true);
 
--- Allow lock owner to release locks
+-- Allow lock owner to release locks (via RPC only, not direct client access)
 create policy "release_lock_by_owner" on public.distributed_mutation_lock
   for update
-  using (owner_id = current_user_id())
-  with check (owner_id = current_user_id());
+  using (false)
+  with check (false);
 
 -- Cleanup function for expired locks (call periodically)
 create or replace function public.cleanup_expired_locks()
@@ -58,6 +58,8 @@ create or replace function public.acquire_distributed_lock(
 )
 returns jsonb
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   v_result jsonb;
@@ -77,27 +79,25 @@ begin
   set
     owner_id = case
       when distributed_mutation_lock.status = 'released' then p_owner_id
-      when distributed_mutation_lock.status = 'expired' and distributed_mutation_lock.expires_at < now() then p_owner_id
-      when distributed_mutation_lock.owner_id = p_owner_id then p_owner_id
+      when distributed_mutation_lock.expires_at <= now() then p_owner_id
       else distributed_mutation_lock.owner_id
     end,
     token = case
       when distributed_mutation_lock.status = 'released' then gen_random_uuid()
-      when distributed_mutation_lock.status = 'expired' and distributed_mutation_lock.expires_at < now() then gen_random_uuid()
-      when distributed_mutation_lock.owner_id = p_owner_id then gen_random_uuid()
+      when distributed_mutation_lock.expires_at <= now() then gen_random_uuid()
       else distributed_mutation_lock.token
     end,
     expires_at = case
-      when distributed_mutation_lock.owner_id = p_owner_id or distributed_mutation_lock.status in ('released', 'expired') then now() + (p_timeout_seconds || ' seconds')::interval
+      when distributed_mutation_lock.status = 'released' or distributed_mutation_lock.expires_at <= now() then now() + (p_timeout_seconds || ' seconds')::interval
       else distributed_mutation_lock.expires_at
     end,
     status = case
       when distributed_mutation_lock.status = 'released' then 'active'
-      when distributed_mutation_lock.status = 'expired' and distributed_mutation_lock.expires_at < now() then 'active'
+      when distributed_mutation_lock.expires_at <= now() then 'active'
       else distributed_mutation_lock.status
     end,
     acquired_at = case
-      when distributed_mutation_lock.owner_id = p_owner_id or distributed_mutation_lock.status in ('released', 'expired') then now()
+      when distributed_mutation_lock.status = 'released' or distributed_mutation_lock.expires_at <= now() then now()
       else distributed_mutation_lock.acquired_at
     end
   where lock_key = p_lock_key
@@ -125,7 +125,55 @@ begin
 end;
 $$;
 
--- Release lock function (only owner can release)
+-- Renew lock function (heartbeat to prevent expiry during long operations)
+-- Only current token holder can renew
+create or replace function public.renew_distributed_lock(
+  p_lock_key text,
+  p_owner_id text,
+  p_token uuid,
+  p_timeout_seconds int default 30
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_result jsonb;
+begin
+  update public.distributed_mutation_lock
+  set
+    expires_at = now() + (p_timeout_seconds || ' seconds')::interval,
+    status = 'active'
+  where lock_key = p_lock_key
+    and owner_id = p_owner_id
+    and token = p_token
+  returning (
+    select row_to_json(t) from (
+      select
+        lock_key,
+        owner_id,
+        token,
+        expires_at,
+        status
+    ) t
+  ) into v_result;
+
+  if v_result is null then
+    return jsonb_build_object(
+      'renewed', false,
+      'reason', 'lock not found or token mismatch'
+    );
+  end if;
+
+  return jsonb_build_object(
+    'renewed', true,
+    'lock', v_result
+  );
+end;
+$$;
+
+-- Release lock function (only owner with correct token can release)
 create or replace function public.release_distributed_lock(
   p_lock_key text,
   p_owner_id text,
@@ -133,6 +181,8 @@ create or replace function public.release_distributed_lock(
 )
 returns boolean
 language plpgsql
+security definer
+set search_path = public
 as $$
 begin
   update public.distributed_mutation_lock

@@ -89,8 +89,13 @@ async function withDistributedLock<T>(
   const lockTimeout = 30; // seconds
   const deadline = Date.now() + LOCK_ACQUISITION_TIMEOUT_MS;
   let lockToken: string | null = null;
+  let ownerId: string | null = null;
   let retryCount = 0;
   const maxRetries = 300; // ~30s with exponential backoff
+
+  // Generate unique owner identity per acquisition attempt
+  // Prevents same instance concurrent calls from appearing as reentrant
+  const uniqueOwnerId = `${instanceId}:${Math.random().toString(36).slice(2, 18)}`;
 
   while (retryCount < maxRetries) {
     if (Date.now() > deadline) {
@@ -104,7 +109,7 @@ async function withDistributedLock<T>(
       // Attempt to acquire distributed lock
       const { data, error: acquireError } = await supabase.rpc("acquire_distributed_lock", {
         p_lock_key: key,
-        p_owner_id: instanceId,
+        p_owner_id: uniqueOwnerId,
         p_timeout_seconds: lockTimeout,
       });
 
@@ -114,16 +119,37 @@ async function withDistributedLock<T>(
 
       if (data?.acquired_by_caller) {
         lockToken = data.token;
+        ownerId = uniqueOwnerId;
 
-        // Execute function under lock
+        // Execute function under lock with heartbeat renewal
         try {
-          return await fn();
+          // Start renewal heartbeat to prevent lease expiry during long operations
+          const renewalInterval = setInterval(async () => {
+            if (lockToken && ownerId) {
+              try {
+                await supabase.rpc("renew_distributed_lock", {
+                  p_lock_key: key,
+                  p_owner_id: ownerId,
+                  p_token: lockToken,
+                  p_timeout_seconds: lockTimeout,
+                });
+              } catch (error) {
+                console.error("Failed to renew distributed lock:", error);
+              }
+            }
+          }, Math.floor((lockTimeout * 1000) / 3)); // Renew every ~10s for 30s lease
+
+          try {
+            return await fn();
+          } finally {
+            clearInterval(renewalInterval);
+          }
         } finally {
           // Release lock
-          if (lockToken) {
+          if (lockToken && ownerId) {
             const { error: releaseError } = await supabase.rpc("release_distributed_lock", {
               p_lock_key: key,
-              p_owner_id: instanceId,
+              p_owner_id: ownerId,
               p_token: lockToken,
             });
             if (releaseError) {
@@ -133,7 +159,7 @@ async function withDistributedLock<T>(
         }
       }
 
-      // Lock held by another instance, wait with exponential backoff
+      // Lock held by another owner, wait with exponential backoff
       const backoffMs = Math.min(100 * Math.pow(1.5, retryCount), 5000);
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
       retryCount++;
