@@ -47,10 +47,15 @@ export default function PatientRegistrationForm({
     () => clinicians.filter((item) => item.department === department),
     [clinicians, department]
   );
+  const physioGenderRequired = department === "Physio";
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!fullName.trim() || busy) return;
+    if (physioGenderRequired && !gender) {
+      setError("Physio patient-এর Gender নির্বাচন করুন। Chamber room safety-এর জন্য এটি required।");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -78,6 +83,9 @@ export default function PatientRegistrationForm({
           throw new Error(
             `এই ফোনে Active patient আগে থেকেই আছে${result.patientId ? ` (${result.patientId})` : ""}।`
           );
+        }
+        if (result.error === "INVALID_PATIENT_GENDER") {
+          throw new Error("Physio patient-এর Gender নির্বাচন করুন।");
         }
         if (result.error === "ACCESS_DENIED") throw new Error("এই Department-এ patient create permission নেই।");
         throw new Error(result.error || `HTTP ${response.status}`);
@@ -119,6 +127,7 @@ export default function PatientRegistrationForm({
             if (!value) return;
             setDepartment(value as Department);
             setTherapist("");
+            setError("");
           }}
         />
       ) : (
@@ -133,17 +142,27 @@ export default function PatientRegistrationForm({
           <input value={age} onChange={(event) => setAge(event.target.value)} inputMode="numeric" className={inputClass} />
         </label>
         <div>
-          <p className="mb-2 text-xs font-medium text-slate-600">Gender</p>
+          <p className="mb-2 text-xs font-medium text-slate-600">
+            Gender {physioGenderRequired ? "*" : "(optional)"}
+          </p>
           <TapChoice
             value={gender}
             columns={2}
-            allowClear
+            allowClear={!physioGenderRequired}
             options={[
               { value: "Male", label: "Male", tone: "blue" },
               { value: "Female", label: "Female", tone: "emerald" },
             ]}
-            onChange={setGender}
+            onChange={(value) => {
+              setGender(value);
+              setError("");
+            }}
           />
+          {physioGenderRequired && (
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">
+              Shared room/bed allocation safety-এর জন্য একবারই লাগবে।
+            </p>
+          )}
         </div>
       </div>
 
@@ -210,7 +229,7 @@ export default function PatientRegistrationForm({
 
       <button
         type="submit"
-        disabled={busy || !fullName.trim()}
+        disabled={busy || !fullName.trim() || (physioGenderRequired && !gender)}
         className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-800 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-900 disabled:opacity-40"
       >
         {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving patient" />}
