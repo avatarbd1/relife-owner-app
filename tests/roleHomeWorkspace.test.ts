@@ -51,10 +51,24 @@ describe("role-aware Home workspace", () => {
     ok(staffHome.includes("canPerform(context, action, department)"));
     ok(staffHome.includes('patientCreate: canInScope(context, scope, "patient.create")'));
     ok(staffHome.includes('paymentCreate: canInScope(context, scope, "payment.create")'));
+    ok(staffHome.includes('cashRequest: canInScope(context, scope, "cash.request")'));
     ok(staffHome.includes('chamberRun: canInScope(context, scope, "chamber.run")'));
     ok(staffUi.includes("capabilities.patientCreate"));
     ok(staffUi.includes("capabilities.paymentCreate"));
+    ok(staffUi.includes("capabilities.cashRequest"));
     ok(staffUi.includes("capabilities.chamberRun"));
+  });
+
+  it("keeps the staff Home task-first instead of turning it into an ERP dashboard", () => {
+    ok(staffUi.includes('label: "New patient"'));
+    ok(staffUi.includes('label: "Booking"'));
+    ok(staffUi.includes('label: "Payment"'));
+    ok(staffUi.includes('label: "Handover"'));
+    ok(staffUi.includes('"My patients today"'));
+    ok(staffUi.includes('"Today’s queue"'));
+    ok(staffUi.includes("Tap a patient to continue the work"));
+    equal(staffUi.includes("MetricGrid"), false);
+    equal(staffUi.includes("Work shortcuts"), false);
   });
 
   it("does not add a parallel finance or clinical mutation path to Home", () => {
