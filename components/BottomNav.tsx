@@ -160,7 +160,7 @@ export default function BottomNav({
     <>
       <div
         aria-hidden="true"
-        className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 origin-left bg-blue-700 transition-[opacity,transform] duration-200 ease-out ${
+        className={`pointer-events-none fixed left-1/2 top-0 z-50 h-0.5 w-full max-w-[430px] -translate-x-1/2 origin-left bg-blue-700 transition-[opacity,transform] duration-200 ease-out ${
           isNavigating
             ? "scale-x-100 opacity-100"
             : "scale-x-0 opacity-0"
@@ -184,8 +184,8 @@ export default function BottomNav({
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-5px_18px_rgba(15,23,42,0.045)] backdrop-blur-xl supports-[backdrop-filter]:bg-white/90">
-        <ul className="mx-auto flex w-full max-w-3xl">
+      <nav className="fixed bottom-0 left-1/2 z-20 w-full max-w-[430px] -translate-x-1/2 border-t border-slate-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-5px_18px_rgba(15,23,42,0.045)] backdrop-blur-xl supports-[backdrop-filter]:bg-white/90">
+        <ul className="flex w-full">
           {visibleItems.map((item) => {
             const active = isActive(pathname, item.matches);
             const pending = item.href === "/chamber" ? chamberPending : 0;
