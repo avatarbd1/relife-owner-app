@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import RegisterSW from "@/components/RegisterSW";
+import { ToastProvider } from "@/components/ToastProvider";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -38,7 +39,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geist.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-slate-50 text-slate-900">
         <RegisterSW />
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );

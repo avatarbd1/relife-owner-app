@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
+import { useToastContext } from "@/components/ToastProvider";
 
 type Department = "Physio" | "Dental";
 type Patient = { patientId: string; fullName: string; department: Department; due: number };
@@ -50,6 +51,8 @@ function localNow(): string {
   }).format(new Date());
 }
 
+const LAST_PATIENT_STORAGE_KEY = "relife_payment_last_patient_id";
+
 export default function PaymentsWorkspaceClient({
   patients,
   recentPayments,
@@ -60,7 +63,27 @@ export default function PaymentsWorkspaceClient({
   initialPatientId?: string;
 }) {
   const router = useRouter();
-  const initialPatient = patients.find((patient) => patient.patientId === initialPatientId) || patients[0];
+  const toast = useToastContext();
+
+  // Get initial patient from URL param, localStorage, or first patient
+  const getInitialPatient = () => {
+    if (initialPatientId) {
+      return patients.find((p) => p.patientId === initialPatientId) || patients[0];
+    }
+
+    // Try to get from localStorage
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(LAST_PATIENT_STORAGE_KEY);
+      if (saved) {
+        const patient = patients.find((p) => p.patientId === saved);
+        if (patient) return patient;
+      }
+    }
+
+    return patients[0];
+  };
+
+  const initialPatient = getInitialPatient();
   const [query, setQuery] = useState("");
   const [patientId, setPatientId] = useState(initialPatient?.patientId || "");
   const [gross, setGross] = useState(String(initialPatient?.due || 0));
@@ -86,6 +109,17 @@ export default function PaymentsWorkspaceClient({
       window.removeEventListener("offline", update);
     };
   }, []);
+
+  // Save patient to localStorage whenever it changes
+  useEffect(() => {
+    if (patientId) {
+      try {
+        localStorage.setItem(LAST_PATIENT_STORAGE_KEY, patientId);
+      } catch {
+        // localStorage not available, silently ignore
+      }
+    }
+  }, [patientId]);
 
   const selected = useMemo(
     () => patients.find((patient) => patient.patientId === patientId),
@@ -121,12 +155,12 @@ export default function PaymentsWorkspaceClient({
   async function savePayment() {
     if (!selected || busy) return;
     if (!online) {
-      setMessage("✕ Internet connection required for payment writes");
+      toast.error("Internet connection required for payment writes");
       haptic("error");
       return;
     }
     if (grossNumber <= 0 && Number(sessions || 0) <= 0) {
-      setMessage("✕ Enter an amount or session count");
+      toast.error("Enter an amount or session count");
       haptic("error");
       return;
     }
@@ -166,12 +200,12 @@ export default function PaymentsWorkspaceClient({
         savedAt: localNow(),
       };
       setReceipt(saved);
-      setMessage(`✓ Payment saved · ${saved.receiptNo}`);
+      toast.success(`Payment saved · ${saved.receiptNo}`, 5000);
       setWebRequestId(requestId());
       haptic("success");
       router.refresh();
     } catch (error) {
-      setMessage(`✕ ${error instanceof Error ? error.message : "Payment failed"}`);
+      toast.error(error instanceof Error ? error.message : "Payment failed");
       haptic("error");
     } finally {
       setBusy(false);
@@ -195,7 +229,7 @@ export default function PaymentsWorkspaceClient({
   async function copyReceipt() {
     if (!receiptText) return;
     await navigator.clipboard.writeText(receiptText);
-    setMessage("✓ Receipt copied");
+    toast.success("Receipt copied");
     haptic("success");
   }
 
