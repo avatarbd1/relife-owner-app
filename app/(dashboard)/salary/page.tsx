@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import SalaryManagementClient from "@/components/SalaryManagementClient";
+import SalaryReportTools from "@/components/SalaryReportTools";
 import { StatusBadge } from "@/components/FeedbackUI";
 import { getSalaryPayments, getStaff } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
@@ -115,6 +116,8 @@ export default async function SalaryPage() {
         }))}
         canPay={canPay}
       />
+
+      <SalaryReportTools staff={staff} month={month} />
     </div>
   );
 }
