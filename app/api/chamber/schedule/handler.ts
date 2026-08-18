@@ -116,9 +116,14 @@ export async function chamberSchedulePost(request: NextRequest) {
       if (!patient || patient.department !== "Physio") {
         return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
       }
-      const validation = requestedBedId
-        ? await validateFixedHourBooking(context, parseFixedBedInput(record))
-        : await validateUnifiedPhysioBooking(context, input);
+      if (requestedBedId) {
+        const validation = await validateFixedHourBooking(
+          context,
+          parseFixedBedInput(record)
+        );
+        return NextResponse.json({ ok: true, validation });
+      }
+      const validation = await validateUnifiedPhysioBooking(context, input);
       return NextResponse.json({ ok: true, validation });
     }
     if (action === "create") {
@@ -128,10 +133,14 @@ export async function chamberSchedulePost(request: NextRequest) {
         return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
       }
       const lockKey = `appointment-create:${String(input.date || "")}`;
+      if (requestedBedId) {
+        const result = await withMutationLock(lockKey, () =>
+          createFixedHourBooking(context, parseFixedBedInput(record))
+        );
+        return NextResponse.json({ ok: true, ...result });
+      }
       const result = await withMutationLock(lockKey, () =>
-        requestedBedId
-          ? createFixedHourBooking(context, parseFixedBedInput(record))
-          : createUnifiedPhysioBooking(context, input)
+        createUnifiedPhysioBooking(context, input)
       );
       return NextResponse.json({ ok: true, ...result });
     }
