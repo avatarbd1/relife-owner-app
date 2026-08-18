@@ -9,6 +9,10 @@ import {
   type SupabaseValidatedBookingPlan,
 } from "@/lib/data/supabaseChamber";
 import { applyTherapistCapacityValidation } from "@/lib/domain/appointments/therapistCapacity";
+import {
+  chamberStartMinutes,
+  isPhysioChamberStart,
+} from "@/lib/domain/chamber/hours";
 import type { AccessContext } from "@/lib/webos/access";
 import {
   createPhysioBooking,
@@ -18,8 +22,6 @@ import {
   type PhysioBookingInput,
 } from "@/lib/webos/appointmentScheduling";
 import { getPatientForContext } from "@/lib/webos/reception";
-
-const FIXED_HOUR_MINUTES = 60;
 
 export interface UnifiedPhysioBookingInput extends PhysioBookingInput {
   requestId?: string;
@@ -35,36 +37,11 @@ function requestId(value: unknown): string {
   return text;
 }
 
-function timeMinutes(value: string): number {
-  const text = normalize(value);
-  const input = /^(\d{2}):(\d{2})$/.exec(text);
-  if (input) {
-    const hour = Number(input[1]);
-    const minute = Number(input[2]);
-    if (hour >= 0 && hour < 24 && minute >= 0 && minute < 60) return hour * 60 + minute;
-  }
-  const sheet = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(text);
-  if (sheet) {
-    let hour = Number(sheet[1]) % 12;
-    const minute = Number(sheet[2]);
-    if (sheet[3].toUpperCase() === "PM") hour += 12;
-    if (minute >= 0 && minute < 60) return hour * 60 + minute;
-  }
-  throw new Error("INVALID_TIME");
-}
-
-function assertFixedHourStart(value: string): number {
-  const startMinute = timeMinutes(value);
-  if (startMinute % FIXED_HOUR_MINUTES !== 0) throw new Error("INVALID_SLOT");
+function assertPhysioChamberStart(value: string): number {
+  const startMinute = chamberStartMinutes(value);
+  if (!Number.isFinite(startMinute)) throw new Error("INVALID_TIME");
+  if (!isPhysioChamberStart(value)) throw new Error("INVALID_SLOT");
   return startMinute;
-}
-
-function isFixedHourStart(value: string): boolean {
-  try {
-    return timeMinutes(value) % FIXED_HOUR_MINUTES === 0;
-  } catch {
-    return false;
-  }
 }
 
 function bedLabel(bedId: string): string {
@@ -131,12 +108,12 @@ async function sheetValidationWithTherapist(
   context: AccessContext,
   input: UnifiedPhysioBookingInput
 ): Promise<BookingValidationResult> {
-  assertFixedHourStart(input.time);
+  assertPhysioChamberStart(input.time);
   const validation = await validatePhysioBooking(context, input);
   const withTherapist = await applyTherapistCapacityValidation(input, validation);
   return {
     ...withTherapist,
-    suggestions: withTherapist.suggestions.filter((item) => isFixedHourStart(item.time)),
+    suggestions: withTherapist.suggestions.filter((item) => isPhysioChamberStart(item.time)),
   };
 }
 
@@ -184,7 +161,7 @@ function validatedPlan(
   return {
     patientId: validation.patientId,
     date: normalize(input.date),
-    startMinute: assertFixedHourStart(input.time),
+    startMinute: assertPhysioChamberStart(input.time),
     therapist: normalize(input.therapist),
     bedId: validation.assignedBedId,
     gender: validation.gender,
@@ -222,7 +199,7 @@ export async function createUnifiedPhysioBooking(
   context: AccessContext,
   input: UnifiedPhysioBookingInput
 ): Promise<{ appointmentId: string; validation: BookingValidationResult }> {
-  assertFixedHourStart(input.time);
+  assertPhysioChamberStart(input.time);
   if (chamberDbMode() !== "supabase") {
     // The API date-scoped mutation lock keeps this capacity pre-check and the
     // existing atomic Sheets append in one serialized booking critical section.
