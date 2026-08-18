@@ -74,27 +74,42 @@ export async function GET(request: NextRequest) {
 
     // APPOINTMENTS export
     if (types.includes("appointments")) {
-      // TODO: Fetch appointments data filtered by department and date
-      // Use getAppointmentSnapshot or similar function
-      csvParts.push(`Appointments\nappointmentId,date,time,patientId,patientName,department,therapist,status,remarks`);
+      // Placeholder: actual implementation requires appointment data fetch
+      // Future: Call getAppointmentsByDepartment(context, department, dateRange)
+      const appointmentsCSV = `Appointments
+appointmentId,date,time,patientId,patientName,department,therapist,status,remarks
+[Fetch from appointments sheet filtered by department and date]`;
+      csvParts.push(appointmentsCSV);
     }
 
     // SESSIONS export
     if (types.includes("sessions")) {
-      // TODO: Fetch treatment sessions from clinical data
-      csvParts.push(`Treatment Sessions\nsessionId,date,patientId,patientName,department,therapist,assessment,plan,outcome`);
+      // Placeholder: actual implementation requires clinical session data
+      // Future: Aggregate from clinical notes + assessment records
+      const sessionsCSV = `Treatment Sessions
+sessionId,date,patientId,patientName,department,therapist,assessment,plan,outcome,notes
+[Fetch from clinical session records filtered by department and date]`;
+      csvParts.push(sessionsCSV);
     }
 
     // PAYMENTS export
     if (types.includes("payments")) {
-      // TODO: Fetch payment collection data filtered by department and date
-      csvParts.push(`Payments\nreceiptNo,date,patientId,patientName,department,amount,discount,method,status`);
+      // Placeholder: actual implementation requires payment collection data
+      // Future: Call getPaymentsByDepartment(context, department, dateRange)
+      const paymentsCSV = `Payments
+receiptNo,date,patientId,patientName,department,amount,discount,paymentMethod,status,paidFrom
+[Fetch from 06_Payments sheet filtered by department and date]`;
+      csvParts.push(paymentsCSV);
     }
 
     // EXPENSES export
     if (types.includes("expenses")) {
-      // TODO: Fetch approved expenses filtered by department and date
-      csvParts.push(`Expenses\nid,date,category,amount,department,requestedBy,status`);
+      // Placeholder: actual implementation requires approved expenses data
+      // Future: Call getApprovedExpensesByDepartment(context, department, dateRange)
+      const expensesCSV = `Expenses
+expenseId,date,category,amount,department,requestedBy,approvedBy,status,reason
+[Fetch from approved expenses filtered by department and date]`;
+      csvParts.push(expensesCSV);
     }
 
     // SALARY export
