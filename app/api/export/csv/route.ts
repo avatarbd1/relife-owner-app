@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { canPerform } from "@/lib/webos/access";
-import { getVisiblePatients } from "@/lib/webos/reception";
-import { getSalaryPayments, getStaff } from "@/lib/data";
+import { getVisiblePatients, getAppointmentsForContext } from "@/lib/webos/reception";
+import { getSalaryPayments, getStaff, getPayments, getExpenses } from "@/lib/data";
+import { fetchSheetRanges } from "@/lib/data/googleSheets";
 
 function escapeCSV(value: unknown): string {
   const str = String(value ?? "").trim();
@@ -26,6 +27,53 @@ function toCSV(rows: any[][], headers?: string[]): string {
   return lines.join("\n");
 }
 
+function getDateRange(dateRange: string, startDate: string, endDate: string): { start: Date; end: Date } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let start = new Date(today);
+  let end = new Date(today);
+  end.setHours(23, 59, 59, 999);
+
+  switch (dateRange) {
+    case "this-month":
+      start.setDate(1);
+      break;
+    case "last-month":
+      start.setMonth(start.getMonth() - 1);
+      start.setDate(1);
+      end.setDate(0);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case "this-year":
+      start.setMonth(0);
+      start.setDate(1);
+      break;
+    case "custom":
+      if (startDate) {
+        start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+      }
+      if (endDate) {
+        end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+      }
+      break;
+    case "all":
+    default:
+      start = new Date(1970, 0, 1);
+      end = new Date(2100, 0, 1);
+      break;
+  }
+
+  return { start, end };
+}
+
+function matchesDateRange(dateStr: string, dateRange: { start: Date; end: Date }): boolean {
+  const date = new Date(dateStr);
+  return date >= dateRange.start && date <= dateRange.end;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const context = await requireCurrentAccessContext();
@@ -33,7 +81,7 @@ export async function GET(request: NextRequest) {
 
     const types = (searchParams.get("types") || "").split(",").filter(Boolean);
     const department = (searchParams.get("department") || "All") as "Physio" | "Dental" | "All";
-    const dateRange = searchParams.get("dateRange") || "all";
+    const dateRangeType = searchParams.get("dateRange") || "all";
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
 
@@ -74,42 +122,162 @@ export async function GET(request: NextRequest) {
 
     // APPOINTMENTS export
     if (types.includes("appointments")) {
-      // Placeholder: actual implementation requires appointment data fetch
-      // Future: Call getAppointmentsByDepartment(context, department, dateRange)
-      const appointmentsCSV = `Appointments
-appointmentId,date,time,patientId,patientName,department,therapist,status,remarks
-[Fetch from appointments sheet filtered by department and date]`;
-      csvParts.push(appointmentsCSV);
+      const appointmentScope = department === "All" ? "combined" : department === "Physio" ? "physio" : "dental";
+      const appointments = await getAppointmentsForContext(context, appointmentScope);
+      const dateRange = getDateRange(dateRangeType, startDate, endDate);
+      const filteredAppointments = appointments.filter((apt) => matchesDateRange(apt.date, dateRange));
+
+      if (filteredAppointments.length > 0) {
+        const rows = filteredAppointments.map((apt) => ({
+          appointmentId: apt.appointmentId,
+          date: apt.date,
+          time: apt.time,
+          patientId: apt.patientId,
+          patientName: apt.patientName,
+          department: apt.department,
+          therapist: apt.therapist,
+          status: apt.status,
+          remarks: apt.remarks || "",
+        }));
+        csvParts.push(`Appointments\n${toCSV(rows)}`);
+      }
     }
 
     // SESSIONS export
     if (types.includes("sessions")) {
-      // Placeholder: actual implementation requires clinical session data
-      // Future: Aggregate from clinical notes + assessment records
-      const sessionsCSV = `Treatment Sessions
-sessionId,date,patientId,patientName,department,therapist,assessment,plan,outcome,notes
-[Fetch from clinical session records filtered by department and date]`;
-      csvParts.push(sessionsCSV);
+      const treatmentSheets = await Promise.all([
+        department !== "Dental" ? fetchSheetRanges("physio", ["05_Treatments"]) : Promise.resolve({}),
+        department !== "Physio" ? fetchSheetRanges("dental", ["05_Treatments"]) : Promise.resolve({}),
+      ]);
+
+      const dateRange = getDateRange(dateRangeType, startDate, endDate);
+      const sessions: any[] = [];
+
+      // Parse Physio treatments if applicable
+      if (department !== "Dental" && treatmentSheets[0]["05_Treatments"]) {
+        const rows = treatmentSheets[0]["05_Treatments"];
+        if (rows.length > 1) {
+          const headers = rows[0];
+          const dateIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("date"));
+          const patientIdIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("patient") && String(h || "").toLowerCase().includes("id"));
+          const patientNameIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("patient") && String(h || "").toLowerCase().includes("name"));
+          const therapistIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("therapist"));
+          const assessmentIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("assessment"));
+          const planIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("plan"));
+          const outcomeIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("outcome"));
+          const notesIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("notes"));
+
+          for (let i = 1; i < rows.length; i++) {
+            const date = dateIdx >= 0 ? String(rows[i][dateIdx] || "").trim() : "";
+            if (date && matchesDateRange(date, dateRange)) {
+              sessions.push({
+                sessionId: `PHYSIO_${i}`,
+                date,
+                patientId: patientIdIdx >= 0 ? String(rows[i][patientIdIdx] || "").trim() : "",
+                patientName: patientNameIdx >= 0 ? String(rows[i][patientNameIdx] || "").trim() : "",
+                department: "Physio",
+                therapist: therapistIdx >= 0 ? String(rows[i][therapistIdx] || "").trim() : "",
+                assessment: assessmentIdx >= 0 ? String(rows[i][assessmentIdx] || "").trim() : "",
+                plan: planIdx >= 0 ? String(rows[i][planIdx] || "").trim() : "",
+                outcome: outcomeIdx >= 0 ? String(rows[i][outcomeIdx] || "").trim() : "",
+                notes: notesIdx >= 0 ? String(rows[i][notesIdx] || "").trim() : "",
+              });
+            }
+          }
+        }
+      }
+
+      // Parse Dental treatments if applicable
+      if (department !== "Physio" && treatmentSheets[1]["05_Treatments"]) {
+        const rows = treatmentSheets[1]["05_Treatments"];
+        if (rows.length > 1) {
+          const headers = rows[0];
+          const dateIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("date"));
+          const patientIdIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("patient") && String(h || "").toLowerCase().includes("id"));
+          const patientNameIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("patient") && String(h || "").toLowerCase().includes("name"));
+          const dentistIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("dentist"));
+          const assessmentIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("assessment"));
+          const planIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("plan"));
+          const outcomeIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("outcome"));
+          const notesIdx = headers.findIndex((h) => String(h || "").toLowerCase().includes("notes"));
+
+          for (let i = 1; i < rows.length; i++) {
+            const date = dateIdx >= 0 ? String(rows[i][dateIdx] || "").trim() : "";
+            if (date && matchesDateRange(date, dateRange)) {
+              sessions.push({
+                sessionId: `DENTAL_${i}`,
+                date,
+                patientId: patientIdIdx >= 0 ? String(rows[i][patientIdIdx] || "").trim() : "",
+                patientName: patientNameIdx >= 0 ? String(rows[i][patientNameIdx] || "").trim() : "",
+                department: "Dental",
+                therapist: dentistIdx >= 0 ? String(rows[i][dentistIdx] || "").trim() : "",
+                assessment: assessmentIdx >= 0 ? String(rows[i][assessmentIdx] || "").trim() : "",
+                plan: planIdx >= 0 ? String(rows[i][planIdx] || "").trim() : "",
+                outcome: outcomeIdx >= 0 ? String(rows[i][outcomeIdx] || "").trim() : "",
+                notes: notesIdx >= 0 ? String(rows[i][notesIdx] || "").trim() : "",
+              });
+            }
+          }
+        }
+      }
+
+      if (sessions.length > 0) {
+        csvParts.push(`Treatment Sessions\n${toCSV(sessions)}`);
+      }
     }
 
     // PAYMENTS export
     if (types.includes("payments")) {
-      // Placeholder: actual implementation requires payment collection data
-      // Future: Call getPaymentsByDepartment(context, department, dateRange)
-      const paymentsCSV = `Payments
-receiptNo,date,patientId,patientName,department,amount,discount,paymentMethod,status,paidFrom
-[Fetch from 06_Payments sheet filtered by department and date]`;
-      csvParts.push(paymentsCSV);
+      const allPayments = await getPayments();
+      const dateRange = getDateRange(dateRangeType, startDate, endDate);
+      const filteredPayments = allPayments.filter(
+        (p) => (department === "All" || p.department === department) && matchesDateRange(p.date, dateRange)
+      );
+
+      if (filteredPayments.length > 0) {
+        const rows = filteredPayments.map((p) => ({
+          receiptNo: p.receiptNo,
+          date: p.date,
+          patientId: p.patientId,
+          patientName: p.patientName,
+          department: p.department,
+          amount: p.amount,
+          discount: p.discount,
+          due: p.due,
+          paymentMethod: p.paymentMethod,
+          receivedBy: p.receivedBy,
+          remarks: p.remarks || "",
+        }));
+        csvParts.push(`Payments\n${toCSV(rows)}`);
+      }
     }
 
     // EXPENSES export
     if (types.includes("expenses")) {
-      // Placeholder: actual implementation requires approved expenses data
-      // Future: Call getApprovedExpensesByDepartment(context, department, dateRange)
-      const expensesCSV = `Expenses
-expenseId,date,category,amount,department,requestedBy,approvedBy,status,reason
-[Fetch from approved expenses filtered by department and date]`;
-      csvParts.push(expensesCSV);
+      const allExpenses = await getExpenses();
+      const dateRange = getDateRange(dateRangeType, startDate, endDate);
+      const filteredExpenses = allExpenses.filter(
+        (e) =>
+          (department === "All" || e.department === department) &&
+          matchesDateRange(e.date, dateRange) &&
+          e.status?.toLowerCase() === "approved"
+      );
+
+      if (filteredExpenses.length > 0) {
+        const rows = filteredExpenses.map((e) => ({
+          expenseId: e.expenseId,
+          date: e.date,
+          category: e.category,
+          amount: e.amount,
+          department: e.department,
+          requestedBy: e.paidBy,
+          paymentMethod: e.paymentMethod,
+          status: e.status || "Approved",
+          description: e.description,
+          paidFrom: e.paidFrom || "",
+        }));
+        csvParts.push(`Expenses\n${toCSV(rows)}`);
+      }
     }
 
     // SALARY export
