@@ -10,6 +10,10 @@ const calculationsSource = readFileSync(
   new URL("../lib/calculations.ts", import.meta.url),
   "utf8"
 );
+const dateRangeSource = readFileSync(
+  new URL("../lib/domain/finance/dateRange.ts", import.meta.url),
+  "utf8"
+);
 const pickerSource = readFileSync(
   new URL("../components/DateRangePicker.tsx", import.meta.url),
   "utf8"
@@ -23,7 +27,8 @@ describe("A2 range reports architecture", () => {
 
   it("does not use a hard-coded 30-day divisor for fixed-cost accrual", () => {
     equal(calculationsSource.includes("/ 30"), false);
-    ok(calculationsSource.includes("segment.daysInMonth"));
+    equal(dateRangeSource.includes("/ 30"), false);
+    ok(dateRangeSource.includes("daysInMonth"));
     ok(calculationsSource.includes("fixedSalaryCommitment"));
   });
 
