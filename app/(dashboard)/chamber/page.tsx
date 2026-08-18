@@ -83,7 +83,7 @@ export default async function ChamberPage({
           <div>
             <h2 className="text-base font-bold text-slate-950">Bed schedule</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              One hour · Bed 1–4 + Traction · book in place
+              10 hourly slots · Bed 1–4 · max 40 patients/day
             </p>
           </div>
           <StatusBadge tone="info">

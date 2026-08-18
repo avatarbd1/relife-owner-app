@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
 import type { PatientRecord } from "@/lib/patients";
+import { PHYSIO_CHAMBER_STARTS, chamberStartMinutes, isPhysioChamberStart } from "@/lib/domain/chamber/hours";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { appendRowsWithAudit, type SheetCellValue, type SheetRowAppend } from "@/lib/webos/sheetTransaction";
@@ -552,7 +553,7 @@ function evaluateBed(
   needsTraction: boolean
 ): { bedId: string; roomId: string; station: "Treatment" | "Traction" | ""; conflict?: BookingConflict } {
   const gender = parseGender(patient.gender);
-  const endMinute = startMinute + durationMin;
+  const endMinute = startMinute + Math.max(60, durationMin);
   const overlappingAppointments = state.appointments.filter((item) => {
     if (item.date !== date || !appointmentActive(item.status) || !item.assignedBedId) return false;
     let existingStart: number;
@@ -561,21 +562,9 @@ function evaluateBed(
     } catch {
       return false;
     }
-    return overlaps(startMinute, endMinute, existingStart, existingStart + item.expectedDurationMin);
+    return overlaps(startMinute, endMinute, existingStart, existingStart + Math.max(60, item.expectedDurationMin));
   });
 
-  if (needsTraction) {
-    const busy = overlappingAppointments.find((item) => item.assignedBedId === "TRACTION-BED");
-    if (busy) {
-      return {
-        bedId: "",
-        roomId: "Traction Room",
-        station: "Traction",
-        conflict: { type: "no_bed", message: `Traction Bed busy with ${busy.patientName || busy.patientId}` },
-      };
-    }
-    return { bedId: "TRACTION-BED", roomId: "Traction Room", station: "Traction" };
-  }
 
   if (!gender) {
     return {
@@ -583,6 +572,15 @@ function evaluateBed(
       roomId: "",
       station: "",
       conflict: { type: "gender_required", message: "Patient gender must be set before Physio bed booking." },
+    };
+  }
+
+  if (overlappingAppointments.length >= 4) {
+    return {
+      bedId: "",
+      roomId: "",
+      station: "",
+      conflict: { type: "no_bed", message: "All 4 treatment beds are already booked for this hour." },
     };
   }
 
@@ -619,7 +617,7 @@ function evaluateBed(
   ];
   for (const roomId of preferredRooms) {
     for (const bedId of ROOM_BEDS[roomId]) {
-      if (!occupiedBeds.has(bedId)) return { bedId, roomId, station: "Treatment" };
+      if (!occupiedBeds.has(bedId)) return { bedId, roomId, station: needsTraction ? "Traction" : "Treatment" };
     }
   }
   return {
@@ -672,12 +670,12 @@ function duplicateConflict(
   startMinute: number,
   durationMin: number
 ): BookingConflict | null {
-  const endMinute = startMinute + durationMin;
+  const endMinute = startMinute + Math.max(60, durationMin);
   const duplicate = state.appointments.find((item) => {
     if (item.patientId !== patientId || item.date !== date || !appointmentActive(item.status)) return false;
     try {
       const existingStart = timeInputMinutes(item.time);
-      return overlaps(startMinute, endMinute, existingStart, existingStart + item.expectedDurationMin);
+      return overlaps(startMinute, endMinute, existingStart, existingStart + Math.max(60, item.expectedDurationMin));
     } catch {
       return false;
     }
@@ -727,11 +725,13 @@ function suggestionsFor(
   needsTraction: boolean
 ): BookingSuggestion[] {
   const suggestions: BookingSuggestion[] = [];
-  for (let candidate = requestedStart + 5; candidate < 24 * 60 && candidate <= requestedStart + 240; candidate += 5) {
+  for (const time of PHYSIO_CHAMBER_STARTS) {
+    const candidate = chamberStartMinutes(time);
+    if (candidate <= requestedStart || candidate > requestedStart + 240) continue;
     const result = evaluateAt(state, patient, date, candidate, selectedModalities, needsTraction);
     if (!result.isValid || !result.assignedBedId) continue;
     suggestions.push({
-      time: inputTimeFromMinutes(candidate),
+      time,
       timeLabel: sheetTimeFromMinutes(candidate),
       assignedBedId: result.assignedBedId,
       roomId: result.roomId,
@@ -774,6 +774,7 @@ export async function validatePhysioBooking(
   const patient = await patientForBooking(context, input.patientId);
   const date = normalize(input.date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("INVALID_DATE");
+  if (!isPhysioChamberStart(input.time)) throw new Error("INVALID_SLOT");
   const startMinute = timeInputMinutes(input.time);
   const state = await loadState();
   const plan = suggestedFromPlan(state.planRows, patient.patientId, state.options);
@@ -876,6 +877,7 @@ export async function createPhysioBooking(
   if (!therapist) throw new Error("INVALID_THERAPIST");
   const date = normalize(input.date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("INVALID_DATE");
+  if (!isPhysioChamberStart(input.time)) throw new Error("INVALID_SLOT");
   const startMinute = timeInputMinutes(input.time);
   const state = await loadState();
   const plan = suggestedFromPlan(state.planRows, patient.patientId, state.options);
