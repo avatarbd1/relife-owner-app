@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
@@ -30,9 +31,38 @@ function errorResponse(error: unknown): NextResponse {
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
+async function updateStaffPresence(staffId: string): Promise<void> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return;
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+    });
+
+    await supabase
+      .from("staff")
+      .update({ last_activity: new Date().toISOString() })
+      .eq("staff_id", staffId)
+      .select();
+  } catch (error) {
+    console.warn("Failed to update staff presence:", error);
+  }
+}
+
 export async function GET() {
   try {
     const context = await requireCurrentAccessContext();
+
+    // Update staff presence
+    updateStaffPresence(context.staffId).catch(() => {
+      // Silently fail presence update
+    });
+
     const snapshot = await getChamberCommsSnapshot(context);
     return NextResponse.json({ ok: true, ...snapshot });
   } catch (error) {
@@ -46,6 +76,11 @@ export async function POST(request: NextRequest) {
   }
   try {
     const context = await requireCurrentAccessContext();
+
+    // Update staff presence
+    updateStaffPresence(context.staffId).catch(() => {
+      // Silently fail presence update
+    });
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });

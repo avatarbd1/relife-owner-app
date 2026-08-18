@@ -631,3 +631,89 @@ export async function updateEquipmentRequestStatus(
   );
   return { requestId, status: nextStatus };
 }
+
+export interface RealtimeUpdate {
+  type: "message" | "presence" | "equipment";
+  data: unknown;
+  timestamp: string;
+}
+
+export async function subscribeToRealtimeUpdates(
+  clinicId: string,
+  userId: string,
+  callback: (update: RealtimeUpdate) => void
+): Promise<() => void> {
+  // Import Supabase client lazily to avoid server-only issues
+  const { createClient } = await import("@supabase/supabase-js");
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn("Supabase not configured for realtime updates");
+    return () => {};
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const unsubscribers: Array<() => void> = [];
+
+  // Subscribe to message updates via audit trail
+  const auditSubscription = supabase
+    .channel("chamber:messages")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "audit_events",
+        filter: `body->>'organization_id'=eq.${ORGANIZATION_ID}`,
+      },
+      (payload: { new?: Record<string, unknown> | null }) => {
+        const auditBody = (payload.new?.body ?? {}) as Record<string, unknown>;
+        if (auditBody?.operation_type === "chamber.message.send") {
+          callback({
+            type: "message",
+            data: auditBody,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    )
+    .subscribe();
+
+  unsubscribers.push(() => {
+    supabase.removeChannel(auditSubscription);
+  });
+
+  // Subscribe to staff presence updates (last_activity)
+  const presenceSubscription = supabase
+    .channel("chamber:presence")
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "staff",
+      },
+      (payload) => {
+        if (payload.new) {
+          callback({
+            type: "presence",
+            data: payload.new,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    )
+    .subscribe();
+
+  unsubscribers.push(() => {
+    supabase.removeChannel(presenceSubscription);
+  });
+
+  // Return cleanup function that unsubscribes from all channels
+  return () => {
+    unsubscribers.forEach((unsub) => unsub());
+  };
+}
