@@ -7,6 +7,12 @@ import AppointmentStatusControl from "@/components/AppointmentStatusControl";
 import AppointmentArrivedButton from "@/components/AppointmentArrivedButton";
 import AppointmentChamberAllocation from "@/components/AppointmentChamberAllocation";
 import { haptic } from "@/lib/interactions";
+import {
+  allocationFromRemarks,
+  allocationToChamber,
+  cleanRemarks,
+  type AllocationFromRemarks,
+} from "@/lib/domain/appointments/allocation";
 
 type Department = "Physio" | "Dental";
 type Scope = "combined" | "physio" | "dental";
@@ -43,13 +49,6 @@ type Props = {
   focusExceptions?: boolean;
   canCreatePhysio: boolean;
   canCreateDental: boolean;
-};
-
-type Allocation = {
-  gender: string;
-  room: string;
-  bed: string;
-  station: string;
 };
 
 const MONTH_FORMAT = new Intl.DateTimeFormat("en-GB", {
@@ -101,26 +100,6 @@ function formatEndTime(value: string, minutes = 30): string {
   return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
-function allocationFromRemarks(remarks: string): Allocation {
-  const match = /\[PTFLOW\s+([^\]]+)\]/i.exec(remarks || "");
-  const result: Allocation = { gender: "", room: "", bed: "", station: "" };
-  if (!match) return result;
-  for (const part of match[1].split(";")) {
-    const [key, ...rest] = part.split("=");
-    const value = rest.join("=").trim();
-    const normalized = key?.trim().toLowerCase();
-    if (normalized === "gender") result.gender = value;
-    if (normalized === "room") result.room = value;
-    if (normalized === "bed") result.bed = value;
-    if (normalized === "station") result.station = value;
-  }
-  return result;
-}
-
-function cleanRemarks(remarks: string): string {
-  return String(remarks || "").replace(/\s*\[PTFLOW\s+[^\]]+\]/gi, "").trim();
-}
-
 function statusStyle(status: string): string {
   const value = status.trim().toLowerCase();
   if (value === "completed") return "border-emerald-200 bg-emerald-100 text-emerald-700";
@@ -143,32 +122,6 @@ function statusDot(status: string): string {
 
 function isOpen(status: string): boolean {
   return !["completed", "no-show", "cancelled", "canceled"].includes(status.trim().toLowerCase());
-}
-
-function allocationToChamber(allocation: Allocation, status: string): {
-  allocation: import("@/components/AppointmentChamberAllocation").ChamberAllocation | undefined;
-  canReceive: boolean;
-} {
-  if (!allocation.bed && !allocation.station) {
-    return { allocation: undefined, canReceive: false };
-  }
-
-  const bedLabel = allocation.bed || allocation.station || "Unknown";
-  const isTraction = bedLabel.includes("TRACTION") || allocation.station === "Traction";
-  const station = isTraction ? "Traction" : "Treatment";
-  const confirmed = status === "scheduled" || status === "scheduled-physio" ? true : false;
-
-  return {
-    allocation: {
-      roomId: allocation.room || "Main",
-      bedId: allocation.bed || allocation.station,
-      bedLabel,
-      station,
-      gender: allocation.gender as "Male" | "Female" | "",
-      confirmed,
-    },
-    canReceive: ["scheduled", "scheduled-physio"].includes(status.trim().toLowerCase()),
-  };
 }
 
 export default function AppointmentsWorkspaceClient({
