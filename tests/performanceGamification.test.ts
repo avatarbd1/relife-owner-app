@@ -41,29 +41,36 @@ test("phase 1 performance points come from canonical clinic events", () => {
   assert.match(performance, /Math\.floor\(metrics\.bookingsCreated \/ 5\)/);
 });
 
-test("reward policy supports leave, family time, weekly winner perks and controlled salary review", () => {
+test("Reward Credit stays separate from leaderboard Points and supports approved perks", () => {
   const rewards = source("lib/webos/performanceRewards.ts");
 
-  assert.match(rewards, /title: "Half-day"/);
-  assert.match(rewards, /title: "Family time"/);
-  assert.match(rewards, /title: "Day off"/);
-  assert.match(rewards, /title: "Salary review"/);
-  assert.match(rewards, /Clinic treat \/ outing/);
-  assert.match(rewards, /"Family time", "Half-day"/);
+  assert.match(rewards, /title: "2-hour Break"/);
+  assert.match(rewards, /pointCost: 40/);
+  assert.match(rewards, /title: "Half-day Family Time"/);
+  assert.match(rewards, /pointCost: 70/);
+  assert.match(rewards, /title: "Paid Half-day"/);
+  assert.match(rewards, /pointCost: 100/);
+  assert.match(rewards, /title: "Salary Bonus Review"/);
+  assert.match(rewards, /pointCost: 120/);
+  assert.match(rewards, /title: "Family Treat \/ Outing"/);
+  assert.match(rewards, /pointCost: 150/);
+  assert.match(rewards, /weeklyRewardCredits/);
+  assert.match(rewards, /entry\.rank === 1\) return 50/);
   assert.match(rewards, /automaticSalaryChange: false/);
   assert.match(rewards, /enabledForClaim: false/);
-  assert.match(rewards, /pointCost: null/);
 });
 
-test("performance screen exposes score, leaderboard, reward wallet direction and milestones", () => {
+test("performance screen gives user directions in Bangla while keeping product terms", () => {
   const page = source("app/(dashboard)/performance/page.tsx");
   const more = source("app/(dashboard)/more/page.tsx");
 
   assert.match(page, /getPerformanceSnapshot/);
-  assert.match(page, /Your weekly score/);
-  assert.match(page, /Weekly leaderboard/);
-  assert.match(page, /Use points for time off/);
-  assert.match(page, /Point rate pending Owner approval/);
+  assert.match(page, /কী করলে Points বাড়বে/);
+  assert.match(page, /প্রতিটি Session completed হলে \+1 Point পাবেন/);
+  assert.match(page, /Weekly Leaderboard/);
+  assert.match(page, /Points থেকে Reward/);
+  assert.match(page, /এখন আপনার যা করতে হবে/);
+  assert.match(page, /Reward Credit/);
   assert.match(page, /Milestones/);
   assert.match(more, /href="\/performance"/);
   assert.match(more, /Performance & rewards/);
