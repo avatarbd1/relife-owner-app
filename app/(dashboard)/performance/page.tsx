@@ -14,11 +14,38 @@ function medal(rank: number): string {
   return `#${rank}`;
 }
 
+function pointDirections(roleLabel: string): string[] {
+  const role = roleLabel.toLowerCase();
+  const rows: string[] = [];
+
+  if (role.includes("therapist") || role.includes("dentist")) {
+    rows.push("প্রতিটি Session completed হলে +1 Point পাবেন।");
+  }
+  if (role.includes("receptionist")) {
+    rows.push(
+      "প্রতি 5টি Patient Registration হলে +1 Point পাবেন।",
+      "প্রতি 10টি Payment process হলে +1 Point পাবেন।",
+      "প্রতি 5টি Appointment Booking হলে +1 Point পাবেন।"
+    );
+  }
+  rows.push("On-time Attendance হলে verified Attendance data অনুযায়ী Point পাবেন।");
+
+  if (role.includes("manager") || role.includes("owner")) {
+    rows.push(
+      "Manager/Owner-এর coordination ও resolution Points পরে verified source যুক্ত হলে হিসাব হবে; এখন কোনো score আন্দাজ করে যোগ করা হবে না।"
+    );
+  }
+  return rows;
+}
+
 export default async function PerformancePage() {
   const context = await requireCurrentAccessContext();
   const snapshot = await getPerformanceSnapshot(context);
   const winnerReward = weeklyWinnerReward(snapshot.leaderboard);
   const current = snapshot.current;
+  const liveLeaderboard = snapshot.leaderboard.filter(
+    (entry) => entry.scoreCoverage === "live"
+  );
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -31,19 +58,19 @@ export default async function PerformancePage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200">
-              Your weekly score
+              এই সপ্তাহের score
             </p>
             <div className="mt-2 flex items-end gap-2">
               <span className="text-4xl font-black tabular-nums">{current.points}</span>
-              <span className="pb-1 text-sm font-semibold text-blue-200">points</span>
+              <span className="pb-1 text-sm font-semibold text-blue-200">Points</span>
             </div>
             <p className="mt-2 text-xs text-slate-300">
-              Today +{current.todayPoints} · Rank {medal(current.rank)}
+              আজ +{current.todayPoints} · Rank {current.scoreCoverage === "live" ? medal(current.rank) : "—"}
             </p>
           </div>
           <div className="rounded-2xl bg-white/10 px-4 py-3 text-center ring-1 ring-white/10">
-            <p className="text-2xl">{current.rank <= 3 ? medal(current.rank) : "🎯"}</p>
-            <p className="mt-1 text-[10px] font-semibold text-slate-300">This week</p>
+            <p className="text-2xl">{current.scoreCoverage === "live" && current.rank <= 3 ? medal(current.rank) : "🎯"}</p>
+            <p className="mt-1 text-[10px] font-semibold text-slate-300">এই সপ্তাহ</p>
           </div>
         </div>
 
@@ -63,6 +90,24 @@ export default async function PerformancePage() {
         </div>
       </section>
 
+      <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-slate-950">কী করলে Points বাড়বে</h2>
+            <p className="mt-0.5 text-[10px] text-slate-400">শুধু app-এ verified কাজের হিসাব ধরা হবে।</p>
+          </div>
+          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">Live rules</span>
+        </div>
+        <div className="mt-3 space-y-2">
+          {pointDirections(current.roleLabel).map((direction) => (
+            <div key={direction} className="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-700">
+              <span aria-hidden="true">✓</span>
+              <p>{direction}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
         <div className="flex items-start gap-3">
           <span className="text-2xl">🏆</span>
@@ -71,7 +116,7 @@ export default async function PerformancePage() {
             <p className="mt-1 text-xs leading-5 text-amber-800">{winnerReward.description}</p>
             {winnerReward.eligible && (
               <p className="mt-2 text-xs font-bold text-amber-950">
-                Current #1: {winnerReward.winnerName}
+                এখন #1: {winnerReward.winnerName}
               </p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
@@ -90,41 +135,45 @@ export default async function PerformancePage() {
 
       <section className="mb-4 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
         <div className="border-b border-slate-100 px-4 py-3.5">
-          <h2 className="text-sm font-bold text-slate-950">Weekly leaderboard</h2>
-          <p className="mt-0.5 text-[10px] text-slate-400">Live from verified clinic work</p>
+          <h2 className="text-sm font-bold text-slate-950">Weekly Leaderboard</h2>
+          <p className="mt-0.5 text-[10px] text-slate-400">শুধু verified live metrics থাকা role official ranking-এ থাকবে।</p>
         </div>
-        {snapshot.leaderboard.map((entry) => (
-          <div
-            key={entry.staffId}
-            className={`flex min-h-[66px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 ${
-              entry.staffId === current.staffId ? "bg-blue-50/70" : "bg-white"
-            }`}
-          >
-            <div className="w-9 shrink-0 text-center text-lg font-bold text-slate-800">
-              {medal(entry.rank)}
+        {liveLeaderboard.length > 0 ? (
+          liveLeaderboard.map((entry) => (
+            <div
+              key={entry.staffId}
+              className={`flex min-h-[66px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 ${
+                entry.staffId === current.staffId ? "bg-blue-50/70" : "bg-white"
+              }`}
+            >
+              <div className="w-9 shrink-0 text-center text-lg font-bold text-slate-800">
+                {medal(entry.rank)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-950">{entry.fullName}</p>
+                <p className="mt-0.5 truncate text-[10px] text-slate-500">
+                  {entry.roleLabel} · {entry.departmentLabel}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-black tabular-nums text-blue-800">{entry.points}</p>
+                <p className="text-[9px] text-slate-400">Points</p>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-950">{entry.fullName}</p>
-              <p className="mt-0.5 truncate text-[10px] text-slate-500">
-                {entry.roleLabel} · {entry.departmentLabel}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-base font-black tabular-nums text-blue-800">{entry.points}</p>
-              <p className="text-[9px] text-slate-400">points</p>
-            </div>
-          </div>
-        ))}
+          ))
+        ) : (
+          <div className="px-4 py-8 text-center text-xs text-slate-500">এখনো official Leaderboard data তৈরি হয়নি।</div>
+        )}
       </section>
 
       <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-slate-950">Use points for time off</h2>
-            <p className="mt-0.5 text-[10px] text-slate-400">Owner-approved reward wallet direction</p>
+            <h2 className="text-sm font-bold text-slate-950">Points থেকে Reward</h2>
+            <p className="mt-0.5 text-[10px] text-slate-400">Leaderboard Points আলাদা থাকবে; Reward নেওয়ার জন্য আলাদা Reward Credit ব্যবহার হবে।</p>
           </div>
           <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">
-            {current.points} pts
+            {current.points} Points
           </span>
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -135,8 +184,10 @@ export default async function PerformancePage() {
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-bold text-slate-900">{reward.title}</p>
                   <p className="mt-1 text-[10px] leading-4 text-slate-500">{reward.description}</p>
-                  <p className="mt-2 text-[9px] font-semibold uppercase tracking-wide text-amber-700">
-                    Point rate pending Owner approval
+                  <p className="mt-2 text-[9px] font-semibold text-amber-700">
+                    {reward.pointCost === null
+                      ? "Reward Credit rate Owner approve করার পর Claim চালু হবে।"
+                      : `${reward.pointCost} Reward Credit লাগবে।`}
                   </p>
                 </div>
               </div>
@@ -175,6 +226,16 @@ export default async function PerformancePage() {
               </div>
             );
           })}
+        </div>
+      </section>
+
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-600">
+        <h2 className="text-sm font-bold text-slate-950">এখন আপনার যা করতে হবে</h2>
+        <div className="mt-2 space-y-1.5">
+          <p>• নিজের নিয়মিত কাজ app-এর ভেতরেই complete করুন।</p>
+          <p>• Session, Payment, Registration, Booking ও Attendance আলাদা করে manual Point লিখতে হবে না।</p>
+          <p>• Weekly Leaderboard-এ নিজের Position দেখুন।</p>
+          <p>• Reward Credit ও Claim চালু হলে Half-day, Family time, Day off বা Salary review request এখান থেকেই করবেন।</p>
         </div>
       </section>
 
