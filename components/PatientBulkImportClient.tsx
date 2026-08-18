@@ -205,7 +205,7 @@ export default function PatientBulkImportClient({ canImportPhysio, canImportDent
           <h3 className={`text-sm font-bold ${result.failed === 0 ? "text-emerald-900" : "text-amber-900"}`}>
             Import Complete
           </h3>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <p className="text-[10px] text-slate-600">Successfully imported</p>
               <p className="mt-1 text-2xl font-bold text-emerald-700">{result.success}</p>

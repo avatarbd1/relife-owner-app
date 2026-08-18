@@ -100,7 +100,7 @@ export default function CashMovementForm({ scope, context }: CashMovementFormPro
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">From</p>
               <p className="mt-1 text-lg font-bold text-slate-900">{movement.from}</p>
