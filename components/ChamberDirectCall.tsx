@@ -29,7 +29,13 @@ const ROLE_LABELS: Array<{ role: string; label: string }> = [
   { role: "Owner", label: "Owner" },
 ];
 
-export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }) {
+export default function ChamberDirectCall({
+  targets,
+  canBroadcast,
+}: {
+  targets: CallTarget[];
+  canBroadcast: boolean;
+}) {
   const roleOptions = useMemo<TargetOption[]>(() => {
     return ROLE_LABELS.flatMap((item) =>
       targets.some((target) => target.roles.includes(item.role))
@@ -53,9 +59,12 @@ export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [emergencyNote, setEmergencyNote] = useState("");
+  const [emergencyBusy, setEmergencyBusy] = useState(false);
+  const [emergencyMessage, setEmergencyMessage] = useState("");
 
   async function sendCall() {
-    if (!target || busy) return;
+    if (!target || busy || emergencyBusy) return;
     setBusy(true);
     setMessage("");
     try {
@@ -88,6 +97,40 @@ export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }
       haptic("error");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function sendEmergencyBroadcast() {
+    if (!canBroadcast || busy || emergencyBusy) return;
+    const body = emergencyNote.trim() || "Emergency assistance required in Physio Chamber";
+    if (!window.confirm("Send a loud emergency broadcast to all active Physio Chamber users?")) {
+      return;
+    }
+    setEmergencyBusy(true);
+    setEmergencyMessage("");
+    try {
+      const response = await fetch("/api/chamber/comms", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "broadcast_emergency",
+          body,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "BROADCAST_FAILED");
+      }
+      setEmergencyNote("");
+      setEmergencyMessage("✓ Emergency broadcast sent · waiting for acknowledgement");
+      haptic("success");
+    } catch (error) {
+      setEmergencyMessage(
+        `✕ ${error instanceof Error ? error.message : "Emergency broadcast failed"}`
+      );
+      haptic("error");
+    } finally {
+      setEmergencyBusy(false);
     }
   }
 
@@ -167,7 +210,7 @@ export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }
 
           <button
             type="button"
-            disabled={!target || busy}
+            disabled={!target || busy || emergencyBusy}
             onClick={() => void sendCall()}
             className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-sm font-bold text-white shadow-sm disabled:opacity-50"
           >
@@ -187,6 +230,50 @@ export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }
         <p className="mt-3 rounded-xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
           No other active Physio staff is available for direct call.
         </p>
+      )}
+
+      {canBroadcast && (
+        <div className="mt-5 rounded-xl border border-red-300 bg-red-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-red-800">
+                Emergency broadcast
+              </p>
+              <p className="mt-1 text-xs leading-5 text-red-900">
+                Rings every active Physio Chamber user. The first authorized acknowledgement stops the broadcast on all devices.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-red-700 px-2 py-1 text-[10px] font-bold text-white">
+              Owner/Manager
+            </span>
+          </div>
+          <input
+            value={emergencyNote}
+            onChange={(event) => setEmergencyNote(event.target.value)}
+            maxLength={180}
+            placeholder="Emergency reason / room / patient (optional)"
+            className="mt-3 min-h-11 w-full rounded-xl border border-red-200 bg-white px-3 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+          />
+          <button
+            type="button"
+            disabled={busy || emergencyBusy}
+            onClick={() => void sendEmergencyBroadcast()}
+            className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 text-sm font-bold text-white shadow-sm disabled:opacity-50"
+          >
+            {emergencyBusy && (
+              <Spinner size="sm" className="border-white/40 border-t-white" label="Broadcasting" />
+            )}
+            {emergencyBusy ? "Broadcasting…" : "🚨 Emergency broadcast"}
+          </button>
+          <p className="mt-2 text-[10px] leading-4 text-red-700/75">
+            Same 9 AM–9 PM Dhaka sound window applies. A confirmation step prevents accidental broadcast.
+          </p>
+          {emergencyMessage && (
+            <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${emergencyMessage.startsWith("✓") ? "bg-white text-emerald-700" : "bg-white text-red-700"}`}>
+              {emergencyMessage}
+            </p>
+          )}
+        </div>
       )}
     </section>
   );
