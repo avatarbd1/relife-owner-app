@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AppIcon from "@/components/AppIcon";
+import QuickActionsWidget from "@/components/QuickActionsWidget";
 import {
   ActionRow,
   PageHeading,
@@ -78,6 +79,44 @@ export default async function HomePage() {
           </Link>
         }
       />
+
+      {/* Quick Actions */}
+      <div className="mb-4">
+        <QuickActionsWidget
+          actions={[
+            {
+              href: "/payments",
+              icon: "💰",
+              label: "New Payment",
+              sublabel: "Collect from patient",
+              color: "blue",
+            },
+            {
+              href: "/appointments",
+              icon: "📅",
+              label: "Appointments",
+              sublabel: `${open} open today`,
+              badge: open > 0 ? open : undefined,
+              color: "emerald",
+            },
+            {
+              href: "/treatment",
+              icon: "📝",
+              label: "Treatment",
+              sublabel: "Record clinical entry",
+              color: "purple",
+            },
+            {
+              href: "/expenses",
+              icon: "✅",
+              label: "Approvals",
+              sublabel: `${pendingApprovals} pending`,
+              badge: pendingApprovals > 0 ? pendingApprovals : undefined,
+              color: "amber",
+            },
+          ]}
+        />
+      </div>
 
       <section className="mb-4 overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-lg">
         <div className="flex items-start justify-between gap-4">
