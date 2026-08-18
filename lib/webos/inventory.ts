@@ -8,6 +8,7 @@ import {
   type SpreadsheetBatchRequest,
 } from "@/lib/data/googleSheets";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 type SheetValue = string | number | boolean;
 
@@ -240,7 +241,9 @@ async function adjustRaw(
   const sourceRow = inventoryRows[dataIndex + 1];
   const rowNumber = dataIndex + 2;
   const previous = money(at(sourceRow, stockIdx));
-  const newBalance = Math.max(0, previous + change);
+  const requestedBalance = previous + change;
+  if (requestedBalance < 0) throw new Error("INVENTORY_INSUFFICIENT_STOCK");
+  const newBalance = requestedBalance;
   const itemId = at(sourceRow, itemIdIdx);
   const canonicalName = at(sourceRow, nameIdx);
   const now = dhakaNow();
@@ -309,12 +312,28 @@ async function adjustRaw(
   return { itemName: canonicalName, previous, newBalance };
 }
 
+function inventoryLockKey(itemName: string): string {
+  const part = normalized(itemName).replace(/[^a-z0-9_-]+/g, "_").slice(0, 80) || "unknown";
+  return `inventory:physio:${part}`;
+}
+
+async function adjustLocked(
+  staffId: string,
+  itemName: string,
+  change: number,
+  reason: string
+) {
+  return withMutationLock(inventoryLockKey(itemName), () =>
+    adjustRaw(staffId, itemName, change, reason)
+  );
+}
+
 export async function adjustPhysioInventory(
   context: AccessContext,
   input: { itemName: string; change: number; reason: string }
 ) {
   assertCanPerform(context, "inventory.write", "Physio");
-  return adjustRaw(context.staffId, input.itemName, Number(input.change), input.reason);
+  return adjustLocked(context.staffId, input.itemName, Number(input.change), input.reason);
 }
 
 export async function consumePhysioInventorySystem(
@@ -324,10 +343,10 @@ export async function consumePhysioInventorySystem(
 ): Promise<void> {
   for (const itemName of itemNames) {
     try {
-      await adjustRaw(staffId, itemName, -1, reason);
+      await adjustLocked(staffId, itemName, -1, reason);
     } catch (error) {
-      // Inventory bookkeeping must never duplicate/block an already-authorized
-      // registration or treatment write. The failed deduction stays visible in logs.
+      // Registration/session authority must not be rolled back by inventory bookkeeping.
+      // Failures are surfaced in server observability and can be reconciled from audit context.
       console.error(`Inventory ${reason} failed for ${itemName}`, error);
     }
   }

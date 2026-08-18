@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import AppointmentForm from "@/components/AppointmentForm";
+import AppointmentFormMultiDate from "@/components/AppointmentFormMultiDate";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { getBookingModalityOptions } from "@/lib/webos/appointmentScheduling";
@@ -52,7 +52,7 @@ export default async function NewAppointmentPage({
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">Appointments</p>
           <h1 className="mt-0.5 text-xl font-bold text-slate-950">New appointment</h1>
-          <p className="mt-1 text-xs text-slate-500">Patient → clinician → modalities → safe bed & machine slot</p>
+          <p className="mt-1 text-xs text-slate-500">Patient → clinician → multiple dates/times → safe bed & machine validation</p>
         </div>
         <Link href="/appointments" className="relife-interactive rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600">
           Back
@@ -60,12 +60,12 @@ export default async function NewAppointmentPage({
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <AppointmentForm
+        <AppointmentFormMultiDate
           patients={patients}
           clinicians={clinicians}
           modalityOptions={modalityOptions}
           defaultPatientId={patientId}
-          defaultDate={todayDhaka()}
+          startDate={todayDhaka()}
           defaultDepartment={defaultDepartment}
         />
       </section>

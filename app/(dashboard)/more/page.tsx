@@ -13,9 +13,10 @@ export default async function MorePage() {
     canPerform(context, "audit.read", "Physio") ||
     canPerform(context, "audit.read", "Dental");
   const canSettings = actions.has("settings.manage") || isOwner;
+  const canInventory = canPerform(context, "inventory.read", "Physio");
   const canTools =
     canPerform(context, "clinical.read", "Physio") ||
-    canPerform(context, "inventory.read", "Physio") ||
+    canInventory ||
     actions.has("payment.correct_own_today");
 
   return (
@@ -41,9 +42,17 @@ export default async function MorePage() {
           <ActionRow
             href="/tools"
             icon="clinical"
-            title="Tools & inventory"
-            subtitle="Clinical utilities, inventory and authorized support tools"
+            title="Clinical tools"
+            subtitle="Treatment history, reports, case studies and diagnostics"
           />
+          {canInventory && (
+            <ActionRow
+              href="/inventory"
+              icon="approval"
+              title="Inventory"
+              subtitle="Stock, low-stock alerts, movements and audited adjustments"
+            />
+          )}
         </Section>
       )}
 
