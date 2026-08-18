@@ -112,9 +112,11 @@ export function QuickButton({
   icon: AppIconName;
   label: string;
 }) {
+  const resolvedHref = label === "Live chat" ? "/chamber/chat" : href;
+
   return (
     <Link
-      href={href}
+      href={resolvedHref}
       className="flex min-h-[76px] flex-col justify-between rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] active:bg-slate-100"
     >
       <span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-blue-800">
