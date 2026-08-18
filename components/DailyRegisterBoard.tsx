@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { InlineNotice } from "@/components/FeedbackUI";
 import { formatBDT } from "@/lib/format";
 import type { WebDailyRegisterRow } from "@/lib/webos/dailyRegister";
 
@@ -15,6 +16,7 @@ interface DailyRegisterData {
     due: number;
   };
   hasMoneyAccess: boolean;
+  unavailable?: boolean;
 }
 
 interface ActivityCounts {
@@ -58,6 +60,12 @@ export default function DailyRegisterBoard({
 
   return (
     <div className="space-y-4">
+      {registerData.unavailable && (
+        <InlineNotice tone="warning" title="Register summary unavailable">
+          Attendance and clinical Daily Ops are still available. Open the full register again when live data recovers.
+        </InlineNotice>
+      )}
+
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -90,7 +98,7 @@ export default function DailyRegisterBoard({
         </div>
       </section>
 
-      {registerData.hasMoneyAccess && (
+      {registerData.hasMoneyAccess && !registerData.unavailable && (
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -151,7 +159,7 @@ export default function DailyRegisterBoard({
         </section>
       )}
 
-      {registerData.rows.length > 0 && (
+      {!registerData.unavailable && registerData.rows.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
