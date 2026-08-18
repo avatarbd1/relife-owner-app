@@ -22,14 +22,15 @@ test("generic Physio appointment routes keep legacy validation semantics behind 
   assert.doesNotMatch(command, /startMinute\s*%\s*60/);
 });
 
-test("generic Physio create uses a stable browser request ID and a tenant/date transaction lock", () => {
-  const form = source("components/AppointmentForm.tsx");
+test("generic Physio create uses stable per-slot browser request IDs and a tenant/date transaction lock", () => {
+  const form = source("components/AppointmentFormMultiDate.tsx");
   const command = source("lib/domain/appointments/create.ts");
   const edge = source("supabase/functions/relife-appointment-api/index.ts");
 
-  assert.match(form, /const requestIdRef = useRef\(""\)/);
+  assert.match(form, /const requestIdsRef = useRef\(new Map<string, string>\(\)\)/);
+  assert.match(form, /function requestIdFor\(slot: BookingSlot\)/);
   assert.match(form, /window\.crypto\.randomUUID/);
-  assert.match(form, /requestId: selectedPatient\.department === "Physio" \? stableRequestId\(\)/);
+  assert.match(form, /requestId: selectedPatient\.department === "Physio" \? requestId : undefined/);
   assert.match(command, /INVALID_REQUEST_ID/);
   assert.match(command, /createSupabaseValidatedBooking/);
 
