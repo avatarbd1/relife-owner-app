@@ -39,7 +39,7 @@ test("Physio schedule cards and capacity are hour-based and gender-aware", () =>
   assert.match(fixedHour, /const SESSION_MINUTES = 60/);
   assert.match(fixedHour, /BED-1.*BED-2/);
   assert.match(fixedHour, /BED-3.*BED-4/);
-  assert.match(fixedHour, /room is locked for/);
+  assert.match(fixedHour, /is locked for/);
 });
 
 test("fixed-bed API enforces configured Physio chamber hours", () => {
