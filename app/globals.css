@@ -39,6 +39,7 @@
   --relife-motion-slow: 200ms;
   --relife-ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
   --relife-ease-out: ease-out;
+  --relife-mobile-width: 430px;
 }
 
 @theme inline {
@@ -50,16 +51,22 @@
 html {
   -webkit-text-size-adjust: 100%;
   overscroll-behavior-x: none;
-  background: var(--background);
+  background: #e2e8f0;
 }
 
 body {
+  width: 100%;
+  max-width: var(--relife-mobile-width);
+  min-height: 100dvh;
+  margin-inline: auto;
+  overflow-x: hidden;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Geist", -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   text-rendering: optimizeLegibility;
   overscroll-behavior-y: contain;
+  box-shadow: 0 0 28px rgb(15 23 42 / 0.08);
 }
 
 button,
@@ -255,6 +262,8 @@ html[data-scrolled="true"] .relife-app-brand {
 }
 
 .relife-dashboard-content {
+  min-width: 0;
+  width: 100%;
   will-change: transform;
 }
 
