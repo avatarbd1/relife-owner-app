@@ -77,7 +77,7 @@ export default function ProfileMenu({
 
         <div className="p-1.5">
           <Link
-            href="/more"
+            href="/settings"
             role="menuitem"
             tabIndex={open ? 0 : -1}
             onClick={() => setOpen(false)}
