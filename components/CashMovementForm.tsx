@@ -75,12 +75,12 @@ export default function CashMovementForm({ scope, context }: CashMovementFormPro
   const movement = movements[movementType];
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Cash movement form">
       <div className="space-y-4">
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div role="group" aria-labelledby="movement-legend">
+          <div id="movement-legend" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Movement Type *
-          </label>
+          </div>
           <div className="mt-3 space-y-2">
             {(Object.entries(movements) as [MovementType, any][]).map(([type, { label }]) => (
               <label key={type} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 cursor-pointer hover:bg-slate-50 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
@@ -92,6 +92,7 @@ export default function CashMovementForm({ scope, context }: CashMovementFormPro
                   onChange={() => setMovementType(type)}
                   disabled={busy}
                   className="cursor-pointer"
+                  aria-label={label}
                 />
                 <span className="text-sm font-medium text-slate-800">{label}</span>
               </label>
@@ -113,11 +114,13 @@ export default function CashMovementForm({ scope, context }: CashMovementFormPro
         </div>
 
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <label htmlFor="cash-amount" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Amount (BDT) *
           </label>
           <input
+            id="cash-amount"
             type="number"
+            aria-required="true"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             disabled={busy}
@@ -129,10 +132,12 @@ export default function CashMovementForm({ scope, context }: CashMovementFormPro
         </div>
 
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <label htmlFor="cash-note" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Reason / Note *
           </label>
           <textarea
+            id="cash-note"
+            aria-required="true"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             disabled={busy}

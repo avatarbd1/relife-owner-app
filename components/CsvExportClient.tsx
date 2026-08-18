@@ -130,13 +130,13 @@ export default function CsvExportClient({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Export type selection">
         <div className="mb-4">
-          <p className="text-sm font-semibold text-slate-900">Select data to export</p>
+          <p id="export-legend" className="text-sm font-semibold text-slate-900">Select data to export</p>
           <p className="mt-0.5 text-xs text-slate-500">Choose one or more export types</p>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2" role="group" aria-labelledby="export-legend">
           {(Object.entries(EXPORT_OPTIONS) as [ExportType, any][]).map(([type, { label, description, icon }]) => (
             <label
               key={type}
@@ -147,11 +147,12 @@ export default function CsvExportClient({
                 checked={selectedTypes.has(type)}
                 onChange={() => handleToggleType(type)}
                 disabled={exporting}
+                aria-label={`${label}: ${description}`}
                 className="mt-1 cursor-pointer"
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{icon}</span>
+                  <span className="text-lg" aria-hidden="true">{icon}</span>
                   <p className="font-medium text-slate-900">{label}</p>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">{description}</p>
@@ -161,15 +162,16 @@ export default function CsvExportClient({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Export filters">
         <div className="mb-4">
           <p className="text-sm font-semibold text-slate-900">Filter options</p>
         </div>
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Department</label>
+            <label htmlFor="export-department" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Department</label>
             <select
+              id="export-department"
               value={department}
               onChange={(e) => setDepartment(e.target.value as "Physio" | "Dental" | "All")}
               disabled={exporting}
@@ -184,8 +186,9 @@ export default function CsvExportClient({
           </div>
 
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date range</label>
+            <label htmlFor="export-date-range" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date range</label>
             <select
+              id="export-date-range"
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
               disabled={exporting}
@@ -202,9 +205,11 @@ export default function CsvExportClient({
           {dateRange === "custom" && (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">From</label>
+                <label htmlFor="export-start-date" className="text-xs font-semibold uppercase tracking-wide text-slate-500">From</label>
                 <input
+                  id="export-start-date"
                   type="date"
+                  aria-label="Export start date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   disabled={exporting}
@@ -212,9 +217,11 @@ export default function CsvExportClient({
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">To</label>
+                <label htmlFor="export-end-date" className="text-xs font-semibold uppercase tracking-wide text-slate-500">To</label>
                 <input
+                  id="export-end-date"
                   type="date"
+                  aria-label="Export end date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                   disabled={exporting}

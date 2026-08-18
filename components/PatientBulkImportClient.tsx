@@ -127,14 +127,16 @@ export default function PatientBulkImportClient({ canImportPhysio, canImportDent
         Upload a CSV file with patient data. Required columns: fullName, department. Optional: phone, email, age, gender, address, therapistName.
       </InlineNotice>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Patient bulk import">
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <label htmlFor="patient-csv-file" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               CSV File *
             </label>
             <input
+              id="patient-csv-file"
               type="file"
+              aria-required="true"
               onChange={handleFileSelect}
               disabled={busy}
               accept=".csv"

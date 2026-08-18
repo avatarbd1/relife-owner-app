@@ -84,13 +84,15 @@ export default function ExpenseRequestForm({ scope, context }: ExpenseRequestFor
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Expense request form">
       <div className="space-y-4">
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <label htmlFor="expense-category" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Category *
           </label>
           <select
+            id="expense-category"
+            aria-required="true"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             disabled={busy}
@@ -107,10 +109,12 @@ export default function ExpenseRequestForm({ scope, context }: ExpenseRequestFor
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <label htmlFor="expense-department" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Department *
             </label>
             <select
+              id="expense-department"
+              aria-required="true"
               value={department}
               onChange={(e) => setDepartment(e.target.value as "Physio" | "Dental")}
               disabled={busy}
@@ -122,11 +126,13 @@ export default function ExpenseRequestForm({ scope, context }: ExpenseRequestFor
           </div>
 
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <label htmlFor="expense-amount" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Amount (BDT) *
             </label>
             <input
+              id="expense-amount"
               type="number"
+              aria-required="true"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               disabled={busy}
@@ -139,10 +145,12 @@ export default function ExpenseRequestForm({ scope, context }: ExpenseRequestFor
         </div>
 
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <label htmlFor="expense-note" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Description / Note *
           </label>
           <textarea
+            id="expense-note"
+            aria-required="true"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             disabled={busy}
@@ -153,10 +161,11 @@ export default function ExpenseRequestForm({ scope, context }: ExpenseRequestFor
         </div>
 
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <label htmlFor="expense-receipt" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Receipt / Evidence
           </label>
           <input
+            id="expense-receipt"
             type="file"
             onChange={(e) => setReceipt(e.target.files?.[0] || null)}
             disabled={busy}
