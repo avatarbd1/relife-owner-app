@@ -31,9 +31,11 @@ describe("Physio fixed-hour appointment parity", () => {
     ok(bookingDomain.includes("isFixedHourStart(item.time)"));
   });
 
-  it("stays aligned with the existing Chamber 60-minute rule", () => {
+  it("stays aligned with the existing Chamber 60-minute rule and cutover mode gate", () => {
     ok(chamberFixedHour.includes("const SESSION_MINUTES = 60"));
     ok(chamberFixedHour.includes("slotStartMinute % 60 !== 0"));
     ok(chamberFixedHour.includes("slotEndMinute = slotStartMinute + SESSION_MINUTES"));
+    ok(bookingDomain.includes('chamberDbMode() !== "supabase"'));
+    ok(bookingDomain.includes("SUPABASE_EDGE_SECRET_MISSING"));
   });
 });
