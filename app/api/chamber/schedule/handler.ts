@@ -4,6 +4,7 @@ import {
   validateUnifiedPhysioBooking,
   type UnifiedPhysioBookingInput,
 } from "@/lib/domain/appointments/create";
+import { isPhysioChamberStart } from "@/lib/domain/chamber/hours";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
 import {
@@ -109,6 +110,13 @@ export async function chamberSchedulePost(request: NextRequest) {
     const action = String(record.action || "validate");
     const requestedBedId = String(record.requestedBedId || "").trim();
     const input = parseInput(record);
+
+    // The fixed-bed path previously accepted any clock-hour (for example 02:00)
+    // while the normal Physio path enforced configured chamber hours. Keep one
+    // source of truth for both entry points.
+    if (requestedBedId && !isPhysioChamberStart(input.time)) {
+      throw new Error("INVALID_SLOT");
+    }
 
     if (action === "validate") {
       assertCanPerform(context, "appointment.create", "Physio");
