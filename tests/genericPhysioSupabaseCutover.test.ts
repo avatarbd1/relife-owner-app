@@ -6,7 +6,7 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("generic Physio appointment routes keep legacy validation semantics behind the cutover domain", () => {
+test("generic Physio appointment routes keep validation semantics behind the cutover domain and align to fixed-hour starts", () => {
   const route = source("app/api/appointments/route.ts");
   const validateRoute = source("app/api/appointments/validate/route.ts");
   const command = source("lib/domain/appointments/create.ts");
@@ -18,7 +18,9 @@ test("generic Physio appointment routes keep legacy validation semantics behind 
   assert.match(command, /chamberDbMode\(\) !== "supabase"/);
   assert.match(command, /SUPABASE_EDGE_SECRET_MISSING/);
   assert.match(command, /totalDurationMin: validation\.totalDurationMin/);
-  assert.match(command, /startMinute: timeMinutes\(input\.time\)/);
+  assert.match(command, /startMinute: assertFixedHourStart\(input\.time\)/);
+  assert.match(command, /startMinute % FIXED_HOUR_MINUTES !== 0/);
+  assert.match(command, /INVALID_SLOT/);
   assert.doesNotMatch(command, /startMinute\s*%\s*60/);
 });
 
