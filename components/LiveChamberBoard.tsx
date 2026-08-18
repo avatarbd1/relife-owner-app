@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
 import type { ChamberSnapshot, ChamberSession } from "@/lib/webos/chamber";
+import ChamberStepWorkflow from "@/components/ChamberStepWorkflow";
+import ChamberPatientFlowTimeline from "@/components/ChamberPatientFlowTimeline";
 
 type ActionState = { key: string; error: string };
 
@@ -133,6 +135,12 @@ export default function LiveChamberBoard({ initial }: { initial: ChamberSnapshot
           {action.error}
         </div>
       )}
+
+      <ChamberPatientFlowTimeline
+        waiting={snapshot.queue}
+        inTreatment={snapshot.stations.flatMap((s) => (s.session ? [s.session] : []))}
+        completed={[]}
+      />
 
       <section>
         <div className="mb-2 flex items-center justify-between">
@@ -348,15 +356,14 @@ function StationCard({
 
           {snapshot.permissions.run && (
             <div className="mt-3">
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setEditing(isEditing ? "" : session.sessionId)} className="min-h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700">
-                  {isEditing ? "Close" : "Next step / move"}
-                </button>
-                <button type="button" disabled={busyKey === `complete:${session.sessionId}`} onClick={() => onPost(`complete:${session.sessionId}`, { action: "complete", sessionId: session.sessionId })} className="min-h-10 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white disabled:opacity-50">
-                  {busyKey === `complete:${session.sessionId}` ? "…" : "Complete"}
-                </button>
-              </div>
-              {isEditing && <StepEditor session={session} snapshot={snapshot} busyKey={busyKey} onPost={onPost} onDone={() => setEditing("")} />}
+              <ChamberStepWorkflow
+                sessionId={session.sessionId}
+                currentStep={session.currentStep || "Treatment started"}
+                stationId={session.stationId}
+                expectedReleaseAt={session.expectedReleaseAt}
+                onPost={onPost}
+                busyKey={busyKey}
+              />
             </div>
           )}
         </div>
@@ -367,131 +374,6 @@ function StationCard({
         </div>
       )}
     </article>
-  );
-}
-
-function StepEditor({
-  session,
-  snapshot,
-  busyKey,
-  onPost,
-  onDone,
-}: {
-  session: ChamberSession;
-  snapshot: ChamberSnapshot;
-  busyKey: string;
-  onPost: (key: string, body: Record<string, unknown>) => Promise<void>;
-  onDone: () => void;
-}) {
-  const [step, setStep] = useState("");
-  const [resourceId, setResourceId] = useState("");
-  const [stationId, setStationId] = useState(session.stationId);
-  const [duration, setDuration] = useState("10");
-  const key = `step:${session.sessionId}`;
-
-  const bedOptions = snapshot.stations.map((item) => {
-    const occupiedByOther = Boolean(item.session && item.session.sessionId !== session.sessionId);
-    const isTraction = item.resource.resourceId === "TRACTION-BED";
-    const wrongGender = !isTraction && Boolean(item.roomGender && item.roomGender !== session.gender);
-    const missingGender = !isTraction && !session.gender;
-    const blocked = occupiedByOther || wrongGender || missingGender;
-    const reason = occupiedByOther
-      ? `Busy · ${item.session?.patientName || "patient"}`
-      : wrongGender
-        ? `${item.roomGender} room`
-        : missingGender
-          ? "Gender needed"
-          : item.resource.roomId;
-    return {
-      value: item.resource.resourceId,
-      label: item.resource.resourceName,
-      subtitle: reason,
-      disabled: blocked,
-      tone: isTraction ? "amber" as const : "emerald" as const,
-    };
-  });
-
-  const machineOptions = [
-    { value: "", label: "No machine", subtitle: "Manual / exercise", tone: "slate" as const },
-    ...snapshot.machines.map((item) => {
-      const busyOther = Boolean(item.session && item.session.sessionId !== session.sessionId);
-      return {
-        value: item.resource.resourceId,
-        label: item.resource.resourceName,
-        subtitle: busyOther ? `Busy · ${item.session?.patientName || "patient"}` : "Available",
-        disabled: busyOther,
-        tone: "blue" as const,
-      };
-    }),
-  ];
-
-  const quickSteps = useMemo(() => {
-    const values = ["Exercise", "Manual Therapy", "Traction", ...snapshot.machines.map((item) => item.resource.resourceName)];
-    return [...new Set(values)].slice(0, 10);
-  }, [snapshot.machines]);
-
-  async function submit() {
-    if (!step.trim()) return;
-    await onPost(key, {
-      action: "step",
-      sessionId: session.sessionId,
-      step,
-      resourceId,
-      stationId,
-      durationMin: Number(duration || 0),
-    });
-    onDone();
-  }
-
-  return (
-    <div className="mt-3 space-y-4 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-      <div>
-        <p className="mb-2 text-[11px] font-semibold text-slate-600">Treatment step · tap common option</p>
-        <div className="flex flex-wrap gap-1.5">
-          {quickSteps.map((item) => (
-            <button key={item} type="button" onClick={() => { setStep(item); haptic("tap"); }} className={`min-h-9 rounded-lg border px-2.5 text-[10px] font-semibold ${step === item ? "border-blue-800 bg-blue-800 text-white" : "border-slate-200 bg-white text-slate-600"}`}>
-              {item}
-            </button>
-          ))}
-        </div>
-        <input value={step} onChange={(event) => setStep(event.target.value)} placeholder="Other step — type only if needed" className="mt-2 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-100" />
-      </div>
-
-      <TapChoice label="Bed / station" value={stationId} columns={bedOptions.length >= 4 ? 4 : 2} options={bedOptions} onChange={(value) => value && setStationId(value)} tone="emerald" />
-
-      <TapChoice
-        label="Machine / resource"
-        value={resourceId}
-        columns={machineOptions.length >= 4 ? 4 : 2}
-        options={machineOptions}
-        onChange={(value) => {
-          setResourceId(value);
-          const machine = snapshot.machines.find((item) => item.resource.resourceId === value);
-          if (machine && !step.trim()) setStep(machine.resource.resourceName);
-        }}
-        tone="blue"
-      />
-
-      <div>
-        <p className="mb-2 text-[11px] font-semibold text-slate-600">Planned minutes</p>
-        <div className="grid grid-cols-5 gap-1.5">
-          {["5", "10", "15", "20", "30"].map((item) => (
-            <button key={item} type="button" onClick={() => { setDuration(item); haptic("tap"); }} className={`min-h-10 rounded-lg border text-[11px] font-semibold ${duration === item ? "border-amber-500 bg-amber-500 text-white" : "border-slate-200 bg-white text-slate-600"}`}>
-              {item}m
-            </button>
-          ))}
-        </div>
-        <label className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-          Custom
-          <input type="number" min="0" max="180" value={duration} onChange={(event) => setDuration(event.target.value)} className="min-h-10 w-24 rounded-lg border border-slate-200 bg-white px-2 text-xs" />
-          min
-        </label>
-      </div>
-
-      <button type="button" disabled={!step.trim() || !stationId || busyKey === key} onClick={submit} className="min-h-11 w-full rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">
-        {busyKey === key ? "Saving…" : "Start step / move patient"}
-      </button>
-    </div>
   );
 }
 

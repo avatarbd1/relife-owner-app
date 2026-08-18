@@ -1,6 +1,7 @@
 import BottomNav from "@/components/BottomNav";
 import ChamberAlertListener from "@/components/ChamberAlertListener";
 import InteractionLayer from "@/components/InteractionLayer";
+import KeyboardShortcutsLayer from "@/components/KeyboardShortcutsLayer";
 import ProfileMenu from "@/components/ProfileMenu";
 import { IS_LIVE_DATA } from "@/lib/data";
 import { actionsForRoles, type WebRole } from "@/lib/webos/access";
@@ -56,6 +57,7 @@ export default async function DashboardLayout({
       </main>
 
       <InteractionLayer />
+      <KeyboardShortcutsLayer />
       {canChamber && (
         <ChamberAlertListener
           currentStaffId={context.staffId}

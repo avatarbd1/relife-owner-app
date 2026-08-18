@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import BulkExpenseApproval from "@/components/BulkExpenseApproval";
 import FinanceOperationsClient from "@/components/FinanceOperationsClient";
 import { getSalaryPayments, getStaff } from "@/lib/data";
 import { getFinanceHistorySnapshot } from "@/lib/webos/financeHistory";
@@ -88,6 +89,22 @@ export default async function FinanceOperationsPage({
     ? { ...snapshot, staff: enrichedStaff }
     : { ...snapshot, staff: [] };
 
+  const pendingExpenses = isOwner
+    ? history.expenses
+        .filter((item) => {
+          const status = String(item.status || "").trim().toLowerCase();
+          return status === "pending" || status === "requested";
+        })
+        .map((item) => ({
+          expenseId: item.expenseId,
+          department: item.department,
+          date: item.date,
+          category: item.category,
+          description: item.description,
+          amount: item.amount,
+        }))
+    : [];
+
   const validTabs = new Set(["payment", "expenses", "cash", "salary"]);
   const requestedTab = validTabs.has(params.tab || "") ? params.tab : undefined;
 
@@ -131,6 +148,8 @@ export default async function FinanceOperationsPage({
           )}
         </div>
       </div>
+
+      {isOwner && <BulkExpenseApproval items={pendingExpenses} />}
 
       <FinanceOperationsClient
         snapshot={safeSnapshot}
