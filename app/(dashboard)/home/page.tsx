@@ -1,22 +1,29 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import AppIcon from "@/components/AppIcon";
+import StaffHomeWorkspace from "@/components/StaffHomeWorkspace";
 import {
   ActionRow,
   PageHeading,
   QuickButton,
   Section,
 } from "@/components/WorkspaceUI";
-import { formatBDT, formatDateBn } from "@/lib/format";
 import { getTodaysCollection } from "@/lib/calculations";
-import { getScopedCashPosition } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
+import { formatBDT, formatDateBn } from "@/lib/format";
+import { getScopedCashPosition } from "@/lib/scopedCash";
+import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
 import {
   getAppointmentsForContext,
   todayDhaka,
 } from "@/lib/webos/reception";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { resolveAuthorizedScope } from "@/lib/webos/scope";
+import {
+  getStaffHomeSnapshot,
+  resolveStaffHomeRole,
+} from "@/lib/webos/staffHome";
 
 export default async function HomePage() {
   const context = await requireCurrentAccessContext();
@@ -24,14 +31,18 @@ export default async function HomePage() {
   if (!context.roles.includes("Owner")) {
     if (context.roles.includes("Auditor")) redirect("/reports");
     if (context.roles.includes("System Admin")) redirect("/tools");
-    if (
-      context.roles.includes("Manager") ||
-      context.roles.includes("Receptionist") ||
-      context.roles.includes("Therapist") ||
-      context.roles.includes("Dentist")
-    ) {
-      redirect("/daily");
+
+    const staffRole = resolveStaffHomeRole(context);
+    if (staffRole) {
+      const cookieStore = await cookies();
+      const scope = resolveAuthorizedScope(
+        context,
+        cookieStore.get("relife_scope")?.value
+      );
+      const snapshot = await getStaffHomeSnapshot(context, scope);
+      return <StaffHomeWorkspace snapshot={snapshot} />;
     }
+
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-700 shadow-sm">
         এই role-এর জন্য operational workspace enable করা নেই।
