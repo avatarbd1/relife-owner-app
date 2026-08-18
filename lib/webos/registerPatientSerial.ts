@@ -8,6 +8,7 @@ import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 type ClinicDepartment = "Physio" | "Dental";
 type SheetValue = string | number | boolean;
 
+// New registrations use department-scoped serial IDs; legacy IDs remain unchanged.
 export interface SerialPatientCreateInput {
   department: ClinicDepartment;
   fullName: string;
