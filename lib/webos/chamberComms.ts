@@ -24,6 +24,7 @@ const ORGANIZATION_ID = "RELIFE";
 const CLINIC_ID = "RELIFE-PHYSIO";
 const BRANCH_ID = "AMTALI-01";
 const CALL_PREFIX = "CALL:";
+const BROADCAST_MARKER = "CALL:ALL:PHYSIO";
 
 const LOCATIONS = new Set([
   "Shared",
@@ -184,9 +185,14 @@ function canUpdateEquipment(context: AccessContext): boolean {
   );
 }
 
+function canSendEmergencyBroadcast(context: AccessContext): boolean {
+  return context.roles.some((role) => role === "Owner" || role === "Manager");
+}
+
 function callTargetMatches(marker: string, context: AccessContext): boolean {
   const value = normalize(marker);
   if (!value.startsWith(CALL_PREFIX)) return false;
+  if (value === BROADCAST_MARKER) return true;
   if (value.startsWith("CALL:STAFF:")) {
     return value.slice("CALL:STAFF:".length) === context.staffId;
   }
@@ -437,13 +443,18 @@ export async function sendChamberMessage(
   const appointmentId = normalize(input.appointmentId).slice(0, 80);
   const bedId = normalize(input.bedId).slice(0, 80);
   const roomId = normalize(input.roomId).slice(0, 80);
+  if (roomId.startsWith("CALL:ALL:")) {
+    if (roomId !== BROADCAST_MARKER) throw new Error("INVALID_MESSAGE");
+    if (!canSendEmergencyBroadcast(context)) throw new Error("ACCESS_DENIED");
+  }
+  const emergency = roomId === BROADCAST_MARKER;
   const row: SheetCellValue[] = [
     messageId,
     now.display,
     context.staffId,
     sender,
     context.roles.join(","),
-    "Message",
+    emergency ? "System" : "Message",
     priority,
     body,
     patientId,
@@ -467,7 +478,17 @@ export async function sendChamberMessage(
     "physio",
     CHAT_SHEET,
     row,
-    auditRow(context, "chamber.chat.send", "ChatMessage", messageId, patientId, "", priority, "Chamber operational message sent", now)
+    auditRow(
+      context,
+      emergency ? "chamber.broadcast.send" : "chamber.chat.send",
+      emergency ? "ChamberBroadcast" : "ChatMessage",
+      messageId,
+      patientId,
+      "",
+      priority,
+      emergency ? "Emergency Chamber broadcast sent" : "Chamber operational message sent",
+      now
+    )
   );
   return { messageId };
 }
@@ -520,6 +541,7 @@ export async function acceptChamberCall(
   if (!seenBy.includes(context.staffId)) seenBy.push(context.staffId);
   row[statusIdx] = "Accepted";
   if (seenByIdx >= 0) row[seenByIdx] = JSON.stringify(seenBy);
+  const emergency = marker === BROADCAST_MARKER;
 
   await replaceEntityRowWithAudit(
     "physio",
@@ -528,8 +550,8 @@ export async function acceptChamberCall(
     row,
     auditRow(
       context,
-      "chamber.call.accept",
-      "ChamberCall",
+      emergency ? "chamber.broadcast.accept" : "chamber.call.accept",
+      emergency ? "ChamberBroadcast" : "ChamberCall",
       messageId,
       patientIdIdx >= 0 ? at(row, patientIdIdx) : "",
       JSON.stringify({ status: currentStatus, target: marker }),
@@ -539,7 +561,9 @@ export async function acceptChamberCall(
         acceptedByName: actorName,
         acceptedAt: now.display,
       }),
-      `Targeted Chamber call accepted by ${actorName}`,
+      emergency
+        ? `Emergency Chamber broadcast acknowledged by ${actorName}`
+        : `Targeted Chamber call accepted by ${actorName}`,
       now
     )
   );
