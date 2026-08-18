@@ -13,6 +13,7 @@ function statusFor(message: string): number {
       "CLINICAL_DENTAL_ONLY",
       "DENTAL_PROCEDURE_REQUIRED",
       "DENTAL_NOTE_REQUIRED",
+      "DENTAL_CHARGE_INVALID",
       "DENTAL_STATUS_INVALID",
     ].includes(message)
   ) {
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
         procedure: body.procedure,
         toothArea: body.toothArea,
         clinicalNote: body.clinicalNote,
+        charge: Number(body.charge),
         status: body.status,
       })
     );
