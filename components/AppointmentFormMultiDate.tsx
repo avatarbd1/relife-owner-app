@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
+import { PHYSIO_CHAMBER_STARTS } from "@/lib/domain/chamber/hours";
 
 type Department = "Physio" | "Dental";
 
@@ -56,17 +57,7 @@ type BookingResult = {
   error?: string;
 };
 
-const PHYSIO_TIME_SLOTS = [
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-];
+const PHYSIO_TIME_SLOTS = [...PHYSIO_CHAMBER_STARTS];
 
 const DENTAL_TIME_SLOTS = [
   "09:00",
@@ -120,7 +111,7 @@ function friendlyBookingError(result: Record<string, unknown>, status: number): 
   if (result.error === "APPOINTMENT_CONFLICT") return String(result.detail || "Bed/machine conflict detected.");
   if (result.error === "APPOINTMENT_CAPACITY") return String(result.detail || "এই slot-এ capacity খালি নেই।");
   if (result.error === "ACCESS_DENIED") return "এই Department-এ appointment create permission নেই।";
-  if (result.error === "INVALID_SLOT") return "Physio appointment শুধু পূর্ণ ঘণ্টায় বুক করা যাবে।";
+  if (result.error === "INVALID_SLOT") return "Physio booking 9 AM–1 PM ও 3–9 PM-এর hourly slot-এ করা যাবে।";
   return String(result.detail || result.error || `HTTP ${status}`);
 }
 
@@ -643,7 +634,7 @@ export default function AppointmentFormMultiDate({
             {expandedDate === date && (
               <div className="border-t border-slate-100 p-3">
                 {selectedPatient?.department === "Physio" && (
-                  <p className="mb-2 text-[10px] font-medium text-blue-700">Physio Chamber uses fixed 60-minute slots.</p>
+                  <p className="mb-2 text-[10px] font-medium text-blue-700">60-minute slots · 9 AM–1 PM & 3–9 PM · 4 beds.</p>
                 )}
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                   {timeSlots.map((time) => (

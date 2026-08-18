@@ -6,10 +6,11 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("generic Physio appointment routes keep validation semantics behind the cutover domain and align to fixed-hour starts", () => {
+test("generic Physio appointment routes keep validation semantics behind the cutover domain and align to clinic-hour starts", () => {
   const route = source("app/api/appointments/route.ts");
   const validateRoute = source("app/api/appointments/validate/route.ts");
   const command = source("lib/domain/appointments/create.ts");
+  const hours = source("lib/domain/chamber/hours.ts");
 
   assert.match(route, /createUnifiedPhysioBooking/);
   assert.match(validateRoute, /validateUnifiedPhysioBooking/);
@@ -18,9 +19,14 @@ test("generic Physio appointment routes keep validation semantics behind the cut
   assert.match(command, /chamberDbMode\(\) !== "supabase"/);
   assert.match(command, /SUPABASE_EDGE_SECRET_MISSING/);
   assert.match(command, /totalDurationMin: validation\.totalDurationMin/);
-  assert.match(command, /startMinute: assertFixedHourStart\(input\.time\)/);
-  assert.match(command, /startMinute % FIXED_HOUR_MINUTES !== 0/);
+  assert.match(command, /startMinute: assertPhysioChamberStart\(input\.time\)/);
+  assert.match(command, /isPhysioChamberStart\(value\)/);
   assert.match(command, /INVALID_SLOT/);
+  assert.match(hours, /PHYSIO_CHAMBER_STARTS/);
+  assert.match(hours, /"09:00"/);
+  assert.match(hours, /"20:00"/);
+  assert.doesNotMatch(hours, /"13:00"/);
+  assert.doesNotMatch(hours, /"14:00"/);
   assert.doesNotMatch(command, /startMinute\s*%\s*60/);
 });
 
