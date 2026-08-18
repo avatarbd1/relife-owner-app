@@ -26,6 +26,7 @@ test("new appointment flow uses explicit gender-safe bed selection", () => {
 test("Physio schedule cards and capacity are hour-based and gender-aware", () => {
   const page = source("app/(dashboard)/appointments/page.tsx");
   const workspace = source("components/AppointmentsWorkspaceClientV2.tsx");
+  const fixedHour = source("lib/webos/chamberFixedHour.ts");
 
   assert.match(page, /AppointmentsWorkspaceClientV2/);
   assert.match(workspace, /item\.department === "Physio" \? 60 : 30/);
@@ -35,6 +36,10 @@ test("Physio schedule cards and capacity are hour-based and gender-aware", () =>
   assert.match(workspace, /Room 2/);
   assert.match(workspace, /roomGenderLabel/);
   assert.match(workspace, /4 treatment beds/);
+  assert.match(fixedHour, /const SESSION_MINUTES = 60/);
+  assert.match(fixedHour, /BED-1.*BED-2/);
+  assert.match(fixedHour, /BED-3.*BED-4/);
+  assert.match(fixedHour, /room is locked for/);
 });
 
 test("fixed-bed API enforces configured Physio chamber hours", () => {
