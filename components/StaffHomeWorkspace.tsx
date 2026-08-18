@@ -1,12 +1,6 @@
 import Link from "next/link";
 import AppIcon, { type AppIconName } from "@/components/AppIcon";
-import {
-  ActionRow,
-  MetricGrid,
-  PageHeading,
-  QuickButton,
-  Section,
-} from "@/components/WorkspaceUI";
+import { PageHeading, QuickButton } from "@/components/WorkspaceUI";
 import { formatDateBn } from "@/lib/format";
 import type { StaffHomeSnapshot } from "@/lib/webos/staffHome";
 
@@ -22,39 +16,6 @@ function scopeLabel(scope: StaffHomeSnapshot["scope"]): string {
   return "Combined";
 }
 
-function roleCopy(role: StaffHomeSnapshot["role"]): {
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-} {
-  if (role === "Receptionist") {
-    return {
-      eyebrow: "Front desk",
-      title: "Reception workspace",
-      subtitle: "Patients, bookings, payments and today’s queue",
-    };
-  }
-  if (role === "Manager") {
-    return {
-      eyebrow: "Operations",
-      title: "Manager workspace",
-      subtitle: "Clinic flow, patient activity and daily exceptions",
-    };
-  }
-  if (role === "Therapist") {
-    return {
-      eyebrow: "Physio clinical",
-      title: "My treatment day",
-      subtitle: "Assigned appointments, Chamber and patient work",
-    };
-  }
-  return {
-    eyebrow: "Dental clinical",
-    title: "My dental day",
-    subtitle: "Assigned appointments, patient files and clinical work",
-  };
-}
-
 function quickActions(snapshot: StaffHomeSnapshot): QuickAction[] {
   const { role, capabilities } = snapshot;
   const actions: QuickAction[] = [];
@@ -63,19 +24,20 @@ function quickActions(snapshot: StaffHomeSnapshot): QuickAction[] {
     if (capabilities.patientCreate) actions.push({ href: "/patients/new", icon: "userPlus", label: "New patient" });
     if (capabilities.appointmentCreate) actions.push({ href: "/appointments/new", icon: "calendar", label: "Booking" });
     if (capabilities.paymentCreate) actions.push({ href: "/payments", icon: "payment", label: "Payment" });
-    if (capabilities.registerRead) actions.push({ href: "/register", icon: "register", label: "Register" });
+    if (capabilities.cashRequest) actions.push({ href: "/finance/cash-movement", icon: "cash", label: "Handover" });
+    if (actions.length < 4 && capabilities.registerRead) actions.push({ href: "/register", icon: "register", label: "Register" });
   } else if (role === "Manager") {
     if (capabilities.patientRead) actions.push({ href: "/patients", icon: "patients", label: "Patients" });
     if (capabilities.appointmentRead) actions.push({ href: "/appointments", icon: "calendar", label: "Schedule" });
+    if (capabilities.chamberRead) actions.push({ href: "/chamber", icon: "chamber", label: "Chamber" });
     if (capabilities.paymentCreate) actions.push({ href: "/payments", icon: "payment", label: "Payment" });
-    if (capabilities.registerRead) actions.push({ href: "/register", icon: "register", label: "Register" });
   } else if (role === "Therapist") {
     if (capabilities.chamberRun) actions.push({ href: "/chamber", icon: "chamber", label: "Chamber" });
-    if (capabilities.patientRead) actions.push({ href: "/patients", icon: "patients", label: "Patients" });
+    if (capabilities.patientRead) actions.push({ href: "/patients?view=today", icon: "patients", label: "My patients" });
     if (capabilities.appointmentRead) actions.push({ href: "/appointments", icon: "calendar", label: "Schedule" });
     if (capabilities.appointmentCreate) actions.push({ href: "/appointments/new", icon: "calendar", label: "Booking" });
   } else {
-    if (capabilities.patientRead) actions.push({ href: "/patients", icon: "patients", label: "Patients" });
+    if (capabilities.patientRead) actions.push({ href: "/patients?view=today", icon: "patients", label: "My patients" });
     if (capabilities.appointmentRead) actions.push({ href: "/appointments", icon: "calendar", label: "Schedule" });
     if (capabilities.appointmentCreate) actions.push({ href: "/appointments/new", icon: "calendar", label: "Booking" });
     if (capabilities.registerRead) actions.push({ href: "/register", icon: "register", label: "Register" });
@@ -84,25 +46,31 @@ function quickActions(snapshot: StaffHomeSnapshot): QuickAction[] {
   return actions.slice(0, 4);
 }
 
+function statusTone(status: string): string {
+  const value = status.trim().toLowerCase();
+  if (value === "completed") return "bg-emerald-50 text-emerald-700";
+  if (["arrived", "waiting", "in treatment"].includes(value)) return "bg-amber-50 text-amber-700";
+  if (["cancelled", "canceled", "no-show"].includes(value)) return "bg-red-50 text-red-700";
+  return "bg-slate-100 text-slate-600";
+}
+
 export default function StaffHomeWorkspace({ snapshot }: { snapshot: StaffHomeSnapshot }) {
-  const copy = roleCopy(snapshot.role);
   const actions = quickActions(snapshot);
   const clinician = snapshot.role === "Therapist" || snapshot.role === "Dentist";
-  const scheduleTitle = clinician ? "My appointments" : "Today’s schedule";
   const scope = scopeLabel(snapshot.scope);
-
-  const metricItems = [
-    { label: clinician ? "My appointments" : "Appointments", value: String(snapshot.counts.appointments) },
-    { label: "Open", value: String(snapshot.counts.open), tone: snapshot.counts.open > 0 ? "warning" as const : "default" as const },
-    { label: "Ready / active", value: String(snapshot.counts.ready), tone: snapshot.counts.ready > 0 ? "positive" as const : "default" as const },
-    { label: "Clinical sessions", value: String(snapshot.counts.sessions), tone: "positive" as const },
-  ];
+  const queueTitle = clinician ? "My patients today" : "Today’s queue";
+  const heroTitle = clinician
+    ? `Good morning, ${snapshot.staffName}`
+    : `${snapshot.counts.appointments} appointments today`;
+  const heroSubtitle = clinician
+    ? `${snapshot.counts.appointments} assigned · ${snapshot.counts.ready} ready / active`
+    : `${snapshot.counts.ready} waiting / active · ${snapshot.counts.open} open`;
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-3xl">
       <PageHeading
         title="Home"
-        subtitle={`${formatDateBn(new Date())} · ${scope} · ${snapshot.staffName}`}
+        subtitle={`${formatDateBn(new Date())} · ${scope}`}
         action={
           snapshot.capabilities.attendanceSelf ? (
             <Link
@@ -116,20 +84,35 @@ export default function StaffHomeWorkspace({ snapshot }: { snapshot: StaffHomeSn
         }
       />
 
-      <section className="mb-4 overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-lg">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-200">{copy.eyebrow}</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">{copy.title}</h1>
-        <p className="mt-1 text-xs leading-5 text-slate-300">{copy.subtitle}</p>
-        <div className="mt-5">
-          <MetricGrid items={metricItems} />
-        </div>
+      <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+          {snapshot.role === "Receptionist"
+            ? "Front desk"
+            : snapshot.role === "Manager"
+              ? "Clinic operations"
+              : snapshot.role === "Therapist"
+                ? "Physio clinical"
+                : "Dental clinical"}
+        </p>
+        <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-950">{heroTitle}</h1>
+        <p className="mt-1 text-xs text-slate-500">{heroSubtitle}</p>
+
+        {!clinician && snapshot.counts.exceptions > 0 && (
+          <Link
+            href={`/appointments?date=${encodeURIComponent(snapshot.date)}&scope=${encodeURIComponent(snapshot.scope)}&focus=exceptions`}
+            className="mt-3 flex min-h-11 items-center justify-between rounded-xl bg-amber-50 px-3.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200"
+          >
+            <span>{snapshot.counts.exceptions} appointment exception{snapshot.counts.exceptions === 1 ? "" : "s"}</span>
+            <span aria-hidden="true">Review →</span>
+          </Link>
+        )}
       </section>
 
       {actions.length > 0 && (
-        <section className="mb-4">
+        <section className="mb-5">
           <div className="mb-2.5 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900">Quick actions</h2>
-            <span className="text-[10px] font-medium text-slate-400">Role-aware</span>
+            <span className="text-[10px] font-medium text-slate-400">Daily work</span>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {actions.map((action) => (
@@ -139,61 +122,65 @@ export default function StaffHomeWorkspace({ snapshot }: { snapshot: StaffHomeSn
         </section>
       )}
 
-      <Section
-        title={scheduleTitle}
-        subtitle={`${snapshot.date} · ${scope}${clinician ? " · assigned to you" : ""}`}
-      >
+      <section className="mb-4 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-950">{queueTitle}</h2>
+            <p className="mt-0.5 text-[10px] text-slate-400">Tap a patient to continue the work</p>
+          </div>
+          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-700">
+            {snapshot.counts.appointments}
+          </span>
+        </div>
+
         {snapshot.appointments.slice(0, 6).map((appointment) => (
-          <ActionRow
+          <Link
             key={appointment.appointmentId}
             href={`/patients/${encodeURIComponent(appointment.patientId)}`}
-            icon={clinician ? "clinical" : "calendar"}
-            title={appointment.patientName || appointment.patientId}
-            subtitle={`${appointment.time || "Time not set"} · ${appointment.department}${appointment.therapist ? ` · ${appointment.therapist}` : ""}`}
-            meta={appointment.status}
-          />
+            className="flex min-h-[68px] items-center gap-3 border-b border-slate-100 px-4 py-3 active:bg-slate-50"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-800">
+              {(appointment.patientName || appointment.patientId || "P").trim().slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs font-semibold tabular-nums text-blue-800">
+                  {appointment.time || "—"}
+                </span>
+                <span className="truncate text-sm font-semibold text-slate-950">
+                  {appointment.patientName || appointment.patientId}
+                </span>
+              </div>
+              <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                {appointment.department}
+                {!clinician && appointment.therapist ? ` · ${appointment.therapist}` : ""}
+              </p>
+            </div>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-semibold ${statusTone(appointment.status)}`}>
+              {appointment.status || "Booked"}
+            </span>
+          </Link>
         ))}
+
         {snapshot.appointments.length === 0 && (
-          <div className="border-t border-slate-100 px-4 py-5 text-sm text-slate-500">
-            {clinician ? "আজ আপনার নামে assigned appointment নেই।" : "আজ visible appointment নেই।"}
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm font-semibold text-slate-700">
+              {clinician ? "No patients assigned today" : "No appointments today"}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">Nothing needs attention here right now.</p>
           </div>
         )}
+
         {snapshot.capabilities.appointmentRead && (
           <Link
             href={`/appointments?date=${encodeURIComponent(snapshot.date)}&scope=${encodeURIComponent(snapshot.scope)}`}
-            className="flex min-h-12 items-center justify-between border-t border-slate-100 px-4 text-xs font-semibold text-blue-800 hover:bg-slate-50"
+            className="flex min-h-12 items-center justify-between px-4 text-xs font-semibold text-blue-800 active:bg-slate-50"
           >
             <span>Open full schedule</span>
             <span aria-hidden="true">→</span>
           </Link>
         )}
-      </Section>
-
-      {(snapshot.counts.exceptions > 0 || snapshot.capabilities.inventoryRead || snapshot.capabilities.expenseRequest || snapshot.capabilities.cashRead || snapshot.capabilities.chamberRead) && (
-        <Section title="Work shortcuts" subtitle="Only actions this account is allowed to use">
-          {snapshot.counts.exceptions > 0 && !clinician && (
-            <ActionRow
-              href={`/appointments?date=${encodeURIComponent(snapshot.date)}&scope=${encodeURIComponent(snapshot.scope)}&focus=exceptions`}
-              icon="calendar"
-              title="Appointment exceptions"
-              subtitle="No-show / cancelled appointments need review"
-              meta={snapshot.counts.exceptions}
-            />
-          )}
-          {snapshot.capabilities.chamberRead && snapshot.role !== "Therapist" && (
-            <ActionRow href="/chamber" icon="chamber" title="Chamber" subtitle="Patient flow and treatment-bed status" />
-          )}
-          {snapshot.capabilities.inventoryRead && (
-            <ActionRow href="/inventory" icon="inventory" title="Inventory" subtitle="Stock status and movement history" />
-          )}
-          {snapshot.capabilities.expenseRequest && (
-            <ActionRow href="/expenses" icon="expense" title="Expense request" subtitle="Submit clinic expense for approval" />
-          )}
-          {snapshot.capabilities.cashRead && (
-            <ActionRow href="/finance/operations?tab=cash" icon="cash" title="Cash handover" subtitle="View or request authorized cash movement" />
-          )}
-        </Section>
-      )}
+      </section>
     </div>
   );
 }
