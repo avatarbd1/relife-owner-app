@@ -132,19 +132,11 @@ export default function ChamberAlertListener({
     const oscillators = new Set<OscillatorNode>();
     const toneGains = new Set<GainNode>();
     let masterGain: GainNode | null = null;
-    let compressor: DynamicsCompressorNode | null = null;
 
     if (context) {
       masterGain = context.createGain();
       masterGain.gain.setValueAtTime(CALL_GAIN, context.currentTime);
-      compressor = context.createDynamicsCompressor();
-      compressor.threshold.setValueAtTime(-18, context.currentTime);
-      compressor.knee.setValueAtTime(8, context.currentTime);
-      compressor.ratio.setValueAtTime(12, context.currentTime);
-      compressor.attack.setValueAtTime(0.003, context.currentTime);
-      compressor.release.setValueAtTime(0.18, context.currentTime);
-      masterGain.connect(compressor);
-      compressor.connect(context.destination);
+      masterGain.connect(context.destination);
     }
 
     const pulse = async () => {
@@ -167,8 +159,8 @@ export default function ChamberAlertListener({
         oscillator.type = "square";
         oscillator.frequency.setValueAtTime(frequency, startAt + offset);
         toneGain.gain.setValueAtTime(0.0001, startAt + offset);
-        toneGain.gain.exponentialRampToValueAtTime(0.95, startAt + offset + 0.012);
-        toneGain.gain.setValueAtTime(0.95, startAt + offset + duration - 0.025);
+        toneGain.gain.exponentialRampToValueAtTime(1, startAt + offset + 0.012);
+        toneGain.gain.setValueAtTime(1, startAt + offset + duration - 0.025);
         toneGain.gain.exponentialRampToValueAtTime(0.0001, startAt + offset + duration);
         oscillator.connect(toneGain);
         toneGain.connect(masterGain);
@@ -221,7 +213,6 @@ export default function ChamberAlertListener({
       }
       try {
         masterGain?.disconnect();
-        compressor?.disconnect();
       } catch {
         // already disconnected
       }
