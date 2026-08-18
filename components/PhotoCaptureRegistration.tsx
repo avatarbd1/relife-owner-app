@@ -186,7 +186,7 @@ export default function PhotoCaptureRegistration({
 
   if (!isOpen) return null;
 
-  const fields: Array<[string, string]> = draft
+  const draftFields: Array<[string, string]> = draft
     ? [
         ["Name", draft.fullName],
         ["Father/Husband", draft.fatherHusbandName],
@@ -198,8 +198,9 @@ export default function PhotoCaptureRegistration({
         ["Diagnosis/complaint", draft.diagnosis],
         ["Referral", draft.referral],
         ["Remarks", draft.remarks],
-      ].filter(([, value]) => Boolean(value))
+      ]
     : [];
+  const fields = draftFields.filter(([, value]) => Boolean(value));
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/55 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-label="Photo assisted registration">
