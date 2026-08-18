@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import AppIcon, { type AppIconName } from "@/components/AppIcon";
-import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import type { WebAction, WebRole } from "@/lib/webos/access";
 
 type NavItem = {
@@ -111,26 +110,17 @@ export default function BottomNav({
 }) {
   const pathname = usePathname();
   const [chamberPending, setChamberPending] = useState(0);
+  const [isNavigating, setIsNavigating] = useState(false);
   const visibleItems = useMemo(() => {
     const actionSet = new Set(actions);
     return ITEMS.filter((item) =>
       item.visible(roles, actionSet, hasPhysioAccess)
     );
   }, [actions, hasPhysioAccess, roles]);
-  const swipeRoutes = useMemo(
-    () => visibleItems.map((item) => ({ href: item.href, matches: item.matches })),
-    [visibleItems]
-  );
-  const {
-    isNavigating,
-    setIsNavigating,
-    swipeProgress,
-    swipeDirection,
-  } = useSwipeNavigation({
-    pathname,
-    routes: swipeRoutes,
-    threshold: 96,
-  });
+
+  useEffect(() => {
+    setIsNavigating(false);
+  }, [pathname]);
 
   useEffect(() => {
     function onPending(event: Event) {
@@ -140,21 +130,6 @@ export default function BottomNav({
     window.addEventListener("relife-chamber-pending", onPending);
     return () => window.removeEventListener("relife-chamber-pending", onPending);
   }, []);
-
-  const activeIndex = visibleItems.findIndex((item) =>
-    isActive(pathname, item.matches)
-  );
-  const swipeTarget =
-    swipeDirection === "next"
-      ? visibleItems[activeIndex + 1]
-      : swipeDirection === "previous"
-        ? visibleItems[activeIndex - 1]
-        : undefined;
-  const cueOpacity = Math.max(
-    0,
-    Math.min(1, (swipeProgress - 0.08) / 0.92)
-  );
-  const cueShift = 10 * (1 - swipeProgress);
 
   return (
     <>
@@ -166,23 +141,6 @@ export default function BottomNav({
             : "scale-x-0 opacity-0"
         }`}
       />
-
-      {swipeTarget && swipeProgress > 0.08 && (
-        <div
-          aria-hidden="true"
-          className={`pointer-events-none fixed top-1/2 z-50 -translate-y-1/2 rounded-full bg-slate-900/92 px-3 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur ${
-            swipeDirection === "next" ? "right-3" : "left-3"
-          }`}
-          style={{
-            opacity: cueOpacity,
-            transform: `translateY(-50%) translateX(${swipeDirection === "next" ? cueShift : -cueShift}px) scale(${0.96 + swipeProgress * 0.04})`,
-          }}
-        >
-          {swipeDirection === "previous" ? "‹ " : ""}
-          {swipeTarget.label}
-          {swipeDirection === "next" ? " ›" : ""}
-        </div>
-      )}
 
       <nav className="fixed bottom-0 left-1/2 z-20 w-full max-w-[430px] -translate-x-1/2 border-t border-slate-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-5px_18px_rgba(15,23,42,0.045)] backdrop-blur-xl supports-[backdrop-filter]:bg-white/90">
         <ul className="flex w-full">
