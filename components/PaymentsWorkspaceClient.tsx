@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
+import { useToastContext } from "@/components/ToastProvider";
 
 type Department = "Physio" | "Dental";
 type Patient = { patientId: string; fullName: string; department: Department; due: number };
@@ -62,6 +63,7 @@ export default function PaymentsWorkspaceClient({
   initialPatientId?: string;
 }) {
   const router = useRouter();
+  const toast = useToastContext();
 
   // Get initial patient from URL param, localStorage, or first patient
   const getInitialPatient = () => {
@@ -153,12 +155,12 @@ export default function PaymentsWorkspaceClient({
   async function savePayment() {
     if (!selected || busy) return;
     if (!online) {
-      setMessage("✕ Internet connection required for payment writes");
+      toast.error("Internet connection required for payment writes");
       haptic("error");
       return;
     }
     if (grossNumber <= 0 && Number(sessions || 0) <= 0) {
-      setMessage("✕ Enter an amount or session count");
+      toast.error("Enter an amount or session count");
       haptic("error");
       return;
     }
@@ -198,12 +200,12 @@ export default function PaymentsWorkspaceClient({
         savedAt: localNow(),
       };
       setReceipt(saved);
-      setMessage(`✓ Payment saved · ${saved.receiptNo}`);
+      toast.success(`Payment saved · ${saved.receiptNo}`, 5000);
       setWebRequestId(requestId());
       haptic("success");
       router.refresh();
     } catch (error) {
-      setMessage(`✕ ${error instanceof Error ? error.message : "Payment failed"}`);
+      toast.error(error instanceof Error ? error.message : "Payment failed");
       haptic("error");
     } finally {
       setBusy(false);
@@ -227,7 +229,7 @@ export default function PaymentsWorkspaceClient({
   async function copyReceipt() {
     if (!receiptText) return;
     await navigator.clipboard.writeText(receiptText);
-    setMessage("✓ Receipt copied");
+    toast.success("Receipt copied");
     haptic("success");
   }
 
