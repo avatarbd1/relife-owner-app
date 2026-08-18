@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import AppointmentsWorkspaceClient from "@/components/AppointmentsWorkspaceClient";
+import AppointmentsWorkspaceClientV2 from "@/components/AppointmentsWorkspaceClientV2";
 import { getUnifiedAppointmentsForContext } from "@/lib/domain/appointments/read";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
@@ -94,7 +94,7 @@ export default async function AppointmentsPage({
   });
 
   return (
-    <AppointmentsWorkspaceClient
+    <AppointmentsWorkspaceClientV2
       appointments={appointments.map((appointment) => ({
         ...appointment,
         canUpdate: canPerform(
