@@ -42,6 +42,7 @@ export interface StaffHomeSnapshot {
     registerRead: boolean;
     expenseRequest: boolean;
     cashRead: boolean;
+    cashRequest: boolean;
     attendanceSelf: boolean;
     inventoryRead: boolean;
     chamberRead: boolean;
@@ -158,6 +159,7 @@ export async function getStaffHomeSnapshot(
       registerRead: canInScope(context, scope, "register.read"),
       expenseRequest: canInScope(context, scope, "expense.request"),
       cashRead: canInScope(context, scope, "cash.read"),
+      cashRequest: canInScope(context, scope, "cash.request"),
       attendanceSelf: canInScope(context, scope, "attendance.self"),
       inventoryRead: canInScope(context, scope, "inventory.read"),
       chamberRead: canInScope(context, scope, "chamber.read"),
