@@ -78,9 +78,10 @@ export async function extractRegistrationDraftFromImage(
 
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) throw new Error("AI_NOT_CONFIGURED");
+  // Keep image extraction independent from the general text model setting: a
+  // text-only OPENROUTER_MODEL_NAME must never silently break this workflow.
   const model =
     process.env.OPENROUTER_VISION_MODEL_NAME?.trim() ||
-    process.env.OPENROUTER_MODEL_NAME?.trim() ||
     "openai/gpt-4o-mini";
 
   const system = [
