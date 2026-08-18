@@ -10,6 +10,8 @@ import {
   updateEquipmentRequestStatus,
 } from "@/lib/webos/chamberComms";
 
+const PHYSIO_EMERGENCY_MARKER = "CALL:ALL:PHYSIO";
+
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "CHAMBER_COMMS_FAILED";
   if (message === "ACCESS_DENIED" || message === "CALL_TARGET_MISMATCH") {
@@ -55,6 +57,17 @@ export async function POST(request: NextRequest) {
     if (action === "send_message") {
       const result = await withMutationLock("chamber-chat-write", () =>
         sendChamberMessage(context, body)
+      );
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "broadcast_emergency") {
+      const message = String(body.body || "").trim() || "Emergency assistance required in Physio Chamber";
+      const result = await withMutationLock("chamber-emergency-broadcast", () =>
+        sendChamberMessage(context, {
+          body: message,
+          priority: "Urgent",
+          roomId: PHYSIO_EMERGENCY_MARKER,
+        })
       );
       return NextResponse.json({ ok: true, ...result });
     }
