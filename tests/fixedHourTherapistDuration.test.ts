@@ -36,6 +36,6 @@ test("live fixed-hour board does not invent therapist filler after selected moda
   const board = source("components/ChamberHourlyBedBoard.tsx");
   assert.match(board, /if \(selected\.length === 0\) steps\.push/);
   assert.doesNotMatch(board, /selected\.length \? "Therapist time" : "Therapist session"/);
-  assert.match(board, /Therapist is free outside therapist-required steps/);
-  assert.match(board, /Fixed 60-minute bed slot/);
+  assert.match(board, /elapsed >= 60/);
+  assert.match(board, /\/ 60 min bed slot/);
 });
