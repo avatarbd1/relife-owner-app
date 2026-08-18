@@ -73,3 +73,5 @@ test("Chat client provides quick messages, search, mute, polling and session arc
   assert.match(client, /const ARCHIVE_DELAY_MS = 5 \* 60 \* 1000/);
   assert.match(client, /data-home-swipe-ignore/);
 });
+
+// Keep this contract in CI because Chat is a runtime workflow, not a visual-only mock.
