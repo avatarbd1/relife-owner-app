@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { InlineNotice, ProgressBar, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
+import BulkApprovalWidget from "@/components/BulkApprovalWidget";
+import { bulkApproveExpenses, bulkRejectExpenses } from "@/app/(dashboard)/finance/operations/actions";
+import { useToastContext } from "@/components/ToastProvider";
 
 type Department = "Physio" | "Dental";
 type PaidFrom = "Reception" | "Home Treasury" | "Bank";
@@ -24,6 +27,15 @@ type Snapshot = {
     salary: number;
     paidThisMonth?: number;
     remainingDue?: number;
+  }>;
+  pendingExpenses: Array<{
+    id: string;
+    department: Department;
+    date: string;
+    category: string;
+    amount: number;
+    note: string;
+    requestedBy: string;
   }>;
   approvedExpenses: Array<{
     id: string;
@@ -47,6 +59,7 @@ type Snapshot = {
   capabilities: {
     paymentCreate: boolean;
     expenseRequest: boolean;
+    expenseApprove: boolean;
     expensePay: boolean;
     cashRequest: boolean;
     salaryPay: boolean;
@@ -184,11 +197,12 @@ export default function FinanceOperationsClient({
   initialTab?: FinanceTab;
 }) {
   const router = useRouter();
+  const toast = useToastContext();
   const defaultDepartment = snapshot.departments[0] || "Physio";
   const availableTabs = useMemo(() => {
     const tabs: FinanceTab[] = [];
     if (snapshot.capabilities.paymentCreate) tabs.push("payment");
-    if (snapshot.capabilities.expenseRequest || snapshot.capabilities.expensePay || history.capabilities.expenseHistory) tabs.push("expenses");
+    if (snapshot.capabilities.expenseRequest || snapshot.capabilities.expenseApprove || snapshot.capabilities.expensePay || history.capabilities.expenseHistory) tabs.push("expenses");
     if (snapshot.capabilities.cashRequest || history.capabilities.cashHistory) tabs.push("cash");
     if (snapshot.capabilities.salaryPay || history.capabilities.salaryHistory) tabs.push("salary");
     return tabs;
@@ -380,6 +394,94 @@ export default function FinanceOperationsClient({
     }
   }
 
+  async function handleBulkApproveExpenses(expenseIds: string[]): Promise<{ success: number; failed: number }> {
+    if (!isOnline) {
+      toast.error("Internet connection required");
+      haptic("error");
+      throw new Error("Offline");
+    }
+
+    const byDepartment = new Map<Department, string[]>();
+    for (const expenseId of expenseIds) {
+      const expense = snapshot.pendingExpenses.find((e) => e.id === expenseId);
+      if (expense) {
+        const dept = expense.department as Department;
+        if (!byDepartment.has(dept)) byDepartment.set(dept, []);
+        byDepartment.get(dept)!.push(expenseId);
+      }
+    }
+
+    let totalSuccess = 0;
+    let totalFailed = 0;
+
+    for (const [department, ids] of byDepartment) {
+      const workbook = department === "Physio" ? ("physio" as const) : ("dental" as const);
+      try {
+        const result = await bulkApproveExpenses(ids, workbook);
+        totalSuccess += result.success;
+        totalFailed += result.failed;
+      } catch (error) {
+        totalFailed += ids.length;
+      }
+    }
+
+    if (totalSuccess > 0) {
+      toast.success(`${totalSuccess} expense${totalSuccess === 1 ? "" : "s"} approved`);
+      haptic("success");
+      router.refresh();
+    }
+
+    if (totalFailed > 0) {
+      toast.error(`${totalFailed} failed to approve`);
+    }
+
+    return { success: totalSuccess, failed: totalFailed };
+  }
+
+  async function handleBulkRejectExpenses(expenseIds: string[], reason: string): Promise<{ success: number; failed: number }> {
+    if (!isOnline) {
+      toast.error("Internet connection required");
+      haptic("error");
+      throw new Error("Offline");
+    }
+
+    const byDepartment = new Map<Department, string[]>();
+    for (const expenseId of expenseIds) {
+      const expense = snapshot.pendingExpenses.find((e) => e.id === expenseId);
+      if (expense) {
+        const dept = expense.department as Department;
+        if (!byDepartment.has(dept)) byDepartment.set(dept, []);
+        byDepartment.get(dept)!.push(expenseId);
+      }
+    }
+
+    let totalSuccess = 0;
+    let totalFailed = 0;
+
+    for (const [department, ids] of byDepartment) {
+      const workbook = department === "Physio" ? ("physio" as const) : ("dental" as const);
+      try {
+        const result = await bulkRejectExpenses(ids, workbook, reason);
+        totalSuccess += result.success;
+        totalFailed += result.failed;
+      } catch (error) {
+        totalFailed += ids.length;
+      }
+    }
+
+    if (totalSuccess > 0) {
+      toast.success(`${totalSuccess} expense${totalSuccess === 1 ? "" : "s"} rejected`);
+      haptic("success");
+      router.refresh();
+    }
+
+    if (totalFailed > 0) {
+      toast.error(`${totalFailed} failed to reject`);
+    }
+
+    return { success: totalSuccess, failed: totalFailed };
+  }
+
   if (availableTabs.length === 0) {
     return <InlineNotice tone="neutral">এই account-এর জন্য finance workflow access নেই।</InlineNotice>;
   }
@@ -485,6 +587,27 @@ export default function FinanceOperationsClient({
                 </button>
                 <ResultMessage value={expenseStatus} />
               </form>
+            </SectionCard>
+          )}
+
+          {snapshot.capabilities.expenseApprove && snapshot.pendingExpenses.length > 0 && (
+            <SectionCard title="Pending approvals" subtitle="Batch approve or reject multiple expense requests." badge={<StatusBadge tone="warning">{snapshot.pendingExpenses.length} pending</StatusBadge>}>
+              <BulkApprovalWidget
+                title="Expense requests"
+                items={snapshot.pendingExpenses.map((expense) => ({
+                  id: expense.id,
+                  date: expense.date,
+                  category: expense.category,
+                  description: expense.category,
+                  amount: expense.amount,
+                  requestedBy: expense.requestedBy,
+                  details: `${expense.category} · ${expense.department}`,
+                }))}
+                onApprove={handleBulkApproveExpenses}
+                onReject={handleBulkRejectExpenses}
+                emptyMessage="No pending expense approvals"
+                color="amber"
+              />
             </SectionCard>
           )}
 

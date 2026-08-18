@@ -48,6 +48,16 @@ export interface ApprovedExpenseOption {
   requestedBy: string;
 }
 
+export interface PendingExpenseOption {
+  id: string;
+  department: ClinicDepartment;
+  date: string;
+  category: string;
+  amount: number;
+  note: string;
+  requestedBy: string;
+}
+
 export interface RecentPaymentOption {
   receiptNo: string;
   date: string;
@@ -61,12 +71,14 @@ export interface RecentPaymentOption {
 export interface FinanceOperationsSnapshot {
   patients: FinancePatientOption[];
   staff: FinanceStaffOption[];
+  pendingExpenses: PendingExpenseOption[];
   approvedExpenses: ApprovedExpenseOption[];
   recentPayments: RecentPaymentOption[];
   departments: ClinicDepartment[];
   capabilities: {
     paymentCreate: boolean;
     expenseRequest: boolean;
+    expenseApprove: boolean;
     expensePay: boolean;
     cashRequest: boolean;
     salaryPay: boolean;
@@ -802,6 +814,38 @@ function parseApprovedExpenses(
   });
 }
 
+function parsePendingExpenses(
+  rows: string[][],
+  fallback: ClinicDepartment
+): PendingExpenseOption[] {
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  const idIdx = headerIndex(headers, "Expense_ID");
+  const dateIdx = headerIndex(headers, "Date");
+  const categoryIdx = headerIndex(headers, "Category");
+  const amountIdx = headerIndex(headers, "Amount");
+  const noteIdx = headerIndex(headers, "Note");
+  const requestedIdx = headerIndex(headers, "Requested_By", "Added_By");
+  const statusIdx = headerIndex(headers, "Status");
+  const departmentIdx = headerIndex(headers, "Department");
+  const PENDING_STATUSES = new Set(["pending", "pending approval", "requested"]);
+  return rows.slice(1).flatMap((row) => {
+    const status = normalizeLower(at(row, statusIdx));
+    if (!PENDING_STATUSES.has(status)) return [];
+    const department = (at(row, departmentIdx) || fallback) as ClinicDepartment;
+    if (department !== "Physio" && department !== "Dental") return [];
+    return [{
+      id: at(row, idIdx),
+      department,
+      date: at(row, dateIdx),
+      category: at(row, categoryIdx),
+      amount: money(at(row, amountIdx)),
+      note: at(row, noteIdx),
+      requestedBy: at(row, requestedIdx),
+    }];
+  });
+}
+
 export async function getFinanceOperationsSnapshot(
   context: AccessContext,
   scope: Scope
@@ -852,6 +896,15 @@ export async function getFinanceOperationsSnapshot(
 
   // Salary master values live in 08_Staff. The finance page remains the
   // authoritative place for commitment totals; the W3 form only needs staff IDs.
+  const pendingExpenses = [
+    ...parsePendingExpenses(physio["07_Expenses"] || [], "Physio"),
+    ...parsePendingExpenses(dental["07_Expenses"] || [], "Dental"),
+  ].filter(
+    (expense) =>
+      scopeAllows(scope, expense.department) &&
+      canPerform(context, "expense.approve", expense.department)
+  );
+
   const approvedExpenses = [
     ...parseApprovedExpenses(physio["07_Expenses"] || [], "Physio"),
     ...parseApprovedExpenses(dental["07_Expenses"] || [], "Dental"),
@@ -886,12 +939,14 @@ export async function getFinanceOperationsSnapshot(
   return {
     patients,
     staff,
+    pendingExpenses,
     approvedExpenses,
     recentPayments,
     departments: allowedDepartments,
     capabilities: {
       paymentCreate: any("payment.create"),
       expenseRequest: any("expense.request"),
+      expenseApprove: allowedDepartments.some((department) => canPerform(context, "expense.approve", department)),
       expensePay: any("expense.pay"),
       cashRequest: any("cash.request"),
       salaryPay: any("salary.pay"),
