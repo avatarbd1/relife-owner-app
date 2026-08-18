@@ -3,7 +3,7 @@ import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 import { withMutationLock } from "@/lib/webos/mutationLock";
-import { registerPatient } from "@/lib/webos/reception";
+import { registerPatientSerial } from "@/lib/webos/registerPatientSerial";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
@@ -25,12 +25,6 @@ function errorResponse(error: unknown): NextResponse {
   }
   console.error("Patient registration failed:", message);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
-}
-
-function normalizePhone(value: unknown): string {
-  let digits = String(value ?? "").replace(/\D/g, "");
-  if (digits.startsWith("880")) digits = digits.slice(3);
-  return digits;
 }
 
 function normalizeGender(value: unknown): string {
@@ -57,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     const lockKey = `patient-register:${department || "unknown"}`;
     const result = await withMutationLock(lockKey, () =>
-      registerPatient(context, {
+      registerPatientSerial(context, {
         department: body.department,
         fullName: body.fullName,
         fatherHusbandName: body.fatherHusbandName,
