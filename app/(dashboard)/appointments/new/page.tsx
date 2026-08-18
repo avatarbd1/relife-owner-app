@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import AppointmentBookingGate from "@/components/AppointmentBookingGate";
+import AppointmentFormMultiDateGate from "@/components/AppointmentBookingGate";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { getBookingModalityOptions } from "@/lib/webos/appointmentScheduling";
@@ -60,7 +60,7 @@ export default async function NewAppointmentPage({
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <AppointmentBookingGate
+        <AppointmentFormMultiDateGate
           patients={patients}
           clinicians={clinicians}
           modalityOptions={modalityOptions}
