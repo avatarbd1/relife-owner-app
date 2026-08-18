@@ -60,6 +60,10 @@ export async function POST(request: NextRequest) {
     }
     if (action === "accept_call") {
       const messageId = String(body.messageId || "");
+      const snapshot = await getChamberCommsSnapshot(context);
+      const call = snapshot.messages.find((item) => item.messageId === messageId);
+      if (!call) throw new Error("CALL_NOT_FOUND");
+      if (call.senderId === context.staffId) throw new Error("CALL_TARGET_MISMATCH");
       const result = await withMutationLock(`chamber-call:${messageId}`, () =>
         acceptChamberCall(context, messageId)
       );
