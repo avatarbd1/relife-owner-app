@@ -31,6 +31,14 @@ describe("role-aware Home workspace", () => {
     ok(homePage.includes('redirect("/tools")'));
   });
 
+  it("uses clinician-first staff Home role precedence", () => {
+    const therapist = staffHome.indexOf('context.roles.includes("Therapist")');
+    const dentist = staffHome.indexOf('context.roles.includes("Dentist")');
+    const reception = staffHome.indexOf('context.roles.includes("Receptionist")');
+    const manager = staffHome.indexOf('context.roles.includes("Manager")');
+    ok(therapist >= 0 && dentist > therapist && reception > dentist && manager > reception);
+  });
+
   it("filters clinician Home schedule to the signed-in clinician", () => {
     ok(staffHome.includes("belongsToCurrentClinician"));
     ok(staffHome.includes("appointment.therapist"));
