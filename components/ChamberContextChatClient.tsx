@@ -52,6 +52,7 @@ const QUICK_MESSAGES: Array<{
 ];
 
 const ARCHIVE_DELAY_MS = 5 * 60 * 1000;
+type Sheet = "quick" | "more" | "contexts" | null;
 
 function normalize(value: unknown): string {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -148,6 +149,7 @@ export default function ChamberContextChatClient({
 }) {
   const [workspace, setWorkspace] = useState(initial);
   const workspaceRef = useRef(initial);
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const [selectedId, setSelectedId] = useState(
     initial.contexts.find((context) => context.active)?.appointmentId ||
       initial.contexts[0]?.appointmentId ||
@@ -159,6 +161,7 @@ export default function ChamberContextChatClient({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [muted, setMuted] = useState(false);
+  const [sheet, setSheet] = useState<Sheet>(null);
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
   >("default");
@@ -276,6 +279,10 @@ export default function ChamberContextChatClient({
     setMuted(isContextMuted(selectedId));
   }, [selectedId]);
 
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ block: "end" });
+  }, [contextMessages.length, selectedId]);
+
   async function postMessage(
     body: string,
     priority: ChamberContextMessagePriority,
@@ -309,6 +316,7 @@ export default function ChamberContextChatClient({
       haptic("success");
       setMessage("");
       setUrgent(false);
+      setSheet(null);
       await refresh();
     } catch (postError) {
       haptic("error");
@@ -335,11 +343,19 @@ export default function ChamberContextChatClient({
     setNotificationPermission(permission);
   }
 
+  function chooseContext(context: ChamberChatContext) {
+    setSelectedId(context.appointmentId);
+    setSearch("");
+    setSheet(null);
+    haptic("tap");
+  }
+
   if (!selected) {
     return (
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <p className="text-base font-bold text-slate-900">No chamber chat context yet</p>
-        <p className="mt-2 text-sm text-slate-500">
+      <section className="mx-auto flex min-h-[58dvh] w-full max-w-[430px] flex-col items-center justify-center bg-white px-6 text-center">
+        <div className="grid h-14 w-14 place-items-center rounded-full bg-blue-50 text-2xl">💬</div>
+        <p className="mt-4 text-base font-bold text-slate-900">No chamber chat context yet</p>
+        <p className="mt-2 max-w-xs text-sm text-slate-500">
           A patient appointment or Chamber session will create the next context.
         </p>
         <Link
@@ -355,236 +371,146 @@ export default function ChamberContextChatClient({
   const phase = contextPhase(selected, workspace.messages);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-      <aside className="space-y-3">
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
-            Active context
-          </p>
-          <div className="mt-2 flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-2 lg:overflow-visible">
-            {workspace.contexts.map((context) => {
-              const active = context.appointmentId === selected.appointmentId;
-              const itemPhase = contextPhase(context, workspace.messages);
-              return (
-                <button
-                  key={context.appointmentId}
-                  type="button"
-                  onClick={() => {
-                    setSelectedId(context.appointmentId);
-                    setSearch("");
-                    haptic("tap");
-                  }}
-                  className={`min-w-[190px] rounded-xl border p-3 text-left lg:min-w-0 lg:w-full ${
-                    active
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-slate-200 bg-white"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-xs font-bold text-slate-950">
-                      {context.roomId || "Waiting"}
-                    </span>
-                    <span className="text-[9px] text-slate-400">{shortTime(context.time)}</span>
-                  </div>
-                  <p className="mt-1 truncate text-xs font-semibold text-slate-700">
-                    {context.patientName || context.patientId}
-                  </p>
-                  <p className="mt-1 truncate text-[10px] text-slate-400">
-                    {context.bedId || "No bed yet"} · {itemPhase}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+    <div className="relative mx-auto min-h-[calc(100dvh-8.5rem)] w-full max-w-[430px] overflow-x-hidden bg-white shadow-sm ring-1 ring-slate-200/70 sm:rounded-2xl">
+      <header className="sticky top-[58px] z-20 border-b border-slate-200 bg-white/95 px-2.5 py-2 backdrop-blur-xl">
+        <div className="flex min-h-12 items-center gap-2">
+          <Link
+            href="/home"
+            aria-label="Back to Home"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-xl font-semibold text-slate-700 active:bg-slate-100"
+          >
+            ‹
+          </Link>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-bold text-slate-900">Recipients</p>
-            <span className="text-[9px] font-semibold text-slate-400">Auto-suggested</span>
-          </div>
-          <div className="mt-2 space-y-2">
-            {recipients.slice(0, 8).map((recipient) => (
-              <div key={recipient.staffId} className="flex items-center gap-2 text-xs">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <span className="min-w-0 flex-1 truncate font-medium text-slate-700">
-                  {recipient.fullName}
-                </span>
-                <span className="text-[9px] text-slate-400">{recipientRole(recipient)}</span>
-              </div>
-            ))}
-            {recipients.length === 0 && (
-              <p className="text-[11px] text-slate-400">No additional recipient suggested.</p>
-            )}
-          </div>
-          <p className="mt-3 text-[9px] leading-4 text-slate-400">
-            Suggested recipients are operational shortcuts. Chamber-authorized Physio staff can view permitted room contexts.
-          </p>
-        </section>
-      </aside>
-
-      <main className="min-w-0 space-y-3">
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
-                  {selected.roomId || "Waiting area"} · {selected.bedId || "No bed"}
-                </p>
-                <h2 className="mt-1 truncate text-xl font-bold text-slate-950">
-                  {selected.patientName || selected.patientId}
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {selected.time || "Time pending"}
-                  {selected.therapist ? ` · ${selected.therapist}` : ""}
-                </p>
-              </div>
-              <StatusBadge tone={phaseTone(phase)}>{phase}</StatusBadge>
+          <button
+            type="button"
+            onClick={() => setSheet("contexts")}
+            className="min-w-0 flex-1 rounded-xl px-2 py-1 text-left active:bg-slate-50"
+          >
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-sm font-bold text-slate-950">
+                {selected.roomId || "Waiting"} · {selected.patientName || selected.patientId}
+              </h1>
+              <span className="text-[10px] text-slate-400">⌄</span>
             </div>
+            <p className="mt-0.5 truncate text-[10px] text-slate-500">
+              {selected.time || "Time pending"}
+              {selected.bedId ? ` · ${selected.bedId}` : ""}
+              {selected.therapist ? ` · ${selected.therapist}` : ""}
+            </p>
+          </button>
 
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <label className="col-span-2 sm:col-span-2">
-                <span className="sr-only">Search messages</span>
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search messages or staff"
-                  className="min-h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={toggleMute}
-                className={`min-h-10 rounded-xl border px-3 text-xs font-semibold ${
-                  muted
-                    ? "border-amber-200 bg-amber-50 text-amber-800"
-                    : "border-slate-200 bg-slate-50 text-slate-700"
-                }`}
-              >
-                {muted ? "🔇 Muted" : "🔔 Alerts"}
-              </button>
-              <button
-                type="button"
-                disabled={
-                  notificationPermission === "granted" ||
-                  notificationPermission === "unsupported"
-                }
-                onClick={() => void enableNotifications()}
-                className="min-h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700 disabled:opacity-55"
-              >
-                {notificationPermission === "granted" ? "System alerts on" : "Enable alerts"}
-              </button>
-            </div>
-            {muted && (
-              <p className="mt-2 text-[10px] text-amber-700">
-                Normal notifications are muted for this context. Urgent messages still alert.
-              </p>
-            )}
-          </div>
+          <StatusBadge tone={phaseTone(phase)}>{phase}</StatusBadge>
+          <button
+            type="button"
+            aria-label="Chat options"
+            onClick={() => setSheet("more")}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-xl leading-none text-slate-700 active:bg-slate-100"
+          >
+            ⋮
+          </button>
+        </div>
+      </header>
 
-          <div className="min-h-[250px] space-y-2 bg-slate-50/60 p-4">
-            {contextMessages.map((item) => {
-              const own = item.senderId === workspace.currentStaffId;
-              return (
-                <article
-                  key={item.messageId}
-                  className={`max-w-[86%] rounded-2xl border px-3 py-2.5 text-sm shadow-sm ${
-                    own
-                      ? "ml-auto border-amber-100 bg-amber-50 text-amber-950"
-                      : item.priority === "Urgent"
-                        ? "border-red-200 bg-red-50 text-red-950"
-                        : "border-blue-100 bg-blue-50 text-blue-950"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-[10px] font-bold">
-                      {own ? `${item.senderName || "You"} (You)` : item.senderName || "Staff"}
-                    </span>
-                    <span className="shrink-0 text-[9px] opacity-55">{shortTime(item.createdAt)}</span>
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap leading-5">{item.body}</p>
-                  {item.priority === "Urgent" && (
-                    <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-700">
-                      Urgent
-                    </p>
-                  )}
-                </article>
-              );
-            })}
-            {contextMessages.length === 0 && (
-              <div className="py-10 text-center">
-                <p className="text-sm font-semibold text-slate-600">No messages in this context</p>
-                <p className="mt-1 text-xs text-slate-400">Use a quick operational message to start.</p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-950">Quick messages</h3>
-              <p className="mt-0.5 text-[10px] text-slate-400">One tap sends to this patient/session context.</p>
-            </div>
-            {workspace.pendingUrgentCount > 0 && (
-              <StatusBadge tone="warning">{workspace.pendingUrgentCount} urgent</StatusBadge>
-            )}
-          </div>
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {QUICK_MESSAGES.map((item) => (
-              <button
-                key={item.body}
-                type="button"
-                disabled={!selected.active || Boolean(busy)}
-                onClick={() => void postMessage(item.body, item.priority, `preset:${item.body}`)}
-                className="min-h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-xs font-semibold text-slate-700 active:bg-slate-100 disabled:opacity-45"
-              >
-                {busy === `preset:${item.body}` ? "Sending…" : item.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-950">Custom message</h3>
-              <p className="mt-0.5 text-[10px] text-slate-400">Operational, room or patient context only.</p>
-            </div>
-            <button
-              type="button"
-              disabled={!selected.active}
-              onClick={() => setUrgent((value) => !value)}
-              className={`min-h-9 rounded-lg border px-3 text-[10px] font-bold ${
-                urgent
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-slate-200 bg-slate-50 text-slate-500"
-              } disabled:opacity-40`}
-            >
-              {urgent ? "Urgent ON" : "Mark urgent"}
+      <main className="min-h-[calc(100dvh-15rem)] space-y-2 bg-slate-50/70 px-3 py-4">
+        {search && (
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
+            <span className="truncate">Search: “{search}”</span>
+            <button type="button" onClick={() => setSearch("")} className="font-bold">
+              Clear
             </button>
           </div>
+        )}
+
+        {phase !== "Active" && (
+          <div className="mb-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-[10px] font-medium text-slate-500">
+            {phase === "Closing"
+              ? "Session closed · archiving after 5 minutes of inactivity."
+              : "Archived chat · history is read-only."}
+          </div>
+        )}
+
+        {contextMessages.map((item) => {
+          const own = item.senderId === workspace.currentStaffId;
+          return (
+            <article
+              key={item.messageId}
+              className={`max-w-[84%] rounded-2xl px-3 py-2.5 text-sm shadow-sm ring-1 ${
+                own
+                  ? "ml-auto rounded-br-md bg-blue-700 text-white ring-blue-700"
+                  : item.priority === "Urgent"
+                    ? "rounded-bl-md bg-red-50 text-red-950 ring-red-200"
+                    : "rounded-bl-md bg-white text-slate-900 ring-slate-200"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className={`truncate text-[10px] font-bold ${own ? "text-blue-100" : "text-slate-500"}`}>
+                  {own ? "You" : item.senderName || "Staff"}
+                </span>
+                <span className={`shrink-0 text-[9px] ${own ? "text-blue-200" : "text-slate-400"}`}>
+                  {shortTime(item.createdAt)}
+                </span>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap leading-5">{item.body}</p>
+              {item.priority === "Urgent" && !own && (
+                <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-700">
+                  Urgent
+                </p>
+              )}
+            </article>
+          );
+        })}
+
+        {contextMessages.length === 0 && (
+          <div className="py-16 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-white text-xl shadow-sm ring-1 ring-slate-200">
+              💬
+            </div>
+            <p className="mt-3 text-sm font-semibold text-slate-600">
+              {search ? "No matching messages" : "No messages yet"}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              {search ? "Try a different search." : "Use Quick for a one-tap operational message."}
+            </p>
+          </div>
+        )}
+        <div ref={threadEndRef} />
+      </main>
+
+      <div className="sticky bottom-[calc(3.75rem+env(safe-area-inset-bottom))] z-20 border-t border-slate-200 bg-white/95 p-2.5 backdrop-blur-xl">
+        {error && (
+          <div className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+            {error}
+          </div>
+        )}
+        {urgent && (
+          <div className="mb-2 flex items-center justify-between rounded-lg bg-red-50 px-2.5 py-1.5 text-[10px] font-semibold text-red-700">
+            <span>Urgent message ON</span>
+            <button type="button" onClick={() => setUrgent(false)}>Turn off</button>
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+          <button
+            type="button"
+            disabled={!selected.active}
+            onClick={() => setSheet("quick")}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 active:bg-slate-100 disabled:opacity-40"
+          >
+            ⚡ Quick
+          </button>
           <textarea
             data-home-swipe-ignore
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             disabled={!selected.active}
             maxLength={500}
-            rows={3}
-            placeholder={
-              selected.active
-                ? "Patient needs 10 more minutes"
-                : "This context is closed"
-            }
-            className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-400"
+            rows={1}
+            placeholder={selected.active ? "Message…" : "Context closed"}
+            className="max-h-24 min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:text-slate-400"
           />
-          {error && (
-            <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {error}
-            </p>
-          )}
           <button
             type="button"
+            aria-label="Send message"
             disabled={!selected.active || !message.trim() || Boolean(busy)}
             onClick={() =>
               void postMessage(
@@ -593,40 +519,193 @@ export default function ChamberContextChatClient({
                 "custom"
               )
             }
-            className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-45"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-blue-700 text-sm font-bold text-white shadow-sm active:scale-[0.97] disabled:opacity-40"
           >
-            {busy === "custom" && (
-              <Spinner
-                size="sm"
-                className="border-white/40 border-t-white"
-                label="Sending"
-              />
+            {busy === "custom" ? (
+              <Spinner size="sm" className="border-white/40 border-t-white" label="Sending" />
+            ) : (
+              "➤"
             )}
-            Send
           </button>
-        </section>
+        </div>
+      </div>
 
-        <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-xs shadow-sm">
-          <div>
-            <p className="font-semibold text-slate-800">
-              {phase === "Active"
-                ? "Context closes with the Chamber session."
-                : phase === "Closing"
-                  ? "Session closed · archiving after 5 minutes of inactivity."
-                  : "This chat is archived. History remains readable."}
-            </p>
-            <p className="mt-0.5 text-[10px] text-slate-400">
-              Next patient uses a fresh appointment context.
-            </p>
-          </div>
-          <Link
-            href={phase === "Active" ? "/chamber?tab=live" : "/chamber?tab=team"}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-4 font-semibold text-slate-700"
+      {sheet && (
+        <>
+          <button
+            type="button"
+            aria-label="Close chat sheet"
+            onClick={() => setSheet(null)}
+            className="fixed inset-0 z-30 bg-slate-950/25"
+          />
+          <section
+            data-home-swipe-ignore
+            className="fixed bottom-[calc(3.75rem+env(safe-area-inset-bottom))] left-1/2 z-40 max-h-[72dvh] w-full max-w-[430px] -translate-x-1/2 overflow-y-auto rounded-t-3xl border border-slate-200 bg-white px-4 pb-5 pt-3 shadow-2xl"
           >
-            {phase === "Active" ? "Open Chamber" : "View team tools"}
-          </Link>
-        </section>
-      </main>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300" />
+
+            {sheet === "quick" && (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-950">Quick messages</h2>
+                    <p className="mt-0.5 text-[10px] text-slate-400">One tap sends to this patient/session.</p>
+                  </div>
+                  {workspace.pendingUrgentCount > 0 && (
+                    <StatusBadge tone="warning">{workspace.pendingUrgentCount} urgent</StatusBadge>
+                  )}
+                </div>
+                <div className="mt-3 space-y-2">
+                  {QUICK_MESSAGES.map((item) => (
+                    <button
+                      key={item.body}
+                      type="button"
+                      disabled={!selected.active || Boolean(busy)}
+                      onClick={() => void postMessage(item.body, item.priority, `preset:${item.body}`)}
+                      className="flex min-h-12 w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm font-semibold text-slate-700 active:bg-slate-100 disabled:opacity-45"
+                    >
+                      <span>{item.label}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {busy === `preset:${item.body}` ? "Sending…" : item.priority === "Urgent" ? "Urgent" : "Send"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {sheet === "contexts" && (
+              <>
+                <h2 className="text-base font-bold text-slate-950">Chat contexts</h2>
+                <p className="mt-1 text-[10px] text-slate-400">Each patient/session has a separate conversation.</p>
+                <div className="mt-3 space-y-2">
+                  {workspace.contexts.map((context) => {
+                    const itemPhase = contextPhase(context, workspace.messages);
+                    const active = context.appointmentId === selected.appointmentId;
+                    return (
+                      <button
+                        key={context.appointmentId}
+                        type="button"
+                        onClick={() => chooseContext(context)}
+                        className={`w-full rounded-xl border px-3 py-3 text-left ${
+                          active ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate text-sm font-bold text-slate-900">
+                            {context.roomId || "Waiting"} · {context.patientName || context.patientId}
+                          </span>
+                          <span className="text-[10px] text-slate-400">{shortTime(context.time)}</span>
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {context.bedId || "No bed"} · {itemPhase}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {sheet === "more" && (
+              <>
+                <h2 className="text-base font-bold text-slate-950">Chat options</h2>
+                <div className="mt-3 space-y-4">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      Search
+                    </span>
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Search messages or staff"
+                      className="min-h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleMute}
+                      className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${
+                        muted
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : "border-slate-200 bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      {muted ? "🔇 Muted" : "🔔 Mute room"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selected.active}
+                      onClick={() => setUrgent((value) => !value)}
+                      className={`min-h-11 rounded-xl border px-3 text-xs font-semibold ${
+                        urgent
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-slate-200 bg-slate-50 text-slate-700"
+                      } disabled:opacity-40`}
+                    >
+                      {urgent ? "🚨 Urgent ON" : "Mark urgent"}
+                    </button>
+                  </div>
+
+                  {notificationPermission !== "granted" && notificationPermission !== "unsupported" && (
+                    <button
+                      type="button"
+                      onClick={() => void enableNotifications()}
+                      className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700"
+                    >
+                      Enable system notifications
+                    </button>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-900">Recipients</p>
+                      <span className="text-[9px] font-semibold text-slate-400">Auto-suggested</span>
+                    </div>
+                    <div className="mt-2 divide-y divide-slate-100 rounded-xl border border-slate-200">
+                      {recipients.slice(0, 8).map((recipient) => (
+                        <div key={recipient.staffId} className="flex min-h-11 items-center gap-2 px-3 text-xs">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          <span className="min-w-0 flex-1 truncate font-medium text-slate-700">
+                            {recipient.fullName}
+                          </span>
+                          <span className="text-[9px] text-slate-400">{recipientRole(recipient)}</span>
+                        </div>
+                      ))}
+                      {recipients.length === 0 && (
+                        <p className="px-3 py-3 text-[11px] text-slate-400">No additional recipient suggested.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSheet("contexts")}
+                    className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
+                  >
+                    Switch patient/session
+                  </button>
+
+                  <Link
+                    href={phase === "Active" ? "/chamber?tab=live" : "/chamber?tab=team"}
+                    className="flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white"
+                  >
+                    Open Chamber
+                  </Link>
+
+                  <p className="text-center text-[10px] leading-4 text-slate-400">
+                    {phase === "Active"
+                      ? "Context closes with the Chamber session."
+                      : "This context is read-only. Next patient starts a fresh chat."}
+                  </p>
+                </div>
+              </>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }
