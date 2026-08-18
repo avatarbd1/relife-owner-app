@@ -1,6 +1,10 @@
 "use client";
 
-import type { ReactNode, TouchEvent as ReactTouchEvent } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+  TouchEvent as ReactTouchEvent,
+} from "react";
 import { useRef } from "react";
 import { haptic } from "@/lib/interactions";
 
@@ -151,7 +155,7 @@ export default function HomeSwipeLoop({ children }: { children: ReactNode }) {
     window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
   }
 
-  function onClickCapture(event: React.MouseEvent<HTMLDivElement>) {
+  function onClickCapture(event: ReactMouseEvent<HTMLDivElement>) {
     if (Date.now() < suppressClickUntilRef.current) {
       event.preventDefault();
       event.stopPropagation();
