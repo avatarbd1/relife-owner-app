@@ -19,6 +19,8 @@ import {
 } from "@/lib/webos/appointmentScheduling";
 import { getPatientForContext } from "@/lib/webos/reception";
 
+const FIXED_HOUR_MINUTES = 60;
+
 export interface UnifiedPhysioBookingInput extends PhysioBookingInput {
   requestId?: string;
 }
@@ -49,6 +51,20 @@ function timeMinutes(value: string): number {
     if (minute >= 0 && minute < 60) return hour * 60 + minute;
   }
   throw new Error("INVALID_TIME");
+}
+
+function assertFixedHourStart(value: string): number {
+  const startMinute = timeMinutes(value);
+  if (startMinute % FIXED_HOUR_MINUTES !== 0) throw new Error("INVALID_SLOT");
+  return startMinute;
+}
+
+function isFixedHourStart(value: string): boolean {
+  try {
+    return timeMinutes(value) % FIXED_HOUR_MINUTES === 0;
+  } catch {
+    return false;
+  }
 }
 
 function bedLabel(bedId: string): string {
@@ -115,8 +131,13 @@ async function sheetValidationWithTherapist(
   context: AccessContext,
   input: UnifiedPhysioBookingInput
 ): Promise<BookingValidationResult> {
+  assertFixedHourStart(input.time);
   const validation = await validatePhysioBooking(context, input);
-  return applyTherapistCapacityValidation(input, validation);
+  const withTherapist = applyTherapistCapacityValidation(input, validation);
+  return {
+    ...withTherapist,
+    suggestions: withTherapist.suggestions.filter((item) => isFixedHourStart(item.time)),
+  };
 }
 
 async function syncReference(
@@ -163,7 +184,7 @@ function validatedPlan(
   return {
     patientId: validation.patientId,
     date: normalize(input.date),
-    startMinute: timeMinutes(input.time),
+    startMinute: assertFixedHourStart(input.time),
     therapist: normalize(input.therapist),
     bedId: validation.assignedBedId,
     gender: validation.gender,
@@ -201,6 +222,7 @@ export async function createUnifiedPhysioBooking(
   context: AccessContext,
   input: UnifiedPhysioBookingInput
 ): Promise<{ appointmentId: string; validation: BookingValidationResult }> {
+  assertFixedHourStart(input.time);
   if (chamberDbMode() !== "supabase") {
     // The API date-scoped mutation lock keeps this capacity pre-check and the
     // existing atomic Sheets append in one serialized booking critical section.
