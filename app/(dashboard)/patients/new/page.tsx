@@ -19,7 +19,7 @@ export default async function NewPatientPage() {
     scope === "dental" ? "Dental" : scope === "physio" ? "Physio" : undefined;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-unsaved-changes="true">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs text-slate-400">W2 · Reception</p>
