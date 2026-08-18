@@ -22,11 +22,22 @@ export const PHYSIO_CHAMBER_DAILY_CAPACITY =
   PHYSIO_CHAMBER_STARTS.length * PHYSIO_CHAMBER_BED_IDS.length;
 
 export function chamberStartMinutes(value: string): number {
-  const input = /^(\d{1,2}):(\d{2})$/.exec(String(value || "").trim());
-  if (!input) return Number.NaN;
-  const hour = Number(input[1]);
-  const minute = Number(input[2]);
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return Number.NaN;
+  const text = String(value || "").trim().toUpperCase();
+  const input = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (input) {
+    const hour = Number(input[1]);
+    const minute = Number(input[2]);
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return hour * 60 + minute;
+    }
+  }
+
+  const display = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/.exec(text);
+  if (!display) return Number.NaN;
+  let hour = Number(display[1]) % 12;
+  const minute = Number(display[2]);
+  if (display[3] === "PM") hour += 12;
+  if (minute < 0 || minute > 59) return Number.NaN;
   return hour * 60 + minute;
 }
 
