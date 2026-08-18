@@ -12,13 +12,15 @@ export default function HomeActionSlide({
   label: string;
   subtitle?: string;
 }) {
+  const resolvedHref = label === "Live chat" ? "/chamber/chat" : href;
+
   return (
     <div
       data-home-action-slide={label}
       className="flex min-h-[calc(100dvh-15rem)] items-start justify-center px-1 pb-24 pt-[8vh]"
     >
       <Link
-        href={href}
+        href={resolvedHref}
         className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-sm ring-1 ring-slate-200/80 active:scale-[0.99]"
       >
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
