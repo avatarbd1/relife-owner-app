@@ -4,23 +4,21 @@
 
 - Web/PWA (`relife-owner-app`) is the PRIMARY operational UI.
 - Telegram (`relife-clinic-os`) is OPTIONAL: notifications, quick actions, fallback, or a thin API client.
-- Business rules and write authority converge on the TypeScript backend. Do not create a second business engine in Telegram.
+- Business rules and write authority converge on the TypeScript backend. Do not create a second business engine in Telegram or in parallel Web pages.
 - Google Sheets remains the current operational source of truth during the App-primary migration.
-- Supabase remains available for distributed locking and finance shadow/audit. A future Supabase-primary database migration, if desired, is a separate project and must not be coupled to A1-A6.
+- Supabase remains available for distributed locking and finance shadow/audit. A future Supabase-primary database migration, if desired, is a separate controlled project.
 
 ## Current production-safety facts
 
 - `withMutationLock()` defaults to distributed lock mode (`required`) and uses the Supabase/Postgres lease-lock Edge Function when configured.
 - Process-local fallback is only for explicitly enabled compatibility/local/test scenarios.
-- Finance production commands already wrap payment, expense, cash and salary mutations with mutation locks.
-- `RELIFE_FINANCE_DB_MODE` supports `sheets`, `shadow`, and `supabase`; do not change database authority merely to implement App/Bot feature parity.
-- High-risk writes must be online/fail-closed unless a specific workflow has a proven safe replay/idempotency design. Do not blanket-queue finance writes offline.
+- Finance production commands wrap payment, expense, cash and salary mutations with mutation locks and audited domain logic.
+- `RELIFE_FINANCE_DB_MODE` supports `sheets`, `shadow`, and `supabase`; App/Bot feature parity must not silently change database authority.
+- High-risk writes are online/fail-closed unless a workflow has a separately proven replay/idempotency design. Finance writes are not blanket-queued offline.
 
 ## Dual-writer risk
 
-Python Telegram and the TypeScript App can currently touch the same operational data. Until each capability is cut over, concurrent independent writers remain a migration risk even when the App itself uses distributed locks.
-
-Priority shared mutation areas include:
+Python Telegram and the TypeScript App can still touch overlapping operational data. Until each capability is cut over, independent writers remain a migration risk even when the App itself uses distributed locks.
 
 | Capability | Operational data | Target authority |
 |---|---|---|
@@ -35,139 +33,118 @@ Priority shared mutation areas include:
 | Inventory | Inventory + stock log | TypeScript domain/API |
 | Corrections/reversals | payment + delete/audit evidence | TypeScript domain/API |
 
-Cutover rule: once a capability is authoritative in TypeScript and parity is verified, Telegram must call that API or become read/notification-only for that capability. Do not leave two independent write implementations active by design.
+Cutover rule: once a capability is authoritative in TypeScript and parity is verified, Telegram must call that API or become read/notification-only for that capability.
 
-## Verified App strengths to preserve
+## App-primary convergence status
 
-Do not rebuild these from scratch merely because the Bot has a similar workflow:
+### A1 — Multi-date / multi-time Appointment Booking — COMPLETE
 
-- Appointment workspace already has Schedule, Calendar and Clinicians views.
-- Month calendar already shows day-level volume and Physio/Dental split.
-- Physio booking already performs bed/machine/capacity validation and safe-slot suggestions.
-- Daily Register already supports date selection and department-aware visibility.
-- Physio and Dental clinical workspaces already exist separately.
-- Finance operations, approvals/history, cash custody, salary, corrections, reports, audit/security and tools already have substantial Web implementations.
-- Inventory read/write tooling, Clinical AI, case study, report upload and correction utilities already exist under Tools, though some need first-class UX.
+Merged to `main` in PR #100. The Web UI supports multiple dates and up to two selected time slots per day, preflight validation, Physio modality/bed/machine/capacity checks, stable per-slot request identity, sequential canonical `/api/appointments` writes, partial-result reporting, and retry-failed-only.
 
-The migration goal is therefore feature-depth convergence and UX consolidation, not a mechanical port of every Telegram screen.
+### A2 — Calendar / Date-range Reports — COMPLETE
 
-## App-primary convergence sequence
+Merged in PR #100. Reports support Today / Yesterday / 7 Days / This Month / Custom range, server-authorized department scope, Dhaka date handling, invalid-range rejection, and actual calendar-day overhead/salary accrual across month boundaries.
 
-### A1 — Multi-date / multi-time Appointment Booking
+### A3 — Same-as-last Treatment + Pain Tracking — COMPLETE
 
-Goal: preserve Bot booking convenience while keeping the App's safer booking engine.
+Merged in PR #100. The canonical Physio clinical workspace provides an editable same-as-last draft, pain 0–10, pain trend, and stale pain follow-up while retaining `/api/clinical/session` as the write authority.
 
-Requirements:
-- Multi-date selection in the Web UI.
-- Up to two time slots per selected date where the workflow permits it.
-- Preflight validation for every selected date/time pair before confirmation.
-- Preserve existing Physio modality, bed, room, machine and capacity validation.
-- Use existing `/api/appointments` as the canonical mutation path; do not create a second booking engine.
-- Initial implementation uses independent API calls per slot, ordered deterministically by date/time.
-- Each slot gets its own stable request/idempotency key where supported.
-- Successful slots remain successful if a later slot fails; no automatic rollback of already-created appointments.
-- Final UI must show per-slot success/failure and provide `Retry failed only`.
-- Re-check server-side validation on each write; client preflight is advisory, not authority.
+### A4 — Photo-assisted Patient Registration — COMPLETE
 
-### A2 — Calendar / Date-range Reports
+Merged in PR #100. Camera/upload can produce an AI-assisted registration draft through a server-side vision endpoint. AI extraction cannot create a patient; human review is mandatory and final creation still uses the existing patient API. Dental phone remains optional.
 
-Goal: bring Bot's fast temporal querying into the App's richer report screens.
+### A5 — Dedicated Inventory — COMPLETE
 
-Requirements:
-- Today / Yesterday / This Week / This Month / Custom Range shortcuts.
-- Calendar-based start/end selection for custom ranges.
-- Department scope stays permission-controlled: Physio / Dental / Combined only when allowed.
-- Date filters should apply to the existing canonical report calculations; do not duplicate accounting formulas in React.
-- Preserve the rule that internal cash transfers are not business expenses.
+Merged in PR #100. Inventory is a first-class Physio workspace with stock status, low-stock visibility, movement history, reasoned adjustments, distributed mutation locking, atomic Sheets log/audit writes, and insufficient-stock rejection.
 
-### A3 — Same-as-last Treatment + Progress/Pain Tracking
+## Review of later prototype branches
 
-Goal: match the Bot's fast daily-treatment entry without weakening clinical auditability.
+The remote branches named `feature/A6-*` through `feature/A9-*` were created from the pre-PR-#100 base. Their numeric labels are legacy prototype branch names and are not the authoritative migration sequence below. Do not merge them directly over current `main`.
 
-Requirements:
-- `Same as last session` shortcut that copies the prior treatment into an editable draft, never silently saves it.
-- Quick edit of exercise/electro/manual/modality/machine choices as appropriate.
-- Pain/progress follow-up with sensible stale-data prompts.
-- Preserve separate Physio vs Dental clinical workflows.
-- Business/clinical write logic remains in TypeScript domain/API modules, not React components.
+### Legacy `feature/A6-daily-register` — REVIEWED / SAFE UX FOLDED FORWARD
 
-### A4 — Photo-assisted Patient Registration
+Useful idea: surface a compact Daily Register summary inside Daily Operations.
 
-Goal: preserve Bot's `Photo/Report` convenience while keeping human confirmation.
+Reviewed implementation rules:
+- Keep `/register` as the canonical full register; Daily gets a summary, not a duplicate register engine.
+- `clinicalActivity.patients` means patients treated, not new registrations.
+- Respect `payment.read_amount`; money is hidden when the role lacks amount visibility.
+- Do not subtract Discount from `06_Payments.Amount` again when displaying collected amount.
+- Register/inventory summary failures must not take down attendance or clinical Daily Ops.
+- Quick actions are rendered from server-authorized capabilities.
 
-Requirements:
-- Manual Entry and Scan Prescription/Report entry points.
-- Extracted fields populate a reviewable draft only.
-- Human review/confirmation is mandatory before patient creation.
-- Duplicate checks and department authorization still run through the canonical registration path.
-- Dental phone remains optional. Do not silently make it mandatory.
+### Legacy `feature/A7-expense-cash-approvals` — RAW WRITERS REJECTED
 
-### A5 — Dedicated Inventory Workspace
+The prototype branch contains TODO/throw actions for expense approval/rejection and cash movement requests. Those files must not be merged.
 
-Goal: promote existing inventory capability from buried Tools UX into a first-class App workflow.
+Current authority already exists on `main`:
+- expense request/pay through the canonical finance API/domain,
+- cash request through the canonical finance API/domain,
+- Owner expense decisions through `/api/control/expense`,
+- cash receiver confirmation through `/api/control/cash-movement`,
+- PIN, rejection reason, actual-received discrepancy, audit and locking remain enforced by the existing implementation.
 
-Requirements:
-- Stock list, low-stock status, stock movement history.
-- Add/use/adjust actions with reason and audit evidence.
-- Keep department scope explicit. Do not expose Physio-only clinical inventory semantics as Dental tools without a business rule.
-- Reuse existing inventory domain/API behavior instead of creating parallel stock logic.
+Future approval UX improvements must sit on those writers rather than create a new server-action business path.
 
-### A6 — Role-specific Home Workspace
+### Legacy `feature/A8-salary-payment` — MOCK WRITER REJECTED; READ-ONLY REPORT UX ACCEPTED
 
-Goal: make the App as fast as Telegram for daily staff work while retaining a single application.
+The prototype `salary/actions.ts` returns a synthetic `SAL-${Date.now()}` result without recording the canonical salary ledger and must never be used.
 
-Requirements:
-- Reception: patient, appointment, payment, register, cash quick actions.
-- Therapist: today's patients, chamber, treatment, clinical shortcuts.
-- Dentist: dental patients, appointments, dental clinical shortcuts.
+Reviewed forward-port:
+- existing `/api/finance/salary` remains the only salary payment path,
+- existing PIN/online/idempotency rules remain unchanged,
+- add read-only payroll settlement table,
+- add CSV export with spreadsheet-formula injection protection,
+- add escaped printable report,
+- exports never create or alter salary payments.
+
+### Legacy `feature/A9-treatment-entry` — MOCK ENGINE REJECTED
+
+The prototype contains mock/TODO treatment, AI, case-study and read functions. It must not create a second treatment engine.
+
+Current canonical implementation remains:
+- assessment → `/api/clinical/assessment`,
+- plan → `/api/clinical/plan`,
+- session/treatment → `/api/clinical/session`,
+- Physio/Dental clinical separation remains enforced,
+- Clinical AI, case-study/report tooling reuse existing App capabilities rather than a parallel `/treatment` writer.
+
+## Next product step — Role-specific Home workspace
+
+This is the next canonical migration/product step (the original A6 in the App-primary plan):
+
+- Reception: patient, appointment, payment, register, cash shortcuts.
+- Therapist: today's patients, Chamber, treatment and clinical shortcuts.
+- Dentist: Dental patients, appointments and Dental clinical shortcuts.
 - Owner: finance, approvals, reports, audit/controls.
-- RBAC/department checks remain server authoritative; hiding a button is not authorization.
+- RBAC/department checks remain server authoritative; hiding a button is never authorization.
 
-## After A1-A6 — Telegram thin client / optional companion
+## After App parity — Telegram thin client / optional companion
 
 For each retained Telegram action:
 
 `Telegram transport -> TypeScript API -> shared domain logic -> distributed lock/idempotency -> Sheets + Supabase shadow/audit`
 
-Telegram may retain:
-- notifications/reminders,
-- inline keyboards and quick shortcuts,
-- lightweight fallback actions,
-- formatting and transport-specific UX.
-
-Telegram should not retain an independent implementation of migrated business mutations.
-
-## Data authority and Supabase policy
-
-During A1-A6:
-
-`Web/PWA -> TypeScript API/domain -> distributed lock -> Google Sheets operational data -> optional Supabase shadow/audit`
-
-Do not switch to Supabase-primary merely as part of App/Bot parity work. If a Supabase-primary migration is later approved, handle it as a separate controlled database migration with its own schema, backfill, dual-read/write plan, reconciliation, rollback and cutover tests.
+Telegram may retain notifications, inline keyboards, quick shortcuts and lightweight fallback transport. It should not retain an independent implementation of migrated business mutations.
 
 ## Finance non-negotiables
 
-- Collection source remains payment records; do not count cash transfers as revenue or expense.
+- Collection source remains payment records; internal cash transfers are neither revenue nor expense.
 - Reception -> Home Treasury/Bank is an internal transfer, not an expense.
-- Pending cash handovers are excluded from accepted custody balances until accepted.
+- Pending cash handovers do not affect accepted custody balances until accepted.
 - Rejected expenses do not reduce business position.
 - Salary fixed commitment and paid/advance history remain distinct.
 - Physio and Dental accounting remain department-separated; Combined is a reporting view for authorized users.
 - Corrections use reversal/audit semantics rather than silent destructive edits.
 
-## Validation gates for every A-step
+## Validation gate
 
-Before an A-step is considered complete:
+Before any follow-up is merged:
 
-1. Existing behavior is inventoried and reused where possible.
-2. RBAC and department isolation tests pass.
-3. Relevant concurrency/idempotency tests pass.
-4. Retry/double-submit behavior is tested.
-5. Failure modes do not silently corrupt Sheets state.
-6. `npm run lint`, relevant tests, and `npm run build` pass.
-7. No unrelated redesign or schema change is bundled in.
-8. No automatic merge; review the PR first.
-
-## Immediate next action
-
-Start with A1. Do not restart a generic PHASE 1 rebuild of screens that already exist. Implement the missing multi-date/multi-time booking convenience on top of the current safe appointment API and validation stack.
+1. Reuse existing authority instead of creating parallel business logic.
+2. RBAC and department isolation remain server-enforced.
+3. Relevant concurrency/idempotency behavior is preserved.
+4. Failure modes do not silently corrupt Sheets state.
+5. `npm run lint`, the full test suite, and `npm run build` pass.
+6. No unrelated Sheets schema or Supabase authority change is bundled in.
+7. Merge only after exact-head CI review.

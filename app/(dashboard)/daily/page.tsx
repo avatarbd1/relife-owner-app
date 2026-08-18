@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import DailyOperationsClient from "@/components/DailyOperationsClient";
+import DailyRegisterBoard from "@/components/DailyRegisterBoard";
 import { PageHeading } from "@/components/WorkspaceUI";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { getDailyOperationsSnapshot } from "@/lib/webos/attendance";
+import { getDailyRegisterSnapshot } from "@/lib/webos/dailyRegister";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
+import { getPhysioInventorySnapshot } from "@/lib/webos/inventory";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 function department(value: string): Department | null {
@@ -19,6 +22,12 @@ const LABEL: Record<Scope, string> = {
   physio: "Physio",
   dental: "Dental",
 };
+
+function scopeDepartments(scope: Scope): Array<"Physio" | "Dental"> {
+  if (scope === "physio") return ["Physio"];
+  if (scope === "dental") return ["Dental"];
+  return ["Physio", "Dental"];
+}
 
 export default async function DailyPage() {
   const cookieStore = await cookies();
@@ -45,18 +54,46 @@ export default async function DailyPage() {
       }
     : snapshot;
 
-  const clinicalActivity = await getDailyClinicalActivity(scope, safeSnapshot.date);
+  const canReadPhysioInventory =
+    scope !== "dental" && canPerform(context, "inventory.read", "Physio");
+
+  const [clinicalActivity, registerData, inventory] = await Promise.all([
+    getDailyClinicalActivity(scope, safeSnapshot.date),
+    getDailyRegisterSnapshot(context, scope, safeSnapshot.date).catch((error) => {
+      console.error("Daily register summary failed:", error);
+      return {
+        date: safeSnapshot.date,
+        rows: [],
+        departments: [],
+        totals: { entries: 0, sessions: 0, amount: 0, discount: 0, due: 0 },
+        hasMoneyAccess: false,
+        unavailable: true,
+      };
+    }),
+    canReadPhysioInventory
+      ? getPhysioInventorySnapshot(context).catch((error) => {
+          console.error("Daily inventory alert read failed:", error);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+
   const activityCounts = {
     patients: clinicalActivity.patients,
     sessions: clinicalActivity.sessions,
     appointments: safeSnapshot.appointmentCounts.total,
   };
 
+  const departments = scopeDepartments(scope);
+  const canInScope = (action: Parameters<typeof canPerform>[1]) =>
+    departments.some((target) => canPerform(context, action, target));
+  const lowStockCount = inventory?.items.filter((item) => item.lowStock).length || 0;
+
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeading
         title="Daily Operations"
-        subtitle={`${safeSnapshot.date} · ${LABEL[scope]} · attendance & completed clinical work`}
+        subtitle={`${safeSnapshot.date} · ${LABEL[scope]} · staff, clinical work & register`}
         action={
           <Link
             href="/appointments"
@@ -66,6 +103,20 @@ export default async function DailyPage() {
           </Link>
         }
       />
+
+      <DailyRegisterBoard
+        registerData={registerData}
+        activityCounts={activityCounts}
+        lowStockCount={lowStockCount}
+        isOwner={context.roles.includes("Owner")}
+        quickActions={{
+          patient: canInScope("patient.create"),
+          appointment: canInScope("appointment.create"),
+          payment: canInScope("payment.create"),
+          expense: canInScope("expense.request"),
+        }}
+      />
+
       <DailyOperationsClient
         snapshot={safeSnapshot}
         activityCounts={activityCounts}
