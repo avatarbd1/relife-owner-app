@@ -50,6 +50,8 @@ function localNow(): string {
   }).format(new Date());
 }
 
+const LAST_PATIENT_STORAGE_KEY = "relife_payment_last_patient_id";
+
 export default function PaymentsWorkspaceClient({
   patients,
   recentPayments,
@@ -60,7 +62,26 @@ export default function PaymentsWorkspaceClient({
   initialPatientId?: string;
 }) {
   const router = useRouter();
-  const initialPatient = patients.find((patient) => patient.patientId === initialPatientId) || patients[0];
+
+  // Get initial patient from URL param, localStorage, or first patient
+  const getInitialPatient = () => {
+    if (initialPatientId) {
+      return patients.find((p) => p.patientId === initialPatientId) || patients[0];
+    }
+
+    // Try to get from localStorage
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(LAST_PATIENT_STORAGE_KEY);
+      if (saved) {
+        const patient = patients.find((p) => p.patientId === saved);
+        if (patient) return patient;
+      }
+    }
+
+    return patients[0];
+  };
+
+  const initialPatient = getInitialPatient();
   const [query, setQuery] = useState("");
   const [patientId, setPatientId] = useState(initialPatient?.patientId || "");
   const [gross, setGross] = useState(String(initialPatient?.due || 0));
@@ -86,6 +107,17 @@ export default function PaymentsWorkspaceClient({
       window.removeEventListener("offline", update);
     };
   }, []);
+
+  // Save patient to localStorage whenever it changes
+  useEffect(() => {
+    if (patientId) {
+      try {
+        localStorage.setItem(LAST_PATIENT_STORAGE_KEY, patientId);
+      } catch {
+        // localStorage not available, silently ignore
+      }
+    }
+  }, [patientId]);
 
   const selected = useMemo(
     () => patients.find((patient) => patient.patientId === patientId),
