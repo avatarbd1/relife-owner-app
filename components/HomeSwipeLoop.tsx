@@ -200,7 +200,7 @@ export default function HomeSwipeLoop({ children }: { children: ReactNode }) {
   return (
     <div
       ref={viewportRef}
-      className="w-full overflow-hidden"
+      className="min-h-[calc(100dvh-15rem)] w-full overflow-hidden"
       style={{ touchAction: "pan-y" }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -212,7 +212,7 @@ export default function HomeSwipeLoop({ children }: { children: ReactNode }) {
       }}
       onClickCapture={onClickCapture}
       aria-roledescription="carousel"
-      aria-label="Home sections"
+      aria-label="Home pages"
     >
       <div
         className={`flex items-start ${transitionEnabled ? "transition-transform duration-300 ease-out" : ""}`}
@@ -232,7 +232,7 @@ export default function HomeSwipeLoop({ children }: { children: ReactNode }) {
           return (
             <div
               key={`home-slide-${index}`}
-              className="min-w-full shrink-0"
+              className="min-h-[calc(100dvh-15rem)] min-w-full shrink-0"
               aria-hidden={!active}
             >
               {slide}
