@@ -9,6 +9,7 @@ import { getTodaysCollection, getMonthBusinessPosition, getSalaryStatus } from "
 import { getScopedCashPosition } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getVisiblePatients } from "@/lib/webos/reception";
 import { allowedScopesForContext, resolveAuthorizedScope } from "@/lib/webos/scope";
 
 function percent(value: number): number {
@@ -28,12 +29,13 @@ export default async function FinancePage() {
   const allowedScopes = allowedScopesForContext(context);
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const now = new Date();
-  const [cash, todays, month, salary, controls] = await Promise.all([
+  const [cash, todays, month, salary, controls, patients] = await Promise.all([
     getScopedCashPosition(scope, now),
     getTodaysCollection(now),
     getMonthBusinessPosition(scope, now),
     getSalaryStatus(scope, now),
     getOwnerControlSnapshot(),
+    getVisiblePatients(context, scope),
   ]);
 
   const scopeCollection = scope === "physio" ? todays.physio : scope === "dental" ? todays.dental : todays.combined;
@@ -43,6 +45,8 @@ export default async function FinancePage() {
   const pendingCash = controls.pendingCashMovements.filter((item) => scope === "combined" || item.workbook === scope);
   const pendingTotal = pendingExpenses.length + pendingCash.length;
   const uncovered = month.surplusOrUncovered < 0;
+  const patientsWithDue = patients.filter((patient) => patient.due > 0);
+  const outstandingPatientDue = patientsWithDue.reduce((sum, patient) => sum + patient.due, 0);
 
   return (
     <div className="space-y-4">
@@ -59,6 +63,18 @@ export default async function FinancePage() {
         <ProgressBar value={recovery} label="Business cost recovery" className="mt-4" />
         <div className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-100">{[["Variable clinic expense", month.variableClinicExpense], ["Fixed overhead", month.fixedOverhead], ["Fixed salary commitment", month.fixedSalaryCommitment], ["Total business liability", month.totalBusinessLiability]].map(([label, value]) => <div key={String(label)} className="flex items-center justify-between gap-3 px-3 py-2.5"><span className="text-xs text-slate-600">{label}</span><span className="text-xs font-semibold tabular-nums text-slate-900">{formatBDT(Number(value))}</span></div>)}</div>
         <p className="mt-2 text-[11px] leading-4 text-slate-400">Internal cash transfers are not included as business expense.</p>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 className="text-base font-semibold text-slate-900">Patient receivables</h2><p className="mt-0.5 text-xs text-slate-500">Outstanding treatment charges still due from patients</p></div>
+          <StatusBadge tone={outstandingPatientDue > 0 ? "warning" : "success"}>{patientsWithDue.length} due</StatusBadge>
+        </div>
+        <div className={`mt-4 rounded-xl p-4 ${outstandingPatientDue > 0 ? "bg-amber-50" : "bg-emerald-50"}`}>
+          <p className={`text-[11px] font-medium ${outstandingPatientDue > 0 ? "text-amber-700" : "text-emerald-700"}`}>Outstanding patient due</p>
+          <p className={`mt-1 text-2xl font-bold tabular-nums ${outstandingPatientDue > 0 ? "text-amber-950" : "text-emerald-950"}`}>{formatBDT(outstandingPatientDue)}</p>
+        </div>
+        <Link href="/patients" className="mt-3 flex min-h-11 items-center justify-between rounded-lg border border-slate-200 px-3 text-xs font-semibold text-blue-800 hover:bg-slate-50"><span>Review patient dues</span><span aria-hidden="true">→</span></Link>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
