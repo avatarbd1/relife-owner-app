@@ -6,7 +6,7 @@ This document reconciles the uploaded **Advanced Design Implementation Roadmap**
 
 ## Status keys
 
-- **DONE** — current production code already provides the capability.
+- **DONE** — current production code already provides the capability, or the capability is implemented in this reviewed merge slice.
 - **PARTIAL** — useful production capability exists, but the roadmap target is not complete.
 - **NEXT** — high-value missing work suitable for the next implementation slice.
 - **DEFER** — intentionally later because of safety, cost, or architectural dependency.
@@ -25,7 +25,7 @@ This document reconciles the uploaded **Advanced Design Implementation Roadmap**
 | Loud persistent call alert | DONE | Full-scale Web Audio signal + vibration; repeats until accepted. Final hardware volume remains device-controlled. |
 | Call acceptance | DONE | Server re-authorizes target, distributed-locks the call, marks existing chat row Accepted and writes audit. |
 | 09:00–21:00 Dhaka sound rule | DONE | Outside the window the communication record remains, but phone-style ring is silent. |
-| Emergency broadcast | NEXT / in implementation | Extend the same canonical Chamber comms path with `CALL:ALL:PHYSIO`; Owner/Manager only; first authorized acknowledgement stops the broadcast for all Chamber devices. |
+| Emergency broadcast | DONE (this slice) | Same canonical Chamber comms path with `CALL:ALL:PHYSIO`; Owner/Manager only; first authorized acknowledgement stops the broadcast for all Chamber devices. |
 | Dedicated call history panel | PARTIAL | Call send/accept state exists in chat + `20_Data_Audit`; dedicated history UI is still missing. |
 | General message read receipts | PARTIAL | `Seen_By` exists and is used by call acceptance; ordinary message read-state UI is not complete. |
 | Real-time delivery | PARTIAL | Current production flow polls the canonical API (alerts 5s, Team refresh 10s). No Supabase Realtime subscription is authoritative yet. |
@@ -98,8 +98,7 @@ The current **Direct Call** feature is a clinic call-bell alert, not two-way aud
 
 ## Current critical path
 
-1. **Complete Phase 3a on the existing communication authority**
-   - Emergency Broadcast.
+1. **Complete the remaining Phase 3a gaps on the existing communication authority**
    - Dedicated call history and ordinary-message read/ack state.
    - Presence model.
    - Realtime transport without introducing a second writer.
