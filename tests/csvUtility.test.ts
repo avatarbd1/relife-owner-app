@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { escapeCsv, objectsToCsv, parseCsv } from "../lib/csv";
+import { escapeCsv, objectsToCsv, parseCsv } from "../lib/csv.ts";
 
 test("parseCsv handles quoted commas, escaped quotes and newlines", () => {
   const rows = parseCsv('name,address,note\r\n"Rahim, Jr.","Road 1, Amtali","Line 1\nLine 2"\r\n"A ""Quoted"" Name",Bar,Baz');
