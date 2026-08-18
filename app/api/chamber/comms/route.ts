@@ -3,6 +3,7 @@ import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import {
+  acceptChamberCall,
   createEquipmentRequest,
   getChamberCommsSnapshot,
   sendChamberMessage,
@@ -11,16 +12,16 @@ import {
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "CHAMBER_COMMS_FAILED";
-  if (message === "ACCESS_DENIED") {
+  if (message === "ACCESS_DENIED" || message === "CALL_TARGET_MISMATCH") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
-  if (message === "EQUIPMENT_REQUEST_NOT_FOUND") {
+  if (message === "EQUIPMENT_REQUEST_NOT_FOUND" || message === "CALL_NOT_FOUND") {
     return NextResponse.json({ ok: false, error: message }, { status: 404 });
   }
-  if (message === "INVALID_EQUIPMENT_TRANSITION") {
+  if (message === "INVALID_EQUIPMENT_TRANSITION" || message === "CALL_NOT_ACTIVE") {
     return NextResponse.json({ ok: false, error: message }, { status: 409 });
   }
-  if (["INVALID_MESSAGE", "INVALID_RESOURCE", "INVALID_LOCATION"].includes(message)) {
+  if (["INVALID_MESSAGE", "INVALID_RESOURCE", "INVALID_LOCATION", "INVALID_CALL_ID"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
   if (message === "SCHEMA_MISMATCH") {
@@ -54,6 +55,13 @@ export async function POST(request: NextRequest) {
     if (action === "send_message") {
       const result = await withMutationLock("chamber-chat-write", () =>
         sendChamberMessage(context, body)
+      );
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "accept_call") {
+      const messageId = String(body.messageId || "");
+      const result = await withMutationLock(`chamber-call:${messageId}`, () =>
+        acceptChamberCall(context, messageId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
