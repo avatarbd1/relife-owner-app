@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import AppointmentFormMultiDate from "@/components/AppointmentFormMultiDate";
+import AppointmentFormGenderBed from "@/components/AppointmentFormGenderBed";
 import { haptic } from "@/lib/interactions";
 
 type Department = "Physio" | "Dental";
@@ -197,7 +197,7 @@ export default function AppointmentBookingGate({
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Booking patient</p>
           <p className="text-sm font-bold text-slate-900">{gatedPatient.patientId} — {gatedPatient.fullName}</p>
-          {gatedPatient.department === "Physio" ? <p className="text-xs text-slate-500">Gender: {selectedGender} · Hourly slots</p> : null}
+          {gatedPatient.department === "Physio" ? <p className="text-xs text-slate-500">Gender: {selectedGender} · Hourly slots · explicit bed</p> : null}
         </div>
         <button
           type="button"
@@ -208,7 +208,7 @@ export default function AppointmentBookingGate({
         </button>
       </div>
 
-      <AppointmentFormMultiDate
+      <AppointmentFormGenderBed
         patients={[gatedPatient]}
         clinicians={clinicians}
         modalityOptions={modalityOptions}
