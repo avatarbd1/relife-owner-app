@@ -1,6 +1,7 @@
 import StaffAccessManager from "@/components/StaffAccessManager";
+import StaffManagementClient from "@/components/StaffManagementClient";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-import { getWebStaffDirectory, toAccessContext } from "@/lib/webos/staffDirectory";
+import { listManagedStaff } from "@/lib/webos/staffManagement";
 
 export default async function StaffAccessPage() {
   const context = await requireCurrentAccessContext();
@@ -12,13 +13,13 @@ export default async function StaffAccessPage() {
     );
   }
 
-  const directory = await getWebStaffDirectory();
-  const staff = directory
+  const staff = await listManagedStaff(context);
+  const setupReady = staff
     .filter(
       (item) =>
         item.status === "Active" &&
-        !item.roles.includes("Owner") &&
-        Boolean(toAccessContext(item))
+        item.roles.length > 0 &&
+        item.departmentAccess.length > 0
     )
     .map((item) => ({
       staffId: item.staffId,
@@ -27,5 +28,10 @@ export default async function StaffAccessPage() {
       departments: item.departmentAccess,
     }));
 
-  return <StaffAccessManager staff={staff} />;
+  return (
+    <div className="space-y-6">
+      <StaffManagementClient staff={staff} />
+      <StaffAccessManager staff={setupReady} />
+    </div>
+  );
 }
