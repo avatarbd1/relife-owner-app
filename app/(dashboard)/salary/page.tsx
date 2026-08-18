@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import SalaryManagementClient from "@/components/SalaryManagementClient";
+import SalaryPaymentForm from "@/components/SalaryPaymentForm";
+import SalaryBulkExport from "@/components/SalaryBulkExport";
+import MonthlySalaryReport from "@/components/MonthlySalaryReport";
 import { StatusBadge } from "@/components/FeedbackUI";
 import { getSalaryPayments, getStaff } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
@@ -100,21 +103,76 @@ export default async function SalaryPage() {
         </div>
       </section>
 
-      <SalaryManagementClient
-        staff={staff}
-        payments={payments.map((row) => ({
-          id: row.id,
-          date: row.date,
-          staffId: row.staffId,
-          staffName: row.staffName,
-          department: row.department as "Physio" | "Dental",
-          amount: row.amount,
-          type: row.type,
-          paidFrom: row.paidFrom,
-          status: row.status,
-        }))}
-        canPay={canPay}
-      />
+      {/* Monthly Settlement Report */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">Monthly Settlement</h2>
+          <p className="text-xs text-slate-600">Overview of salary status for {month}</p>
+        </div>
+        <MonthlySalaryReport
+          staff={staff}
+          payments={payments.map((row) => ({
+            staffId: row.staffId,
+            date: row.date,
+            amount: row.amount,
+            type: row.type,
+          }))}
+          month={month}
+        />
+      </section>
+
+      {/* Bulk Export & Reports */}
+      <SalaryBulkExport staff={staff} month={month} />
+
+      {/* Individual Payment Forms */}
+      {canPay && staff.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Record Payments</h2>
+            <p className="text-xs text-slate-600">Enter individual salary payments for staff</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {staff
+              .filter((s) => s.remainingDue > 0)
+              .sort((a, b) => b.remainingDue - a.remainingDue)
+              .slice(0, 10)
+              .map((s) => (
+                <SalaryPaymentForm
+                  key={s.staffId}
+                  staffId={s.staffId}
+                  staffName={s.fullName}
+                  department={s.department}
+                  commitment={s.salary}
+                  paidThisMonth={s.paidThisMonth}
+                />
+              ))}
+          </div>
+        </section>
+      )}
+
+      {/* Legacy Salary Management (Hidden by default, kept for compatibility) */}
+      <details className="group">
+        <summary className="cursor-pointer py-3 text-sm font-semibold text-slate-600 hover:text-slate-900">
+          ▸ View detailed salary history
+        </summary>
+        <div className="mt-3 space-y-3">
+          <SalaryManagementClient
+            staff={staff}
+            payments={payments.map((row) => ({
+              id: row.id,
+              date: row.date,
+              staffId: row.staffId,
+              staffName: row.staffName,
+              department: row.department as "Physio" | "Dental",
+              amount: row.amount,
+              type: row.type,
+              paidFrom: row.paidFrom,
+              status: row.status,
+            }))}
+            canPay={canPay}
+          />
+        </div>
+      </details>
     </div>
   );
 }
