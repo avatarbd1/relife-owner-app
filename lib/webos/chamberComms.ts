@@ -23,6 +23,7 @@ const SCHEMA_VERSION = "relife-uda-v1";
 const ORGANIZATION_ID = "RELIFE";
 const CLINIC_ID = "RELIFE-PHYSIO";
 const BRANCH_ID = "AMTALI-01";
+const CALL_PREFIX = "CALL:";
 
 const LOCATIONS = new Set([
   "Shared",
@@ -181,6 +182,30 @@ function canUpdateEquipment(context: AccessContext): boolean {
     canPerform(context, "chamber.run", "Physio") ||
     canPerform(context, "chamber.receive", "Physio")
   );
+}
+
+function callTargetMatches(marker: string, context: AccessContext): boolean {
+  const value = normalize(marker);
+  if (!value.startsWith(CALL_PREFIX)) return false;
+  if (value.startsWith("CALL:STAFF:")) {
+    return value.slice("CALL:STAFF:".length) === context.staffId;
+  }
+  if (value.startsWith("CALL:ROLE:")) {
+    const role = value.slice("CALL:ROLE:".length).trim().toLowerCase();
+    return context.roles.some((item) => item.trim().toLowerCase() === role);
+  }
+  return false;
+}
+
+function parseSeenBy(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed)
+      ? parsed.map((item) => normalize(item)).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 async function staffName(context: AccessContext): Promise<string> {
@@ -381,7 +406,12 @@ export async function getChamberCommsSnapshot(context: AccessContext): Promise<C
     locations: [...LOCATIONS],
     pendingUrgentCount:
       equipmentRequests.filter((item) => item.status === "Requested").length +
-      messages.filter((item) => item.priority === "Urgent" && item.messageType !== "Equipment").length,
+      messages.filter(
+        (item) =>
+          item.priority === "Urgent" &&
+          item.messageType !== "Equipment" &&
+          normalized(item.status || "Active") === "active"
+      ).length,
   };
 }
 
@@ -440,6 +470,86 @@ export async function sendChamberMessage(
     auditRow(context, "chamber.chat.send", "ChatMessage", messageId, patientId, "", priority, "Chamber operational message sent", now)
   );
   return { messageId };
+}
+
+export async function acceptChamberCall(
+  context: AccessContext,
+  messageIdInput: unknown
+): Promise<{
+  messageId: string;
+  status: "Accepted";
+  acceptedById?: string;
+  acceptedByName?: string;
+}> {
+  assertCanPerform(context, "chamber.read", "Physio");
+  const messageId = normalize(messageIdInput);
+  if (!messageId) throw new Error("INVALID_CALL_ID");
+
+  const snapshot = await fetchSheetRanges("physio", [CHAT_SHEET]);
+  const rows = snapshot[CHAT_SHEET] || [];
+  if (rows.length < 2) throw new Error("CALL_NOT_FOUND");
+
+  const headers = rows[0];
+  const messageIdIdx = headerIndex(headers, "Message_ID");
+  const statusIdx = headerIndex(headers, "Status");
+  const roomIdIdx = headerIndex(headers, "Room_ID");
+  const patientIdIdx = headerIndex(headers, "Patient_ID");
+  const seenByIdx = headerIndex(headers, "Seen_By");
+  if (messageIdIdx < 0 || statusIdx < 0 || roomIdIdx < 0) {
+    throw new Error("SCHEMA_MISMATCH");
+  }
+
+  const offset = rows.slice(1).findIndex((row) => at(row, messageIdIdx) === messageId);
+  if (offset < 0) throw new Error("CALL_NOT_FOUND");
+
+  const row = [...rows[offset + 1]];
+  while (row.length < headers.length) row.push("");
+  const marker = at(row, roomIdIdx);
+  if (!marker.startsWith(CALL_PREFIX)) throw new Error("CALL_NOT_FOUND");
+  if (!callTargetMatches(marker, context)) throw new Error("CALL_TARGET_MISMATCH");
+
+  const currentStatus = at(row, statusIdx) || "Active";
+  if (normalized(currentStatus) === "accepted") {
+    return { messageId, status: "Accepted" };
+  }
+  if (normalized(currentStatus) !== "active") throw new Error("CALL_NOT_ACTIVE");
+
+  const actorName = await staffName(context);
+  const now = nowDhaka();
+  const seenBy = seenByIdx >= 0 ? parseSeenBy(at(row, seenByIdx)) : [];
+  if (!seenBy.includes(context.staffId)) seenBy.push(context.staffId);
+  row[statusIdx] = "Accepted";
+  if (seenByIdx >= 0) row[seenByIdx] = JSON.stringify(seenBy);
+
+  await replaceEntityRowWithAudit(
+    "physio",
+    CHAT_SHEET,
+    offset + 2,
+    row,
+    auditRow(
+      context,
+      "chamber.call.accept",
+      "ChamberCall",
+      messageId,
+      patientIdIdx >= 0 ? at(row, patientIdIdx) : "",
+      JSON.stringify({ status: currentStatus, target: marker }),
+      JSON.stringify({
+        status: "Accepted",
+        acceptedById: context.staffId,
+        acceptedByName: actorName,
+        acceptedAt: now.display,
+      }),
+      `Targeted Chamber call accepted by ${actorName}`,
+      now
+    )
+  );
+
+  return {
+    messageId,
+    status: "Accepted",
+    acceptedById: context.staffId,
+    acceptedByName: actorName,
+  };
 }
 
 export async function createEquipmentRequest(

@@ -17,6 +17,7 @@ type MessageAlert = {
 
 type AlertItem = {
   id: string;
+  messageId: string;
   createdAt: string;
   title: string;
   body: string;
@@ -29,24 +30,12 @@ type CommsResponse = {
   messages?: MessageAlert[];
 };
 
-const SEEN_KEY = "relife_chamber_seen_alerts_v2";
 const SOUND_KEY = "relife_chamber_sound_enabled";
-const MAX_SEEN = 120;
 const CALL_PREFIX = "CALL:";
 const ALERT_START_HOUR = 9;
 const ALERT_END_HOUR = 21;
-const ALERT_VISIBLE_MS = 60_000;
-
-function readSeen(): string[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(SEEN_KEY) || "[]");
-    return Array.isArray(parsed)
-      ? parsed.filter((item) => typeof item === "string").slice(-MAX_SEEN)
-      : [];
-  } catch {
-    return [];
-  }
-}
+const CALL_GAIN = 1;
+const RING_INTERVAL_MS = 1_100;
 
 function soundEnabled(): boolean {
   return localStorage.getItem(SOUND_KEY) !== "off";
@@ -63,6 +52,13 @@ function dhakaHour(ref = new Date()): number {
 
 function withinChamberAlertHours(ref = new Date()): boolean {
   const hour = dhakaHour(ref);
+  return hour >= ALERT_START_HOUR && hour < ALERT_END_HOUR;
+}
+
+function createdWithinChamberAlertHours(createdAt: string): boolean {
+  const match = /(?:T|\s)(\d{2}):\d{2}/.exec(createdAt || "");
+  if (!match) return false;
+  const hour = Number(match[1]);
   return hour >= ALERT_START_HOUR && hour < ALERT_END_HOUR;
 }
 
@@ -83,6 +79,10 @@ function targetMatches(
   return false;
 }
 
+function isActiveCall(message: MessageAlert): boolean {
+  return String(message.status || "Active").trim().toLowerCase() === "active";
+}
+
 export default function ChamberAlertListener({
   currentStaffId,
   currentRoles,
@@ -91,9 +91,11 @@ export default function ChamberAlertListener({
   currentRoles: string[];
 }) {
   const [alert, setAlert] = useState<AlertItem | null>(null);
+  const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState("");
   const audioContextRef = useRef<AudioContext | null>(null);
   const stopRingRef = useRef<(() => void) | null>(null);
-  const autoDismissRef = useRef<number | null>(null);
+  const activeMessageIdRef = useRef("");
   const mountedRef = useRef(true);
 
   const stopRing = useCallback(() => {
@@ -103,15 +105,6 @@ export default function ChamberAlertListener({
       navigator.vibrate(0);
     }
   }, []);
-
-  const dismissAlert = useCallback(() => {
-    stopRing();
-    if (autoDismissRef.current !== null) {
-      window.clearTimeout(autoDismissRef.current);
-      autoDismissRef.current = null;
-    }
-    setAlert(null);
-  }, [stopRing]);
 
   const ensureAudioContext = useCallback(async (): Promise<AudioContext | null> => {
     if (audioContextRef.current) {
@@ -130,54 +123,80 @@ export default function ChamberAlertListener({
     return context;
   }, []);
 
-  const playTenSecondCall = useCallback(async () => {
+  const startPersistentCallRing = useCallback(async () => {
     stopRing();
     if (!soundEnabled()) return;
+
     const context = await ensureAudioContext();
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-      navigator.vibrate([650, 250, 650, 650, 650, 250, 650, 650, 650, 250, 650, 650]);
-    }
-    if (!context || context.state !== "running") return;
+    let stopped = false;
+    const oscillators = new Set<OscillatorNode>();
+    const toneGains = new Set<GainNode>();
+    let masterGain: GainNode | null = null;
 
-    const gain = context.createGain();
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.connect(context.destination);
-    const oscillators: OscillatorNode[] = [];
-    const startAt = context.currentTime + 0.03;
-
-    for (let offset = 0; offset < 10; offset += 1.35) {
-      const first = context.createOscillator();
-      first.type = "sine";
-      first.frequency.setValueAtTime(760, startAt + offset);
-      first.connect(gain);
-      first.start(startAt + offset);
-      first.stop(startAt + offset + 0.36);
-      oscillators.push(first);
-
-      const second = context.createOscillator();
-      second.type = "sine";
-      second.frequency.setValueAtTime(610, startAt + offset + 0.4);
-      second.connect(gain);
-      second.start(startAt + offset + 0.4);
-      second.stop(startAt + offset + 0.8);
-      oscillators.push(second);
+    if (context) {
+      masterGain = context.createGain();
+      masterGain.gain.setValueAtTime(CALL_GAIN, context.currentTime);
+      masterGain.connect(context.destination);
     }
 
-    gain.gain.setValueAtTime(0.11, startAt);
-    gain.gain.setValueAtTime(0.11, startAt + 9.85);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 10);
+    const pulse = async () => {
+      if (stopped || !withinChamberAlertHours()) return;
 
-    const timeout = window.setTimeout(() => {
-      try {
-        gain.disconnect();
-      } catch {
-        // already disconnected
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate([700, 160, 700, 320]);
       }
-      stopRingRef.current = null;
-    }, 10_100);
+
+      if (!context || !masterGain) return;
+      if (context.state === "suspended") {
+        await context.resume().catch(() => undefined);
+      }
+      if (context.state !== "running") return;
+
+      const startAt = context.currentTime + 0.02;
+      const scheduleTone = (frequency: number, offset: number, duration: number) => {
+        const oscillator = context.createOscillator();
+        const toneGain = context.createGain();
+        oscillator.type = "square";
+        oscillator.frequency.setValueAtTime(frequency, startAt + offset);
+        toneGain.gain.setValueAtTime(0.0001, startAt + offset);
+        toneGain.gain.exponentialRampToValueAtTime(1, startAt + offset + 0.012);
+        toneGain.gain.setValueAtTime(1, startAt + offset + duration - 0.025);
+        toneGain.gain.exponentialRampToValueAtTime(0.0001, startAt + offset + duration);
+        oscillator.connect(toneGain);
+        toneGain.connect(masterGain);
+        oscillators.add(oscillator);
+        toneGains.add(toneGain);
+        oscillator.addEventListener(
+          "ended",
+          () => {
+            oscillators.delete(oscillator);
+            toneGains.delete(toneGain);
+            try {
+              oscillator.disconnect();
+              toneGain.disconnect();
+            } catch {
+              // already disconnected
+            }
+          },
+          { once: true }
+        );
+        oscillator.start(startAt + offset);
+        oscillator.stop(startAt + offset + duration + 0.02);
+      };
+
+      scheduleTone(930, 0, 0.34);
+      scheduleTone(690, 0.38, 0.38);
+    };
+
+    await pulse();
+    const timer = window.setInterval(() => void pulse(), RING_INTERVAL_MS);
 
     stopRingRef.current = () => {
-      window.clearTimeout(timeout);
+      stopped = true;
+      window.clearInterval(timer);
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate(0);
+      }
       for (const oscillator of oscillators) {
         try {
           oscillator.stop();
@@ -185,11 +204,20 @@ export default function ChamberAlertListener({
           // already stopped
         }
       }
+      for (const toneGain of toneGains) {
+        try {
+          toneGain.disconnect();
+        } catch {
+          // already disconnected
+        }
+      }
       try {
-        gain.disconnect();
+        masterGain?.disconnect();
       } catch {
         // already disconnected
       }
+      oscillators.clear();
+      toneGains.clear();
     };
   }, [ensureAudioContext, stopRing]);
 
@@ -204,64 +232,121 @@ export default function ChamberAlertListener({
         icon: "/icon-192.png",
         badge: "/icon-192.png",
         tag: item.id,
-        requireInteraction: false,
+        requireInteraction: true,
         data: { url: item.href },
       })
       .catch(() => undefined);
   }, []);
 
-  const processSnapshot = useCallback(async (payload: CommsResponse) => {
-    const pendingCount = Number(payload.pendingUrgentCount || 0);
-    window.dispatchEvent(
-      new CustomEvent("relife-chamber-pending", { detail: pendingCount })
-    );
+  const closeSystemNotification = useCallback(async (item: AlertItem) => {
+    if (!("serviceWorker" in navigator)) return;
+    const registration = await navigator.serviceWorker.ready.catch(() => null);
+    if (!registration || typeof registration.getNotifications !== "function") return;
+    const notifications = await registration.getNotifications({ tag: item.id }).catch(() => []);
+    for (const notification of notifications) notification.close();
+  }, []);
 
-    // Ring only explicitly targeted calls. Ordinary urgent Team messages and
-    // equipment requests remain visible in Team, but never broadcast a phone call.
-    const candidates: AlertItem[] = [];
-    for (const message of payload.messages || []) {
-      if (
-        message.priority !== "Urgent" ||
-        message.messageType === "Equipment" ||
-        message.senderId === currentStaffId ||
-        String(message.status || "Active").toLowerCase() !== "active" ||
-        !targetMatches(message.roomId || "", currentStaffId, currentRoles)
-      ) {
-        continue;
+  const processSnapshot = useCallback(
+    async (payload: CommsResponse) => {
+      const pendingCount = Number(payload.pendingUrgentCount || 0);
+      window.dispatchEvent(
+        new CustomEvent("relife-chamber-pending", { detail: pendingCount })
+      );
+
+      const messages = payload.messages || [];
+      const activeMessageId = activeMessageIdRef.current;
+      if (activeMessageId) {
+        const current = messages.find((message) => message.messageId === activeMessageId);
+        const stillTargeted =
+          current &&
+          isActiveCall(current) &&
+          targetMatches(current.roomId || "", currentStaffId, currentRoles);
+        if (!stillTargeted) {
+          stopRing();
+          activeMessageIdRef.current = "";
+          if (mountedRef.current) {
+            setAlert(null);
+            setAccepting(false);
+            setAcceptError("");
+          }
+          return;
+        }
+        if (!withinChamberAlertHours()) {
+          stopRing();
+        } else if (!stopRingRef.current) {
+          await startPersistentCallRing();
+        }
+        return;
       }
-      candidates.push({
-        id: `message:${message.messageId}`,
-        createdAt: message.createdAt,
-        title: `Chamber call · ${message.senderName || "Team"}`,
-        body: `${message.body}${message.bedId ? ` · ${message.bedId}` : ""}`,
+
+      if (!withinChamberAlertHours()) return;
+
+      const candidates = messages
+        .filter(
+          (message) =>
+            message.priority === "Urgent" &&
+            message.messageType !== "Equipment" &&
+            message.senderId !== currentStaffId &&
+            isActiveCall(message) &&
+            createdWithinChamberAlertHours(message.createdAt) &&
+            targetMatches(message.roomId || "", currentStaffId, currentRoles)
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      const newest = candidates[0];
+      if (!newest || !mountedRef.current) return;
+
+      const item: AlertItem = {
+        id: `message:${newest.messageId}`,
+        messageId: newest.messageId,
+        createdAt: newest.createdAt,
+        title: `Chamber call · ${newest.senderName || "Team"}`,
+        body: `${newest.body}${newest.bedId ? ` · ${newest.bedId}` : ""}`,
         href: "/chamber?tab=team&team=messages#chamber-team-panel",
+      };
+      activeMessageIdRef.current = newest.messageId;
+      setAlert(item);
+      setAcceptError("");
+      await Promise.allSettled([
+        startPersistentCallRing(),
+        showSystemNotification(item),
+      ]);
+    },
+    [currentRoles, currentStaffId, showSystemNotification, startPersistentCallRing, stopRing]
+  );
+
+  const acceptCall = useCallback(async () => {
+    if (!alert || accepting) return;
+    setAccepting(true);
+    setAcceptError("");
+    try {
+      const response = await fetch("/api/chamber/comms", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "accept_call", messageId: alert.messageId }),
       });
-    }
-
-    candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const seen = new Set(readSeen());
-    const unseen = candidates.filter((item) => !seen.has(item.id));
-    if (unseen.length === 0) return;
-
-    // Calls created outside chamber hours are recorded in Team but deliberately
-    // consumed silently so they do not ring later at 09:00.
-    for (const item of unseen) seen.add(item.id);
-    localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-MAX_SEEN)));
-    if (!withinChamberAlertHours()) return;
-
-    const newest = unseen[0];
-    if (!mountedRef.current) return;
-    if (autoDismissRef.current !== null) {
-      window.clearTimeout(autoDismissRef.current);
-    }
-    setAlert(newest);
-    autoDismissRef.current = window.setTimeout(() => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "CALL_ACCEPT_FAILED");
+      }
       stopRing();
-      setAlert(null);
-      autoDismissRef.current = null;
-    }, ALERT_VISIBLE_MS);
-    await Promise.allSettled([playTenSecondCall(), showSystemNotification(newest)]);
-  }, [currentRoles, currentStaffId, playTenSecondCall, showSystemNotification, stopRing]);
+      activeMessageIdRef.current = "";
+      await closeSystemNotification(alert);
+      if (mountedRef.current) {
+        setAlert(null);
+        setAcceptError("");
+      }
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate(80);
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setAcceptError(error instanceof Error ? error.message : "Call acceptance failed");
+      }
+    } finally {
+      if (mountedRef.current) setAccepting(false);
+    }
+  }, [accepting, alert, closeSystemNotification, stopRing]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -273,10 +358,7 @@ export default function ChamberAlertListener({
       mountedRef.current = false;
       window.removeEventListener("pointerdown", prime);
       stopRing();
-      if (autoDismissRef.current !== null) {
-        window.clearTimeout(autoDismissRef.current);
-        autoDismissRef.current = null;
-      }
+      activeMessageIdRef.current = "";
       void audioContextRef.current?.close().catch(() => undefined);
       audioContextRef.current = null;
     };
@@ -295,7 +377,7 @@ export default function ChamberAlertListener({
       }
     }
     void poll();
-    const timer = window.setInterval(() => void poll(), 10_000);
+    const timer = window.setInterval(() => void poll(), 5_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -315,27 +397,35 @@ export default function ChamberAlertListener({
       <div className="p-4">
         <p className="text-sm leading-5 text-slate-700">{alert.body}</p>
         <p className="mt-1 text-[10px] font-semibold text-red-600">
-          Rings for 10 seconds · stays visible for 1 minute
+          Loud call ring repeats until an authorized recipient accepts.
         </p>
+        {acceptError && (
+          <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[11px] text-red-700">
+            {acceptError} · Ring is still active.
+          </p>
+        )}
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => {
-              dismissAlert();
-              window.location.href = alert.href;
-            }}
-            className="min-h-11 rounded-xl bg-red-600 px-3 text-xs font-bold text-white"
+            disabled={accepting}
+            onClick={() => void acceptCall()}
+            className="min-h-11 rounded-xl bg-red-600 px-3 text-xs font-bold text-white disabled:opacity-60"
           >
-            Open Chamber
+            {accepting ? "Accepting…" : "Accept call"}
           </button>
           <button
             type="button"
-            onClick={dismissAlert}
+            onClick={() => {
+              window.location.href = alert.href;
+            }}
             className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600"
           >
-            Dismiss
+            Open Team
           </button>
         </div>
+        <p className="mt-2 text-[10px] leading-4 text-slate-400">
+          In-app gain is set to full scale. Final loudness still follows the device/media volume and browser audio policy.
+        </p>
       </div>
     </div>
   );

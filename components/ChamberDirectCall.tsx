@@ -81,7 +81,7 @@ export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }
         throw new Error(payload.error || "CALL_FAILED");
       }
       setNote("");
-      setMessage("✓ Direct call sent");
+      setMessage("✓ Direct call sent · waiting for acceptance");
       haptic("success");
     } catch (error) {
       setMessage(`✕ ${error instanceof Error ? error.message : "Call failed"}`);
@@ -100,11 +100,11 @@ export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }
           </p>
           <h2 className="mt-1 text-base font-bold text-slate-950">Call the right person</h2>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Only the selected staff/person or role rings. Call alerts run 9:00 AM–9:00 PM Dhaka time.
+            Only the selected staff/person or role rings. The in-app call tone repeats at full scale until an authorized recipient accepts.
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-bold text-red-700 ring-1 ring-red-100">
-          10 sec
+          Until accepted
         </span>
       </div>
 
@@ -175,7 +175,7 @@ export default function ChamberDirectCall({ targets }: { targets: CallTarget[] }
             {busy ? "Sending…" : "Call now"}
           </button>
           <p className="mt-2 text-[10px] leading-4 text-slate-400">
-            Outside 9 AM–9 PM the message is saved in Team chat without ring, vibration or popup.
+            Ringing is allowed from 9 AM–9 PM Dhaka time. Outside that window the call is saved in Team without sound/vibration. Device media volume still controls final loudness.
           </p>
           {message && (
             <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${message.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
