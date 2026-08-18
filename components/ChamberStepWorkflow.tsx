@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Spinner } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
 import TapChoice from "@/components/TapChoice";
 
@@ -17,7 +16,7 @@ interface StepWorkflowProps {
 const WORKFLOW_STEPS = [
   { id: "Corridor", label: "Corridor", subtitle: "Movement/exercise area", tone: "blue" as const, durationMin: 10 },
   { id: "Exercise", label: "Exercise", subtitle: "Active therapy phase", tone: "emerald" as const, durationMin: 15 },
-  { id: "Assessment", label: "Assessment", subtitle: "Post-treatment evaluation", tone: "purple" as const, durationMin: 5 },
+  { id: "Assessment", label: "Assessment", subtitle: "Post-treatment evaluation", tone: "slate" as const, durationMin: 5 },
   { id: "Complete", label: "Complete", subtitle: "Finish treatment", tone: "amber" as const, durationMin: 0 },
 ];
 
@@ -25,7 +24,7 @@ export default function ChamberStepWorkflow({
   sessionId,
   currentStep,
   stationId,
-  expectedReleaseAt,
+  expectedReleaseAt: _expectedReleaseAt,
   onPost,
   busyKey,
 }: StepWorkflowProps) {
@@ -39,8 +38,8 @@ export default function ChamberStepWorkflow({
     if (current === "treatment started") return true;
     if (stepId === "complete") return true;
     if (current === stepId) return false;
-    const currentIndex = WORKFLOW_STEPS.findIndex((s) => s.id.toLowerCase() === current);
-    const stepIndex = WORKFLOW_STEPS.findIndex((s) => s.id.toLowerCase() === stepId);
+    const currentIndex = WORKFLOW_STEPS.findIndex((item) => item.id.toLowerCase() === current);
+    const stepIndex = WORKFLOW_STEPS.findIndex((item) => item.id.toLowerCase() === stepId);
     return stepIndex > currentIndex;
   });
 
@@ -57,7 +56,7 @@ export default function ChamberStepWorkflow({
         stationId,
       });
     } catch {
-      // Error handled by parent
+      // Error handled by parent.
     }
   }
 
@@ -77,19 +76,21 @@ export default function ChamberStepWorkflow({
               min="0"
               max="180"
               value={duration}
-              onChange={(e) => setDuration(e.target.value)}
+              onChange={(event) => setDuration(event.target.value)}
               className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs"
               autoFocus
             />
           </div>
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => handleStepTransition(selectedStep, Number(duration))}
               className="flex-1 rounded bg-emerald-600 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-emerald-700"
             >
               ✓ Confirm
             </button>
             <button
+              type="button"
               onClick={() => {
                 setShowDuration(false);
                 setSelectedStep(null);
@@ -113,9 +114,9 @@ export default function ChamberStepWorkflow({
           compact
           onChange={(step) => {
             if (!step) return;
-            const stepDef = WORKFLOW_STEPS.find((s) => s.id === step);
+            const stepDef = WORKFLOW_STEPS.find((item) => item.id === step);
             if (step === "Complete") {
-              handleStepTransition(step, 0);
+              void handleStepTransition(step, 0);
             } else {
               setSelectedStep(step);
               setDuration(String(stepDef?.durationMin || 15));
