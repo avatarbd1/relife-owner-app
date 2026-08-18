@@ -19,7 +19,8 @@ export type AppIconName =
   | "history"
   | "salary"
   | "expense"
-  | "cash";
+  | "cash"
+  | "chat";
 
 export default function AppIcon({
   name,
@@ -58,6 +59,7 @@ export default function AppIcon({
     salary: <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 13h5M16 13h.01" /></>,
     expense: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><path d="M9 8h6M9 12h6M9 16h4" /></>,
     cash: <><path d="M4 7h16v10H4z" /><circle cx="12" cy="12" r="2.5" /><path d="M7 9.5h.01M17 14.5h.01" /></>,
+    chat: <><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" /><path d="M7.5 10h9M7.5 13.5h6" /></>,
   };
 
   return (
