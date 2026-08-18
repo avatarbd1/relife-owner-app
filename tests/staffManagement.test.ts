@@ -71,8 +71,16 @@ describe("full staff management", () => {
   it("keeps deactivation soft and preserves enrollment as a separate passkey workflow", () => {
     ok(domain.includes('updateCellRequest(staffSheetId, rowNumber, snapshot.statusIdx + 1, "Inactive")'));
     ok(domain.includes("deactivateExistingAccessRequests"));
+    ok(domain.includes('updateCellRequest(accessSheetId, index + 2, snapshot.accessStatusIdx + 1, "Inactive")'));
     ok(enrollmentRoute.includes("createStaffEnrollmentToken"));
     ok(enrollmentRoute.includes("listPasskeysForStaff"));
+  });
+
+  it("keeps fixed salary on 08_Staff and does not create a salary-ledger writer", () => {
+    ok(domain.includes('headerIndex(staffHeaders, "Salary")'));
+    ok(domain.includes("set(snapshot.salaryIdx, normalizedInput.salary)"));
+    equal(domain.includes('"13_Salary"'), false);
+    equal(domain.includes("paySalary("), false);
   });
 
   it("wires the owner screen to management plus existing device enrollment", () => {
