@@ -270,7 +270,7 @@ export function chamberHourSlots(): Array<{
   label: string;
 }> {
   const slots: Array<{ startMinute: number; time: string; label: string }> = [];
-  for (let hour = 10; hour < 21; hour += 1) {
+  for (let hour = 9; hour < 21; hour += 1) {
     const startMinute = hour * 60;
     slots.push({
       startMinute,
