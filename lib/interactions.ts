@@ -16,7 +16,7 @@ export const EASING = {
   exit: "ease-out",
 } as const;
 
-export type HapticKind = "tap" | "success" | "error";
+export type HapticKind = "tap" | "success" | "warning" | "error";
 
 function reducedMotionRequested(): boolean {
   return (
@@ -35,7 +35,13 @@ export function haptic(kind: HapticKind = "tap"): void {
   }
 
   const pattern: number | number[] =
-    kind === "success" ? 20 : kind === "error" ? [30, 40, 30] : 10;
+    kind === "success"
+      ? 20
+      : kind === "warning"
+        ? [15, 25, 15]
+        : kind === "error"
+          ? [30, 40, 30]
+          : 10;
 
   try {
     navigator.vibrate(pattern);
