@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { Spinner } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
+import { markAppointmentArrived } from "@/app/(dashboard)/appointments/actions";
 
 interface AppointmentArrivedButtonProps {
   appointmentId: string;
   patientName: string;
   status: string;
   canReceive: boolean;
-  onArrive: (appointmentId: string) => Promise<void>;
 }
 
 export default function AppointmentArrivedButton({
@@ -17,7 +17,6 @@ export default function AppointmentArrivedButton({
   patientName,
   status,
   canReceive,
-  onArrive,
 }: AppointmentArrivedButtonProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +43,7 @@ export default function AppointmentArrivedButton({
     setError(null);
     haptic("tap");
     try {
-      await onArrive(appointmentId);
+      await markAppointmentArrived(appointmentId);
       haptic("success");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to mark arrival";

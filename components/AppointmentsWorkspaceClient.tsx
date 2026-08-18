@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import AppointmentStatusControl from "@/components/AppointmentStatusControl";
+import AppointmentArrivedButton from "@/components/AppointmentArrivedButton";
+import AppointmentChamberAllocation from "@/components/AppointmentChamberAllocation";
 import { haptic } from "@/lib/interactions";
 
 type Department = "Physio" | "Dental";
@@ -141,6 +143,32 @@ function statusDot(status: string): string {
 
 function isOpen(status: string): boolean {
   return !["completed", "no-show", "cancelled", "canceled"].includes(status.trim().toLowerCase());
+}
+
+function allocationToChamber(allocation: Allocation, status: string): {
+  allocation: import("@/components/AppointmentChamberAllocation").ChamberAllocation | undefined;
+  canReceive: boolean;
+} {
+  if (!allocation.bed && !allocation.station) {
+    return { allocation: undefined, canReceive: false };
+  }
+
+  const bedLabel = allocation.bed || allocation.station || "Unknown";
+  const isTraction = bedLabel.includes("TRACTION") || allocation.station === "Traction";
+  const station = isTraction ? "Traction" : "Treatment";
+  const confirmed = status === "scheduled" || status === "scheduled-physio" ? true : false;
+
+  return {
+    allocation: {
+      roomId: allocation.room || "Main",
+      bedId: allocation.bed || allocation.station,
+      bedLabel,
+      station,
+      gender: allocation.gender as "Male" | "Female" | "",
+      confirmed,
+    },
+    canReceive: ["scheduled", "scheduled-physio"].includes(status.trim().toLowerCase()),
+  };
 }
 
 export default function AppointmentsWorkspaceClient({
@@ -376,6 +404,7 @@ export default function AppointmentsWorkspaceClient({
               const notes = cleanRemarks(appointment.remarks);
               const allocationWaiting = allocation.room === "Waiting" || allocation.station === "Waiting";
               const genderMissing = appointment.department === "Physio" && allocationWaiting && !allocation.gender;
+              const { allocation: chamberAllocation, canReceive } = allocationToChamber(allocation, appointment.status);
               return (
                 <article
                   key={`${appointment.department}-${appointment.appointmentId}`}
@@ -436,12 +465,31 @@ export default function AppointmentsWorkspaceClient({
 
                       {notes && <p className="mt-3 text-xs leading-5 text-slate-500">{notes}</p>}
 
+                      {appointment.department === "Physio" && chamberAllocation && (
+                        <div className="mt-3">
+                          <AppointmentChamberAllocation allocation={chamberAllocation} />
+                        </div>
+                      )}
+
+                      {appointment.department === "Physio" && canReceive && (
+                        <div className="mt-3">
+                          <AppointmentArrivedButton
+                            appointmentId={appointment.appointmentId}
+                            patientName={appointment.patientName}
+                            status={appointment.status}
+                            canReceive={canReceive}
+                          />
+                        </div>
+                      )}
+
                       {appointment.canUpdate && (
-                        <AppointmentStatusControl
-                          appointmentId={appointment.appointmentId}
-                          department={appointment.department}
-                          currentStatus={appointment.status}
-                        />
+                        <div className="mt-3">
+                          <AppointmentStatusControl
+                            appointmentId={appointment.appointmentId}
+                            department={appointment.department}
+                            currentStatus={appointment.status}
+                          />
+                        </div>
                       )}
                     </div>
                   </div>
