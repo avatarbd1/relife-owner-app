@@ -139,14 +139,16 @@ body{font-family:Arial,sans-serif;margin:24px;color:#0f172a}h1{font-size:22px;ma
 <table><thead><tr><th>Staff ID</th><th>Name</th><th>Role</th><th>Department</th><th>Commitment</th><th>Paid</th><th>Due</th><th>Status</th></tr></thead>
 <tbody>${reportRows}<tr class="total"><td colspan="4">TOTAL</td><td class="num">${totals.commitment}</td><td class="num">${totals.paid}</td><td class="num">${totals.due}</td><td></td></tr></tbody></table>
 <div class="signature">Owner signature: ______________________________</div>
-<script>window.addEventListener('load',()=>window.print())</script>
 </body></html>`;
 
-    const target = window.open("", "_blank", "noopener,noreferrer,width=980,height=720");
+    const target = window.open("", "_blank", "width=980,height=720");
     if (!target) return;
+    target.opener = null;
     target.document.open();
     target.document.write(html);
     target.document.close();
+    target.focus();
+    target.print();
     haptic("success");
   }
 
