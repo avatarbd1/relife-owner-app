@@ -278,7 +278,7 @@ export default function ChamberCommsClient({
             {notificationPermission === "granted" ? "Notifications ON" : notificationPermission === "unsupported" ? "System alert unavailable" : "Enable system alert"}
           </button>
         </div>
-        <p className="mt-2 text-[10px] leading-4 text-slate-400">Urgent messages and equipment requests ring for up to 10 seconds while the app is active. Opening or dismissing the alert stops it immediately.</p>
+        <p className="mt-2 text-[10px] leading-4 text-slate-400">Phone-style ring is reserved for Direct Call and authorized Emergency Broadcast. Urgent Team messages and equipment requests stay visible here without a call ring.</p>
       </section>
 
       <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
@@ -338,7 +338,7 @@ export default function ChamberCommsClient({
               value={priority}
               columns={2}
               tone={priority === "Urgent" ? "red" : "blue"}
-              options={[{ value: "Normal", label: "Normal", subtitle: "No call ring" }, { value: "Urgent", label: "Urgent", subtitle: "10-sec call alert" }]}
+              options={[{ value: "Normal", label: "Normal", subtitle: "Standard Team message" }, { value: "Urgent", label: "Urgent", subtitle: "High-priority Team message" }]}
               onChange={(value) => setPriority(value as MessagePriority)}
             />
             <button type="button" disabled={!message.trim() || Boolean(busy)} onClick={() => void sendMessage()} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-800 px-4 text-sm font-semibold text-white disabled:opacity-50">
@@ -375,9 +375,9 @@ export default function ChamberCommsClient({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold text-slate-900">Request equipment</p>
-                <p className="mt-0.5 text-[11px] text-slate-500">Every new equipment request is an urgent 10-second Chamber call.</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">Equipment requests are high-priority Team workflow items, not phone-style calls.</p>
               </div>
-              <span className="rounded-full bg-red-100 px-2 py-1 text-[10px] font-bold text-red-700">CALL</span>
+              <span className="rounded-full bg-red-100 px-2 py-1 text-[10px] font-bold text-red-700">URGENT</span>
             </div>
 
             <div className="mt-4">
@@ -425,7 +425,7 @@ export default function ChamberCommsClient({
             {fromLocation === toLocation && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">From and To location must be different.</p>}
             <button type="button" disabled={!selectedMachine || fromLocation === toLocation || Boolean(busy)} onClick={() => void requestEquipment()} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-sm font-bold text-white disabled:opacity-50">
               {busy === "equipment-request" && <Spinner size="sm" className="border-white/40 border-t-white" label="Requesting" />}
-              🔔 Send equipment call
+              Send equipment request
             </button>
           </section>
 
