@@ -230,10 +230,13 @@ export default async function ChamberPage({
         fullName: staff.fullName,
         roles: staff.roles,
       }));
+    const canBroadcast = context.roles.some(
+      (role) => role === "Owner" || role === "Manager"
+    );
 
     panel = (
       <div className="space-y-4">
-        <ChamberDirectCall targets={callTargets} />
+        <ChamberDirectCall targets={callTargets} canBroadcast={canBroadcast} />
         <ChamberCommsClient
           initial={comms}
           activePatients={uniquePatients}
