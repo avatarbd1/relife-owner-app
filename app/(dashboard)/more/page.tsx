@@ -46,7 +46,7 @@ export default async function MorePage() {
               href="/performance"
               icon="reports"
               title="Performance & rewards"
-              subtitle="Points, milestones, weekly leaderboard and reward perks"
+              subtitle="নিজের Points, Milestones, Weekly Leaderboard ও Reward দেখুন"
             />
           )}
           {canReports && (
