@@ -1,5 +1,5 @@
 import { useRouter } from "next/navigation";
-import { useEffect, useCallback } from "react";
+import { useEffect, useMemo } from "react";
 
 export type KeyboardShortcutAction = {
   key: string;
@@ -12,76 +12,82 @@ export type KeyboardShortcutAction = {
 export function useKeyboardShortcuts(onHelpOpen?: () => void): KeyboardShortcutAction[] {
   const router = useRouter();
 
-  const shortcuts: KeyboardShortcutAction[] = [
-    {
-      key: "P",
-      label: "Payment",
-      description: "New payment collection",
-      action: () => router.push("/payments"),
-      group: "navigation",
-    },
-    {
-      key: "A",
-      label: "Appointment",
-      description: "View/create appointments",
-      action: () => router.push("/appointments"),
-      group: "navigation",
-    },
-    {
-      key: "T",
-      label: "Treatment",
-      description: "Record treatment entry",
-      action: () => router.push("/treatment"),
-      group: "navigation",
-    },
-    {
-      key: "S",
-      label: "Salary",
-      description: "Salary payments & settlement",
-      action: () => router.push("/salary"),
-      group: "navigation",
-    },
-    {
-      key: "E",
-      label: "Expenses",
-      description: "Manage expense requests",
-      action: () => router.push("/expenses"),
-      group: "navigation",
-    },
-    {
-      key: "D",
-      label: "Dashboard",
-      description: "Finance dashboard",
-      action: () => router.push("/"),
-      group: "navigation",
-    },
-    {
-      key: "?",
-      label: "Help",
-      description: "Show keyboard shortcuts",
-      action: () => onHelpOpen?.(),
-      group: "help",
-    },
-  ];
+  const shortcuts = useMemo<KeyboardShortcutAction[]>(
+    () => [
+      {
+        key: "P",
+        label: "Payment",
+        description: "Open payment collection",
+        action: () => router.push("/payments"),
+        group: "navigation",
+      },
+      {
+        key: "A",
+        label: "Appointments",
+        description: "Open appointment workspace",
+        action: () => router.push("/appointments"),
+        group: "navigation",
+      },
+      {
+        key: "T",
+        label: "Treatment / Clinical",
+        description: "Open patient files for clinical work",
+        action: () => router.push("/patients"),
+        group: "navigation",
+      },
+      {
+        key: "S",
+        label: "Salary",
+        description: "Open salary workspace when authorized",
+        action: () => router.push("/salary"),
+        group: "navigation",
+      },
+      {
+        key: "E",
+        label: "Expenses",
+        description: "Open expense workflow when authorized",
+        action: () => router.push("/expenses"),
+        group: "navigation",
+      },
+      {
+        key: "D",
+        label: "Home",
+        description: "Open role-aware Home",
+        action: () => router.push("/home"),
+        group: "navigation",
+      },
+      {
+        key: "?",
+        label: "Help",
+        description: "Show keyboard shortcuts",
+        action: () => onHelpOpen?.(),
+        group: "help",
+      },
+    ],
+    [onHelpOpen, router]
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
-      const target = event.target as HTMLElement;
-      const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA";
+      const target = event.target as HTMLElement | null;
+      const isTyping = Boolean(
+        target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable)
+      );
       const isModifierKey = event.ctrlKey || event.metaKey || event.altKey;
 
-      // Only trigger for single letter keys without modifiers (except for ?)
       if (isModifierKey && event.key !== "?") return;
-      if (isInput) return;
+      if (isTyping) return;
 
       const upperKey = event.key.toUpperCase();
-      const shortcut = shortcuts.find((s) => s.key === upperKey);
+      const shortcut = shortcuts.find((item) => item.key === upperKey);
+      if (!shortcut) return;
 
-      if (shortcut) {
-        event.preventDefault();
-        shortcut.action();
-      }
+      event.preventDefault();
+      shortcut.action();
     };
 
     window.addEventListener("keydown", handleKeyDown);
