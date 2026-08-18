@@ -6,6 +6,11 @@ import {
 } from "@/lib/domain/appointments/create";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
+import {
+  createFixedHourBooking,
+  validateFixedHourBooking,
+  type FixedHourInput,
+} from "@/lib/webos/chamberFixedHour";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -70,6 +75,18 @@ function parseInput(body: Record<string, unknown>): UnifiedPhysioBookingInput {
   };
 }
 
+function parseFixedBedInput(body: Record<string, unknown>): FixedHourInput {
+  return {
+    patientId: String(body.patientId || ""),
+    date: String(body.date || ""),
+    time: String(body.time || ""),
+    therapist: String(body.therapist || ""),
+    requestedBedId: String(body.requestedBedId || ""),
+    modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
+    remarks: String(body.remarks || ""),
+  };
+}
+
 export async function chamberSchedulePost(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json(
@@ -90,6 +107,7 @@ export async function chamberSchedulePost(request: NextRequest) {
 
     const record = body as Record<string, unknown>;
     const action = String(record.action || "validate");
+    const requestedBedId = String(record.requestedBedId || "").trim();
     const input = parseInput(record);
 
     if (action === "validate") {
@@ -98,7 +116,9 @@ export async function chamberSchedulePost(request: NextRequest) {
       if (!patient || patient.department !== "Physio") {
         return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
       }
-      const validation = await validateUnifiedPhysioBooking(context, input);
+      const validation = requestedBedId
+        ? await validateFixedHourBooking(context, parseFixedBedInput(record))
+        : await validateUnifiedPhysioBooking(context, input);
       return NextResponse.json({ ok: true, validation });
     }
     if (action === "create") {
@@ -109,7 +129,9 @@ export async function chamberSchedulePost(request: NextRequest) {
       }
       const lockKey = `appointment-create:${String(input.date || "")}`;
       const result = await withMutationLock(lockKey, () =>
-        createUnifiedPhysioBooking(context, input)
+        requestedBedId
+          ? createFixedHourBooking(context, parseFixedBedInput(record))
+          : createUnifiedPhysioBooking(context, input)
       );
       return NextResponse.json({ ok: true, ...result });
     }
