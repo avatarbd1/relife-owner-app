@@ -33,6 +33,7 @@ describe("Physio Chamber schedule and four-bed capacity parity", () => {
     equal(hours.includes('"13:00"'), false);
     equal(hours.includes('"14:00"'), false);
     ok(hours.includes("PHYSIO_CHAMBER_DAILY_CAPACITY"));
+    ok(hours.includes("PHYSIO_CHAMBER_STARTS.length * PHYSIO_CHAMBER_BED_IDS.length"));
     ok(bookingUi.includes("PHYSIO_CHAMBER_STARTS"));
     ok(chamberBoard.includes("PHYSIO_CHAMBER_STARTS.map"));
     ok(bookingUi.includes('selectedPatient?.department === "Physio" ? PHYSIO_TIME_SLOTS : DENTAL_TIME_SLOTS'));
