@@ -38,6 +38,10 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
   );
 }
 
+function hasUnsavedNavigationGuard(): boolean {
+  return Boolean(document.querySelector("[data-unsaved-changes='true']"));
+}
+
 function isScrollableRegion(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   let node: Element | null = target;
@@ -123,6 +127,7 @@ export function useSwipeNavigation({
         y: touch.clientY,
         at: Date.now(),
         ignored:
+          hasUnsavedNavigationGuard() ||
           nearSystemEdge ||
           isInteractiveTarget(event.target) ||
           isScrollableRegion(event.target),
@@ -194,7 +199,7 @@ export function useSwipeNavigation({
       const validDistance = absX >= threshold;
       const validDirection = absX >= absY * horizontalDominance;
 
-      if (!validDistance || !validDirection) {
+      if (!validDistance || !validDirection || hasUnsavedNavigationGuard()) {
         setSwipeProgress(0);
         setSwipeDirection(null);
         return;
