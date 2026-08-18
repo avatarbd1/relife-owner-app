@@ -7,6 +7,10 @@ import {
   getSupabaseChamberBootstrap,
   type SupabaseAppointmentRow,
 } from "@/lib/data/supabaseChamber";
+import {
+  PHYSIO_CHAMBER_STARTS,
+  chamberStartMinutes,
+} from "@/lib/domain/chamber/hours";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
 const APPOINTMENT_SHEET = "04_Appointments";
@@ -269,14 +273,12 @@ export function chamberHourSlots(): Array<{
   time: string;
   label: string;
 }> {
-  const slots: Array<{ startMinute: number; time: string; label: string }> = [];
-  for (let hour = 10; hour < 21; hour += 1) {
-    const startMinute = hour * 60;
-    slots.push({
+  return PHYSIO_CHAMBER_STARTS.map((time) => {
+    const startMinute = chamberStartMinutes(time);
+    return {
       startMinute,
-      time: inputTime(startMinute),
+      time,
       label: slotLabel(startMinute),
-    });
-  }
-  return slots;
+    };
+  });
 }
