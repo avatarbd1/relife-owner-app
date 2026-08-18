@@ -133,7 +133,7 @@ async function sheetValidationWithTherapist(
 ): Promise<BookingValidationResult> {
   assertFixedHourStart(input.time);
   const validation = await validatePhysioBooking(context, input);
-  const withTherapist = applyTherapistCapacityValidation(input, validation);
+  const withTherapist = await applyTherapistCapacityValidation(input, validation);
   return {
     ...withTherapist,
     suggestions: withTherapist.suggestions.filter((item) => isFixedHourStart(item.time)),
