@@ -4,6 +4,7 @@ import { getPerformanceSnapshot } from "@/lib/webos/performance";
 import {
   PERFORMANCE_REWARD_CATALOG,
   PERFORMANCE_SALARY_POLICY,
+  weeklyRewardCredits,
   weeklyWinnerReward,
 } from "@/lib/webos/performanceRewards";
 
@@ -43,6 +44,7 @@ export default async function PerformancePage() {
   const snapshot = await getPerformanceSnapshot(context);
   const winnerReward = weeklyWinnerReward(snapshot.leaderboard);
   const current = snapshot.current;
+  const currentRewardCredits = weeklyRewardCredits(current);
   const liveLeaderboard = snapshot.leaderboard.filter(
     (entry) => entry.scoreCoverage === "live"
   );
@@ -84,8 +86,8 @@ export default async function PerformancePage() {
             <p className="mt-0.5 text-[9px] text-slate-400">On-time days</p>
           </div>
           <div className="rounded-xl bg-white/[0.07] p-3 ring-1 ring-white/10">
-            <p className="text-lg font-bold tabular-nums">{current.pendingRewardPreview}</p>
-            <p className="mt-0.5 text-[9px] text-slate-400">৳ preview</p>
+            <p className="text-lg font-bold tabular-nums">{currentRewardCredits}</p>
+            <p className="mt-0.5 text-[9px] text-slate-400">Reward Credit</p>
           </div>
         </div>
       </section>
@@ -116,7 +118,7 @@ export default async function PerformancePage() {
             <p className="mt-1 text-xs leading-5 text-amber-800">{winnerReward.description}</p>
             {winnerReward.eligible && (
               <p className="mt-2 text-xs font-bold text-amber-950">
-                এখন #1: {winnerReward.winnerName}
+                এখন #1: {winnerReward.winnerName} · {winnerReward.rewardCredits} Reward Credit
               </p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
@@ -173,7 +175,7 @@ export default async function PerformancePage() {
             <p className="mt-0.5 text-[10px] text-slate-400">Leaderboard Points আলাদা থাকবে; Reward নেওয়ার জন্য আলাদা Reward Credit ব্যবহার হবে।</p>
           </div>
           <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">
-            {current.points} Points
+            {currentRewardCredits} Reward Credit
           </span>
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -185,9 +187,7 @@ export default async function PerformancePage() {
                   <p className="text-xs font-bold text-slate-900">{reward.title}</p>
                   <p className="mt-1 text-[10px] leading-4 text-slate-500">{reward.description}</p>
                   <p className="mt-2 text-[9px] font-semibold text-amber-700">
-                    {reward.pointCost === null
-                      ? "Reward Credit rate Owner approve করার পর Claim চালু হবে।"
-                      : `${reward.pointCost} Reward Credit লাগবে।`}
+                    {reward.pointCost} Reward Credit লাগবে · Owner approval required
                   </p>
                 </div>
               </div>
@@ -235,7 +235,7 @@ export default async function PerformancePage() {
           <p>• নিজের নিয়মিত কাজ app-এর ভেতরেই complete করুন।</p>
           <p>• Session, Payment, Registration, Booking ও Attendance আলাদা করে manual Point লিখতে হবে না।</p>
           <p>• Weekly Leaderboard-এ নিজের Position দেখুন।</p>
-          <p>• Reward Credit ও Claim চালু হলে Half-day, Family time, Day off বা Salary review request এখান থেকেই করবেন।</p>
+          <p>• Reward Claim চালু হলে Half-day, Family time, Off-day, Salary Bonus Review বা Family Treat request এখান থেকেই করবেন।</p>
         </div>
       </section>
 
