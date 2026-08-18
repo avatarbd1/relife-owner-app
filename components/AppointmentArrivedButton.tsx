@@ -32,7 +32,7 @@ export default function AppointmentArrivedButton({
 
   if (isArrived) {
     return (
-      <div className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1.5">
+      <div className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1.5" title={`${patientName} arrived`}>
         <span className="text-sm">✓</span>
         <span className="text-[10px] font-semibold text-emerald-700">Arrived</span>
       </div>
@@ -58,11 +58,13 @@ export default function AppointmentArrivedButton({
   return (
     <div className="space-y-1.5">
       <button
+        type="button"
         onClick={handleArrive}
         disabled={busy}
+        aria-label={`Mark ${patientName} arrived`}
         className="flex min-h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
       >
-        {busy && <Spinner size="xs" className="border-white/30 border-t-white" />}
+        {busy && <Spinner size="sm" className="border-white/30 border-t-white" label={`Marking ${patientName} arrived`} />}
         {busy ? "Marking…" : "Mark arrived"}
       </button>
       {error && <p className="text-[9px] text-red-600">{error}</p>}
