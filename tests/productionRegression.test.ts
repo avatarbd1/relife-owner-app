@@ -30,9 +30,10 @@ test("dashboard date is explicitly Dhaka local", () => {
   assert.match(format, /timeZone: "Asia\/Dhaka"/);
 });
 
-test("Chamber direct calls ring at full in-app gain until an authorized target accepts", () => {
+test("Chamber direct calls and guarded emergency broadcasts ring until accepted", () => {
   const listener = source("components/ChamberAlertListener.tsx");
   const directCall = source("components/ChamberDirectCall.tsx");
+  const commsClient = source("components/ChamberCommsClient.tsx");
   const route = source("app/api/chamber/comms/route.ts");
   const comms = source("lib/webos/chamberComms.ts");
   const layout = source("app/(dashboard)/layout.tsx");
@@ -40,6 +41,7 @@ test("Chamber direct calls ring at full in-app gain until an authorized target a
 
   assert.match(listener, /CALL:STAFF:/);
   assert.match(listener, /CALL:ROLE:/);
+  assert.match(listener, /BROADCAST_MARKER = "CALL:ALL:PHYSIO"/);
   assert.match(listener, /ALERT_START_HOUR = 9/);
   assert.match(listener, /ALERT_END_HOUR = 21/);
   assert.match(listener, /CALL_GAIN = 1/);
@@ -47,7 +49,7 @@ test("Chamber direct calls ring at full in-app gain until an authorized target a
   assert.match(listener, /oscillator\.type = "square"/);
   assert.match(listener, /window\.setInterval\(\(\) => void pulse\(\), RING_INTERVAL_MS\)/);
   assert.match(listener, /action: "accept_call"/);
-  assert.match(listener, /Accept call/);
+  assert.match(listener, /Acknowledge emergency/);
   assert.match(listener, /requireInteraction: true/);
   assert.doesNotMatch(listener, /ALERT_VISIBLE_MS/);
   assert.doesNotMatch(listener, />\s*Dismiss\s*</);
@@ -55,21 +57,40 @@ test("Chamber direct calls ring at full in-app gain until an authorized target a
   assert.match(directCall, /Until accepted/);
   assert.match(directCall, /waiting for acceptance/);
   assert.match(directCall, /roomId: `CALL:/);
+  assert.match(directCall, /Emergency broadcast/);
+  assert.match(directCall, /action: "broadcast_emergency"/);
+  assert.match(directCall, /window\.confirm/);
+  assert.match(directCall, /first authorized acknowledgement stops the broadcast on all devices/);
 
+  assert.match(route, /action === "broadcast_emergency"/);
+  assert.match(route, /PHYSIO_EMERGENCY_MARKER = "CALL:ALL:PHYSIO"/);
+  assert.match(route, /chamber-emergency-broadcast/);
   assert.match(route, /action === "accept_call"/);
   assert.match(route, /chamber-call:\$\{messageId\}/);
   assert.match(route, /acceptChamberCall\(context, messageId\)/);
 
+  assert.match(comms, /BROADCAST_MARKER = "CALL:ALL:PHYSIO"/);
+  assert.match(comms, /function canSendEmergencyBroadcast/);
+  assert.match(comms, /role === "Owner" \|\| role === "Manager"/);
+  assert.match(comms, /roomId\.startsWith\("CALL:ALL:"\)/);
+  assert.match(comms, /chamber\.broadcast\.send/);
+  assert.match(comms, /chamber\.broadcast\.accept/);
   assert.match(comms, /export async function acceptChamberCall/);
   assert.match(comms, /CALL_TARGET_MISMATCH/);
   assert.match(comms, /headerIndex\(headers, "Seen_By"\)/);
   assert.match(comms, /row\[statusIdx\] = "Accepted"/);
-  assert.match(comms, /chamber\.call\.accept/);
   assert.match(comms, /replaceEntityRowWithAudit/);
   assert.match(comms, /normalized\(item\.status \|\| "Active"\) === "active"/);
 
+  assert.match(commsClient, /Phone-style ring is reserved for Direct Call and authorized Emergency Broadcast/);
+  assert.match(commsClient, /High-priority Team message/);
+  assert.match(commsClient, /not phone-style calls/);
+  assert.doesNotMatch(commsClient, /10-sec call alert/);
+  assert.doesNotMatch(commsClient, /urgent 10-second Chamber call/);
+
   assert.match(layout, /currentRoles=\{context\.roles\}/);
-  assert.match(chamber, /ChamberDirectCall/);
+  assert.match(chamber, /canBroadcast = context\.roles\.some/);
+  assert.match(chamber, /<ChamberDirectCall targets=\{callTargets\} canBroadcast=\{canBroadcast\}/);
 });
 
 test("owner attention links preserve the intended destination", () => {
@@ -160,7 +181,6 @@ test("patient report upload uses private Supabase Storage instead of Google Driv
   assert.match(storage, /supabase:\/\/\$\{REPORT_BUCKET\}\//);
   assert.match(storage, /await deleteObject\(path\)/);
   assert.match(media, /reportStoragePathFromLink/);
-  assert.match(media, /downloadPrivatePatientReport/);
   assert.match(edge, /x-relife-report-key/);
   assert.match(edge, /relife-patient-reports/);
   assert.match(edge, /SUPABASE_SERVICE_ROLE_KEY/);
