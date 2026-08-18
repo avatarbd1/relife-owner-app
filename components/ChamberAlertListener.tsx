@@ -22,6 +22,7 @@ type AlertItem = {
   title: string;
   body: string;
   href: string;
+  emergency: boolean;
 };
 
 type CommsResponse = {
@@ -32,6 +33,7 @@ type CommsResponse = {
 
 const SOUND_KEY = "relife_chamber_sound_enabled";
 const CALL_PREFIX = "CALL:";
+const BROADCAST_MARKER = "CALL:ALL:PHYSIO";
 const ALERT_START_HOUR = 9;
 const ALERT_END_HOUR = 21;
 const CALL_GAIN = 1;
@@ -69,6 +71,7 @@ function targetMatches(
 ): boolean {
   const value = marker.trim();
   if (!value.startsWith(CALL_PREFIX)) return false;
+  if (value === BROADCAST_MARKER) return true;
   if (value.startsWith("CALL:STAFF:")) {
     return value.slice("CALL:STAFF:".length) === currentStaffId;
   }
@@ -295,14 +298,18 @@ export default function ChamberAlertListener({
 
       const newest = candidates[0];
       if (!newest || !mountedRef.current) return;
+      const emergency = newest.roomId.trim() === BROADCAST_MARKER;
 
       const item: AlertItem = {
         id: `message:${newest.messageId}`,
         messageId: newest.messageId,
         createdAt: newest.createdAt,
-        title: `Chamber call · ${newest.senderName || "Team"}`,
+        title: emergency
+          ? `Emergency broadcast · ${newest.senderName || "Team"}`
+          : `Chamber call · ${newest.senderName || "Team"}`,
         body: `${newest.body}${newest.bedId ? ` · ${newest.bedId}` : ""}`,
         href: "/chamber?tab=team&team=messages#chamber-team-panel",
+        emergency,
       };
       activeMessageIdRef.current = newest.messageId;
       setAlert(item);
@@ -388,9 +395,9 @@ export default function ChamberAlertListener({
 
   return (
     <div className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+4.25rem)] z-[70] mx-auto max-w-md overflow-hidden rounded-2xl border border-red-300 bg-white shadow-2xl">
-      <div className="bg-red-600 px-4 py-2.5 text-white">
+      <div className={alert.emergency ? "bg-red-800 px-4 py-2.5 text-white" : "bg-red-600 px-4 py-2.5 text-white"}>
         <p className="text-[10px] font-bold uppercase tracking-[0.16em]">
-          Direct Chamber call
+          {alert.emergency ? "Emergency Chamber broadcast" : "Direct Chamber call"}
         </p>
         <p className="mt-0.5 text-sm font-bold">{alert.title}</p>
       </div>
@@ -411,7 +418,7 @@ export default function ChamberAlertListener({
             onClick={() => void acceptCall()}
             className="min-h-11 rounded-xl bg-red-600 px-3 text-xs font-bold text-white disabled:opacity-60"
           >
-            {accepting ? "Accepting…" : "Accept call"}
+            {accepting ? "Accepting…" : alert.emergency ? "Acknowledge emergency" : "Accept call"}
           </button>
           <button
             type="button"
