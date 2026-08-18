@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import AppointmentForm from "@/components/AppointmentForm";
+import AppointmentFormMultiDate from "@/components/AppointmentFormMultiDate";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { getBookingModalityOptions } from "@/lib/webos/appointmentScheduling";
@@ -25,13 +26,14 @@ function department(value: string | undefined): "Physio" | "Dental" | undefined 
 export default async function NewAppointmentPage({
   searchParams,
 }: {
-  searchParams: Promise<{ patientId?: string; department?: string }>;
+  searchParams: Promise<{ patientId?: string; department?: string; mode?: string }>;
 }) {
   const context = await requireCurrentAccessContext();
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
-  const { patientId, department: departmentParam } = await searchParams;
+  const { patientId, department: departmentParam, mode } = await searchParams;
   const defaultDepartment = department(departmentParam);
+  const bookingMode = mode === "multi" ? "multi" : "single";
   const [visiblePatients, clinicians, modalityOptions] = await Promise.all([
     getVisiblePatients(context, scope),
     getClinicianOptions(context),
@@ -60,14 +62,24 @@ export default async function NewAppointmentPage({
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <AppointmentForm
-          patients={patients}
-          clinicians={clinicians}
-          modalityOptions={modalityOptions}
-          defaultPatientId={patientId}
-          defaultDate={todayDhaka()}
-          defaultDepartment={defaultDepartment}
-        />
+        {bookingMode === "multi" ? (
+          <AppointmentFormMultiDate
+            patients={patients}
+            clinicians={clinicians}
+            modalityOptions={modalityOptions}
+            defaultPatientId={patientId}
+            defaultDepartment={defaultDepartment}
+          />
+        ) : (
+          <AppointmentForm
+            patients={patients}
+            clinicians={clinicians}
+            modalityOptions={modalityOptions}
+            defaultPatientId={patientId}
+            defaultDate={todayDhaka()}
+            defaultDepartment={defaultDepartment}
+          />
+        )}
       </section>
     </div>
   );
