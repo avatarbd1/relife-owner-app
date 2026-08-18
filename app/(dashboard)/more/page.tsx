@@ -12,7 +12,6 @@ export default async function MorePage() {
   const canAudit =
     canPerform(context, "audit.read", "Physio") ||
     canPerform(context, "audit.read", "Dental");
-  const canSettings = actions.has("settings.manage") || isOwner;
   const canInventory = canPerform(context, "inventory.read", "Physio");
   const canTools =
     canPerform(context, "clinical.read", "Physio") ||
@@ -36,7 +35,7 @@ export default async function MorePage() {
     <div className="mx-auto w-full max-w-3xl">
       <PageHeading
         title="More"
-        subtitle="Reports, tools, security and system administration"
+        subtitle="Reports, tools, security and account settings"
       />
 
       {canReports && (
@@ -116,6 +115,12 @@ export default async function MorePage() {
 
       <Section title="Account & app">
         <ActionRow
+          href="/settings"
+          icon="staff"
+          title="Settings"
+          subtitle={isOwner ? "Profile, clinic staff and current clinic rules" : "Profile and sign-in security"}
+        />
+        <ActionRow
           href={isOwner ? "/security" : "/security/passkeys"}
           icon="security"
           title="Security"
@@ -133,24 +138,14 @@ export default async function MorePage() {
         />
       </Section>
 
-      {(canAudit || canSettings) && (
+      {canAudit && (
         <Section title="Administration">
-          {canAudit && (
-            <ActionRow
-              href="/audit"
-              icon="history"
-              title="Audit log"
-              subtitle="Security, finance and system evidence"
-            />
-          )}
-          {canSettings && (
-            <ActionRow
-              href="/settings"
-              icon="approval"
-              title="Settings"
-              subtitle="Access matrix, data and system configuration"
-            />
-          )}
+          <ActionRow
+            href="/audit"
+            icon="history"
+            title="Audit log"
+            subtitle="Security, finance and system evidence"
+          />
         </Section>
       )}
     </div>
