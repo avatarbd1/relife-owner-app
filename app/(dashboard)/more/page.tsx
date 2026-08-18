@@ -18,6 +18,19 @@ export default async function MorePage() {
     canPerform(context, "clinical.read", "Physio") ||
     canInventory ||
     actions.has("payment.correct_own_today");
+  const canDentalTools =
+    canPerform(context, "patient.read", "Dental") ||
+    canPerform(context, "register.read", "Dental") ||
+    canPerform(context, "clinical.read", "Dental");
+  const canBulkImport =
+    canPerform(context, "patient.create", "Physio") ||
+    canPerform(context, "patient.create", "Dental");
+  const canExpenseRequest =
+    canPerform(context, "expense.request", "Physio") ||
+    canPerform(context, "expense.request", "Dental");
+  const canCashRequest =
+    canPerform(context, "cash.request", "Physio") ||
+    canPerform(context, "cash.request", "Dental");
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -34,17 +47,62 @@ export default async function MorePage() {
             title="Reports & analysis"
             subtitle="Operational and financial performance"
           />
+          <ActionRow
+            href="/reports/export"
+            icon="reports"
+            title="CSV export"
+            subtitle="Permission-scoped patients, appointments, clinical and finance export"
+          />
         </Section>
       )}
 
-      {canTools && (
+      {(canBulkImport || canExpenseRequest || canCashRequest) && (
+        <Section title="Fast operations">
+          {canBulkImport && (
+            <ActionRow
+              href="/patients/bulk-import"
+              icon="register"
+              title="Bulk patient import"
+              subtitle="Validated CSV import through the canonical patient writer"
+            />
+          )}
+          {canExpenseRequest && (
+            <ActionRow
+              href="/finance/expense-request"
+              icon="approval"
+              title="Request expense"
+              subtitle="Create a pending clinic expense for Owner review"
+            />
+          )}
+          {canCashRequest && (
+            <ActionRow
+              href="/finance/cash-movement"
+              icon="approval"
+              title="Request cash movement"
+              subtitle="Reception custody transfer to Home Treasury or Bank"
+            />
+          )}
+        </Section>
+      )}
+
+      {(canTools || canDentalTools) && (
         <Section title="Clinic tools">
-          <ActionRow
-            href="/tools"
-            icon="clinical"
-            title="Clinical tools"
-            subtitle="Treatment history, reports, case studies and diagnostics"
-          />
+          {canTools && (
+            <ActionRow
+              href="/tools"
+              icon="clinical"
+              title="Clinical tools"
+              subtitle="Treatment history, reports, case studies and diagnostics"
+            />
+          )}
+          {canDentalTools && (
+            <ActionRow
+              href="/tools/dental"
+              icon="clinical"
+              title="Dental tools"
+              subtitle="Dental register snapshot and role-aware shortcuts"
+            />
+          )}
           {canInventory && (
             <ActionRow
               href="/inventory"
