@@ -1,56 +1,35 @@
 import { redirect } from "next/navigation";
-import SettingsAdminClient from "@/components/SettingsAdminClient";
-import { StatusBadge } from "@/components/FeedbackUI";
-import { actionsForRoles, type WebRole } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-import { getWebStaffDirectory, toAccessContext } from "@/lib/webos/staffDirectory";
-
-const ROLES: WebRole[] = [
-  "Owner",
-  "Manager",
-  "Receptionist",
-  "Therapist",
-  "Dentist",
-  "Dental_Assistant",
-  "Auditor",
-  "System Admin",
-];
+import V1SettingsClient from "@/components/V1SettingsClient";
+import { getCurrentStaffIdentity, requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 export default async function SettingsPage() {
-  const context = await requireCurrentAccessContext();
-  if (!context.roles.includes("Owner") && !context.roles.includes("System Admin")) {
-    redirect("/more");
-  }
+  const [context, identity] = await Promise.all([
+    requireCurrentAccessContext(),
+    getCurrentStaffIdentity(),
+  ]);
+  if (!identity) redirect("/login");
 
-  const directory = await getWebStaffDirectory();
-  const active = directory.filter((item) => item.status === "Active");
-  const roles = ROLES.map((role) => ({
-    role,
-    actions: actionsForRoles([role]).sort(),
-    staffCount: active.filter((staff) => staff.roles.includes(role)).length,
-  }));
-  const staff = active.map((item) => ({
-    staffId: item.staffId,
-    fullName: item.fullName,
-    roles: item.roles,
-    departments: item.departmentAccess,
-    ready: Boolean(toAccessContext(item)),
-  }));
+  const roleLabel = identity.roles.length > 0 ? identity.roles.join(" · ") : "Staff";
+  const isOwner = context.roles.includes("Owner");
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 to-blue-950 p-5 text-white shadow-lg">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Administration</p>
-            <h1 className="mt-1 text-2xl font-bold">Settings & administration</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">System defaults, access posture, supported data tools and backup capability status.</p>
-          </div>
-          <StatusBadge tone="success" className="border-white/10">Server enforced</StatusBadge>
-        </div>
-      </section>
+    <div className="mx-auto w-full max-w-xl space-y-5">
+      <header className="px-1 pt-1">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Settings</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Account & clinic</h1>
+        <p className="mt-1 text-sm leading-5 text-slate-500">Only settings backed by a real server workflow are editable.</p>
+      </header>
 
-      <SettingsAdminClient roles={roles} staff={staff} />
+      <V1SettingsClient
+        initialProfile={{
+          staffId: identity.staffId,
+          fullName: identity.fullName,
+          phone: identity.phone,
+          roleLabel,
+          departments: identity.departmentAccess,
+        }}
+        isOwner={isOwner}
+      />
     </div>
   );
 }
