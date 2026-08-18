@@ -56,6 +56,9 @@ test("Reward Credit stays separate from leaderboard Points and supports approved
   assert.match(rewards, /pointCost: 150/);
   assert.match(rewards, /weeklyRewardCredits/);
   assert.match(rewards, /entry\.rank === 1\) return 50/);
+  assert.match(rewards, /entry\.rank === 2\) return 30/);
+  assert.match(rewards, /entry\.rank === 3\) return 20/);
+  assert.match(rewards, /rewardCredits: winner \? 50 : 0/);
   assert.match(rewards, /automaticSalaryChange: false/);
   assert.match(rewards, /enabledForClaim: false/);
 });
