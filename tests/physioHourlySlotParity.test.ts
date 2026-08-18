@@ -20,6 +20,7 @@ describe("Physio fixed-hour appointment parity", () => {
     equal(physioSlots.includes('"10:30"'), false);
     ok(bookingUi.includes('selectedPatient?.department === "Physio" ? PHYSIO_TIME_SLOTS : DENTAL_TIME_SLOTS'));
     ok(bookingUi.includes("Physio Chamber uses fixed 60-minute slots."));
+    ok(bookingUi.includes('result.error === "INVALID_SLOT"'));
   });
 
   it("rejects non-hour Physio starts in the canonical appointment domain", () => {
