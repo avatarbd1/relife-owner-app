@@ -6,12 +6,13 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("Chamber chat is a dedicated screen backed by the bounded workspace", () => {
+test("Chamber chat is a dedicated mobile screen backed by the bounded workspace", () => {
   const page = source("app/(dashboard)/chamber/chat/page.tsx");
 
   assert.match(page, /ChamberContextChatClient/);
   assert.match(page, /getChamberChatWorkspace/);
-  assert.match(page, /Room · patient · session communication/);
+  assert.match(page, /max-w-\[430px\]/);
+  assert.doesNotMatch(page, /PageHeading/);
   assert.doesNotMatch(page, /redirect\(/);
 });
 
@@ -48,7 +49,7 @@ test("Context chat API enforces active context and operational-only messages", (
   assert.match(route, /sendChamberMessage/);
 });
 
-test("Chat client provides quick messages, search, mute, polling and session archive presentation", () => {
+test("Chat client is mobile messenger-first with thread, sticky composer and bottom sheets", () => {
   const client = source("components/ChamberContextChatClient.tsx");
 
   for (const label of [
@@ -66,7 +67,14 @@ test("Chat client provides quick messages, search, mute, polling and session arc
     assert.equal(client.includes(label), true, `${label} preset should exist`);
   }
 
+  assert.match(client, /⚡ Quick/);
+  assert.match(client, /placeholder=\{selected\.active \? "Message…" : "Context closed"\}/);
+  assert.match(client, /bottom-\[calc\(3\.75rem\+env\(safe-area-inset-bottom\)\)\]/);
+  assert.match(client, /type Sheet = "quick" \| "more" \| "contexts" \| null/);
   assert.match(client, /Search messages or staff/);
+  assert.match(client, /Recipients/);
+  assert.match(client, /Switch patient\/session/);
+  assert.doesNotMatch(client, /lg:grid-cols-\[240px_minmax\(0,1fr\)\]/);
   assert.match(client, /relife_chamber_context_mute/);
   assert.match(client, /Notification\.requestPermission/);
   assert.match(client, /window\.setInterval\(\(\) => void refresh\(\), 8_000\)/);
