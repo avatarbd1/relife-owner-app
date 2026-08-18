@@ -185,6 +185,18 @@ export default async function HomePage() {
           <span aria-hidden="true">→</span>
         </Link>
       </Section>
+
+      {/* Keyboard Shortcuts Indicator */}
+      <div className="mt-6 rounded-lg border border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50 p-3 text-center">
+        <p className="text-[11px] text-slate-600">
+          ⚡ Power user tip: Press <kbd className="inline-block rounded bg-slate-200 px-1.5 py-0.5 font-mono font-semibold text-slate-700">?</kbd> to view keyboard shortcuts
+        </p>
+        <p className="mt-1 text-[10px] text-slate-500">
+          Quick: <kbd className="inline-block rounded bg-white px-1 py-0.5 font-mono font-semibold">P</kbd> = Payment ·
+          <kbd className="inline-block rounded bg-white px-1 py-0.5 font-mono font-semibold ml-1">A</kbd> = Appointment ·
+          <kbd className="inline-block rounded bg-white px-1 py-0.5 font-mono font-semibold ml-1">T</kbd> = Treatment
+        </p>
+      </div>
     </div>
   );
 }
