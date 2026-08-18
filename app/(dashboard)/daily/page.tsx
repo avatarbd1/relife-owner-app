@@ -37,10 +37,7 @@ export default async function DailyPage() {
     cookieStore.get("relife_scope")?.value
   );
 
-  const [snapshot, registerData] = await Promise.all([
-    getDailyOperationsSnapshot(context, scope),
-    getDailyRegisterSnapshot(context, scope),
-  ]);
+  const snapshot = await getDailyOperationsSnapshot(context, scope);
 
   const safeSnapshot = snapshot.attendance.canReadTeam
     ? {
@@ -57,7 +54,30 @@ export default async function DailyPage() {
       }
     : snapshot;
 
-  const clinicalActivity = await getDailyClinicalActivity(scope, safeSnapshot.date);
+  const canReadPhysioInventory =
+    scope !== "dental" && canPerform(context, "inventory.read", "Physio");
+
+  const [clinicalActivity, registerData, inventory] = await Promise.all([
+    getDailyClinicalActivity(scope, safeSnapshot.date),
+    getDailyRegisterSnapshot(context, scope, safeSnapshot.date).catch((error) => {
+      console.error("Daily register summary failed:", error);
+      return {
+        date: safeSnapshot.date,
+        rows: [],
+        departments: [],
+        totals: { entries: 0, sessions: 0, amount: 0, discount: 0, due: 0 },
+        hasMoneyAccess: false,
+        unavailable: true,
+      };
+    }),
+    canReadPhysioInventory
+      ? getPhysioInventorySnapshot(context).catch((error) => {
+          console.error("Daily inventory alert read failed:", error);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+
   const activityCounts = {
     patients: clinicalActivity.patients,
     sessions: clinicalActivity.sessions,
@@ -67,11 +87,6 @@ export default async function DailyPage() {
   const departments = scopeDepartments(scope);
   const canInScope = (action: Parameters<typeof canPerform>[1]) =>
     departments.some((target) => canPerform(context, action, target));
-
-  const inventory =
-    scope !== "dental" && canPerform(context, "inventory.read", "Physio")
-      ? await getPhysioInventorySnapshot(context)
-      : null;
   const lowStockCount = inventory?.items.filter((item) => item.lowStock).length || 0;
 
   return (
