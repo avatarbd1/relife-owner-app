@@ -68,25 +68,25 @@ export default function StaffHomeWorkspace({ snapshot }: { snapshot: StaffHomeSn
     : `${snapshot.counts.ready} waiting / active · ${snapshot.counts.open} open`;
 
   return (
-    <HomeSwipeLoop>
-      <div className="mx-auto w-full max-w-3xl">
-        <PageHeading
-          title="Home"
-          subtitle={`${formatDateBn(new Date())} · ${scope}`}
-          action={
-            snapshot.capabilities.attendanceSelf ? (
-              <Link
-                href="/daily"
-                className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-sm active:scale-[0.98]"
-              >
-                <AppIcon name="attendance" className="h-4 w-4" />
-                Daily Ops
-              </Link>
-            ) : undefined
-          }
-        />
+    <div className="mx-auto w-full max-w-3xl">
+      <PageHeading
+        title="Home"
+        subtitle={`${formatDateBn(new Date())} · ${scope}`}
+        action={
+          snapshot.capabilities.attendanceSelf ? (
+            <Link
+              href="/daily"
+              className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-sm active:scale-[0.98]"
+            >
+              <AppIcon name="attendance" className="h-4 w-4" />
+              Daily Ops
+            </Link>
+          ) : undefined
+        }
+      />
 
-        <section data-home-swipe-item className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+      <HomeSwipeLoop>
+        <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-700">
             {snapshot.role === "Receptionist"
               ? "Front desk"
@@ -111,7 +111,7 @@ export default function StaffHomeWorkspace({ snapshot }: { snapshot: StaffHomeSn
         </section>
 
         {actions.length > 0 && (
-          <section data-home-swipe-item className="mb-5">
+          <section className="mb-5">
             <div className="mb-2.5 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-900">Quick actions</h2>
               <span className="text-[10px] font-medium text-slate-400">Daily work</span>
@@ -124,7 +124,7 @@ export default function StaffHomeWorkspace({ snapshot }: { snapshot: StaffHomeSn
           </section>
         )}
 
-        <section data-home-swipe-item className="mb-4 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
+        <section className="mb-4 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
             <div>
               <h2 className="text-sm font-semibold text-slate-950">{queueTitle}</h2>
@@ -183,7 +183,7 @@ export default function StaffHomeWorkspace({ snapshot }: { snapshot: StaffHomeSn
             </Link>
           )}
         </section>
-      </div>
-    </HomeSwipeLoop>
+      </HomeSwipeLoop>
+    </div>
   );
 }

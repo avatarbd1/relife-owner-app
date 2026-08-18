@@ -1,4 +1,4 @@
-// Swipe interaction regression contract for PR #118.
+// Swipe interaction regression contract for the Home carousel.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -7,53 +7,67 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("BottomNav is tap-only and no longer owns swipe route navigation", () => {
+test("BottomNav stays tap-only and does not own swipe route navigation", () => {
   const nav = source("components/BottomNav.tsx");
 
   assert.doesNotMatch(nav, /useSwipeNavigation/);
   assert.doesNotMatch(nav, /swipeRoutes/);
   assert.doesNotMatch(nav, /swipeProgress/);
   assert.match(nav, /<Link/);
-  assert.match(nav, /onClick=\{\(\) =>/);
 });
 
-test("Home swipe requires a deliberate horizontal gesture and loops in place", () => {
+test("Home swipe is a true horizontal carousel rather than vertical page scrolling", () => {
   const loop = source("components/HomeSwipeLoop.tsx");
 
-  assert.match(loop, /const SWIPE_THRESHOLD = 72/);
-  assert.match(loop, /const HORIZONTAL_DOMINANCE = 1\.35/);
-  assert.match(loop, /absX < SWIPE_THRESHOLD/);
-  assert.match(loop, /absX < absY \* HORIZONTAL_DOMINANCE/);
-  assert.match(loop, /\(currentIndex \+ 1\) % items\.length/);
-  assert.match(loop, /\(currentIndex - 1 \+ items\.length\) % items\.length/);
-  assert.match(loop, /window\.scrollTo/);
+  assert.match(loop, /const SWIPE_THRESHOLD = 44/);
+  assert.match(loop, /const HORIZONTAL_DOMINANCE = 1\.15/);
+  assert.match(loop, /translate3d\(calc\(-\$\{trackOffsetPercent\}% \+ \$\{dragX\}px\)/);
+  assert.match(loop, /setPosition\(\(current\) => current \+ \(deltaX < 0 \? 1 : -1\)\)/);
+  assert.match(loop, /transition-transform duration-300 ease-out/);
+  assert.doesNotMatch(loop, /window\.scrollTo/);
   assert.doesNotMatch(loop, /router\.push/);
 });
 
-test("vertical intent and controls do not trigger Home swipe", () => {
+test("Home carousel loops seamlessly with first and last slide clones", () => {
+  const loop = source("components/HomeSwipeLoop.tsx");
+
+  assert.match(loop, /return \[slides\[slideCount - 1\], \.\.\.slides, slides\[0\]\]/);
+  assert.match(loop, /if \(position === 0\)/);
+  assert.match(loop, /setPosition\(slideCount\)/);
+  assert.match(loop, /if \(position === slideCount \+ 1\)/);
+  assert.match(loop, /setPosition\(1\)/);
+});
+
+test("vertical scrolling and form controls remain safe while card surfaces can swipe", () => {
   const loop = source("components/HomeSwipeLoop.tsx");
 
   assert.match(loop, /type GestureAxis = "pending" \| "horizontal" \| "vertical"/);
   assert.match(loop, /start\.axis = "vertical"/);
-  for (const target of ["button", "input", "textarea", "select", "form", "[role='dialog']"]) {
+  assert.match(loop, /touchAction: "pan-y"/);
+  for (const target of ["input", "textarea", "select", "[role='slider']"]) {
     assert.equal(loop.includes(target), true, `${target} should block Home swipe`);
   }
+  assert.equal(loop.includes("button,input"), false, "buttons should not block card swipe gestures");
   assert.match(loop, /isHorizontallyScrollable/);
 });
 
-test("Owner and staff Home keep their existing role content as swipe items", () => {
+test("Owner and staff keep the same role-specific Home content inside the carousel", () => {
   const owner = source("app/(dashboard)/home/page.tsx");
   const staff = source("components/StaffHomeWorkspace.tsx");
 
   assert.match(owner, /HomeSwipeLoop/);
   assert.match(staff, /HomeSwipeLoop/);
-  assert.match(owner, /data-home-swipe-item/);
-  assert.match(staff, /data-home-swipe-item/);
 
   assert.match(owner, /Collected today/);
   assert.match(owner, /Quick actions/);
+  assert.match(owner, /Needs attention/);
   assert.match(owner, /Cash custody/);
+
   assert.match(staff, /Today’s queue/);
   assert.match(staff, /My patients today/);
   assert.match(staff, /Quick actions/);
+  assert.match(staff, /Front desk/);
+  assert.match(staff, /Clinic operations/);
+  assert.match(staff, /Physio clinical/);
+  assert.match(staff, /Dental clinical/);
 });
