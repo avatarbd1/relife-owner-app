@@ -35,6 +35,6 @@ test("explicit chamber bed clicks keep requested bed instead of falling back to 
   const board = source("components/ChamberHourlyBedBoard.tsx");
   assert.match(board, /requestedBedId: openSlot\.bedId/);
   assert.match(handler, /requestedBedId = String\(record\.requestedBedId/);
-  assert.match(handler, /validateFixedHourBooking\(context, parseFixedBedInput\(record\)\)/);
+  assert.match(handler, /validateFixedHourBooking\(\s*context,\s*parseFixedBedInput\(record\)\s*\)/);
   assert.match(handler, /createFixedHourBooking\(context, parseFixedBedInput\(record\)\)/);
 });
