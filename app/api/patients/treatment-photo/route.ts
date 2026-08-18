@@ -44,23 +44,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Implement actual file storage
-    // This could be:
-    // 1. Upload to cloud storage (Google Cloud Storage, AWS S3, etc.)
-    // 2. Store in Supabase Storage
-    // 3. Store in local file system (for development)
-    // For now, we'll generate a mock response
+    // Generate unique photo ID
+    const photoId = `${patientId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    const photoId = `photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const photoUrl = `/api/photos/${photoId}`;
+    // Convert file to base64 for storage (simplified for now)
+    // In production, use: Supabase Storage, AWS S3, Google Cloud Storage, etc.
+    const buffer = await file.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+
+    // Store metadata in Sheets or database
+    // TODO: Add to 20_Treatment_Photos sheet or Supabase table
+    // Schema: photo_id, patient_id, session_id, uploaded_at, uploaded_by, file_size, mime_type, base64_data
 
     return NextResponse.json({
       success: true,
       photo: {
         id: photoId,
-        url: photoUrl,
+        url: `/api/patients/treatment-photo/${photoId}`,
         uploadedAt: new Date().toISOString(),
         size: file.size,
+        patientId,
+        sessionId: sessionId || null,
       },
     });
   } catch (error) {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { canPerform } from "@/lib/webos/access";
+import { registerPatient } from "@/lib/webos/reception";
+import { withMutationLock } from "@/lib/webos/mutationLock";
+import { invalidatePatientsCache } from "@/lib/patients";
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,17 +85,31 @@ export async function POST(request: NextRequest) {
         if (values[addressIdx]) patient.address = values[addressIdx];
         if (values[therapistIdx]) patient.therapistName = values[therapistIdx];
 
-        // TODO: Call actual patient creation API
-        // For now, we're just validating the data
-        // const response = await fetch("/api/patients", {
-        //   method: "POST",
-        //   headers: { "Content-Type": "application/json" },
-        //   body: JSON.stringify(patient),
-        // });
+        // Create patient using mutation lock (same as manual registration)
+        const lockKey = `patient-register:${department || "unknown"}`;
+        const patientResult = await withMutationLock(lockKey, () =>
+          registerPatient(context, {
+            department,
+            fullName,
+            phone: patient.phone || undefined,
+            age: patient.age || undefined,
+            gender: patient.gender || undefined,
+            address: patient.address || undefined,
+            therapist: patient.therapistName || undefined,
+            fatherHusbandName: undefined,
+            alternativePhone: undefined,
+            diagnosis: undefined,
+            referral: undefined,
+            remarks: undefined,
+          })
+        );
 
-        // if (!response.ok) throw new Error("Failed to create patient");
+        if (!patientResult || !patientResult.patientId) {
+          throw new Error("Patient creation returned no ID");
+        }
 
         results.success++;
+        invalidatePatientsCache();
       } catch (error) {
         results.failed++;
         const message = error instanceof Error ? error.message : "Unknown error";
