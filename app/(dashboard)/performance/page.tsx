@@ -1,4 +1,8 @@
 import { PageHeading } from "@/components/WorkspaceUI";
+import {
+  getGamificationStaffSummary,
+  type GamificationStaffSummary,
+} from "@/lib/data/supabaseGamification";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getPerformanceSnapshot } from "@/lib/webos/performance";
 import {
@@ -20,16 +24,16 @@ function xpDirections(roleLabel: string): string[] {
   const rows: string[] = [];
 
   if (role.includes("therapist") || role.includes("dentist")) {
-    rows.push("Verified Session completed হলে XP progress বাড়বে।");
+    rows.push("Verified Session completed হলে configured XP ledger-এ যোগ হবে।");
   }
   if (role.includes("receptionist")) {
     rows.push(
-      "Verified Patient Registration activity থেকে XP progress হবে।",
-      "Verified Payment processing activity থেকে XP progress হবে।",
-      "Verified Appointment Booking activity থেকে XP progress হবে।"
+      "Verified Patient Registration activity configured threshold পূরণ করলে XP হবে।",
+      "Verified Payment processing activity configured threshold পূরণ করলে XP হবে।",
+      "Verified Appointment Booking activity configured threshold পূরণ করলে XP হবে।"
     );
   }
-  rows.push("On-time Attendance verified হলে XP progress হবে।");
+  rows.push("On-time Attendance verified হলে configured XP ledger-এ যোগ হবে।");
 
   if (role.includes("manager") || role.includes("owner")) {
     rows.push(
@@ -57,11 +61,31 @@ function metricLabel(key: string): string {
   return labels[key] || key.replaceAll("_", " ");
 }
 
+async function loadLedgerSummary(input: {
+  staffId: string;
+  weekStart: string;
+  weekEnd: string;
+  today: string;
+}): Promise<GamificationStaffSummary | null> {
+  try {
+    return await getGamificationStaffSummary(input);
+  } catch (error) {
+    console.error("Gamification ledger summary unavailable", error);
+    return null;
+  }
+}
+
 export default async function PerformancePage() {
   const context = await requireCurrentAccessContext();
-  const [snapshot, rewardPolicy] = await Promise.all([
-    getPerformanceSnapshot(context),
+  const snapshot = await getPerformanceSnapshot(context);
+  const [rewardPolicy, ledger] = await Promise.all([
     getPerformanceRewardPolicy(),
+    loadLedgerSummary({
+      staffId: context.staffId,
+      weekStart: snapshot.weekStart,
+      weekEnd: snapshot.weekEnd,
+      today: snapshot.today,
+    }),
   ]);
   const current = snapshot.current;
   const winnerReward = weeklyWinnerReward(
@@ -69,9 +93,13 @@ export default async function PerformancePage() {
     rewardPolicy.rank,
     rewardPolicy.winnerChoices
   );
-  const currentRewardCredits = weeklyRewardCredits(current, rewardPolicy.rank);
+  const rankRewardPreview = weeklyRewardCredits(current, rewardPolicy.rank);
   const displayedScore = current.normalizedScore ?? current.provisionalScore;
   const scoreIsOfficial = current.normalizedScore !== null;
+  const rewardBalanceValid = Boolean(ledger?.rewardCredits.valid);
+  const availableRc = rewardBalanceValid
+    ? ledger?.rewardCredits.availableBalance ?? null
+    : null;
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -110,18 +138,35 @@ export default async function PerformancePage() {
 
         <div className="mt-5 grid grid-cols-3 gap-2 text-center">
           <div className="rounded-xl bg-white/[0.07] p-3 ring-1 ring-white/10">
-            <p className="text-lg font-bold tabular-nums">{current.xpEarnedThisWeek}</p>
-            <p className="mt-0.5 text-[9px] text-slate-400">XP this week</p>
+            <p className="text-lg font-bold tabular-nums">{ledger ? ledger.lifetimeXp : "—"}</p>
+            <p className="mt-0.5 text-[9px] text-slate-400">Lifetime XP</p>
           </div>
           <div className="rounded-xl bg-white/[0.07] p-3 ring-1 ring-white/10">
-            <p className="text-lg font-bold tabular-nums">{current.xpEarnedToday}</p>
-            <p className="mt-0.5 text-[9px] text-slate-400">XP today</p>
+            <p className="text-lg font-bold tabular-nums">{ledger ? ledger.weekXp : "—"}</p>
+            <p className="mt-0.5 text-[9px] text-slate-400">
+              Week XP{ledger ? ` · +${ledger.todayXp} today` : ""}
+            </p>
           </div>
           <div className="rounded-xl bg-white/[0.07] p-3 ring-1 ring-white/10">
-            <p className="text-lg font-bold tabular-nums">{currentRewardCredits}</p>
-            <p className="mt-0.5 text-[9px] text-slate-400">RC rank preview</p>
+            <p className="text-lg font-bold tabular-nums">{availableRc ?? "—"}</p>
+            <p className="mt-0.5 text-[9px] text-slate-400">
+              Available RC
+              {ledger && rewardBalanceValid && ledger.rewardCredits.reservedBalance > 0
+                ? ` · ${ledger.rewardCredits.reservedBalance} reserved`
+                : ""}
+            </p>
           </div>
         </div>
+        {!ledger && (
+          <p className="mt-3 text-[10px] text-slate-400">
+            Ledger unavailable — XP/RC-কে 0 ধরে দেখানো হচ্ছে না।
+          </p>
+        )}
+        {ledger && !rewardBalanceValid && (
+          <p className="mt-3 text-[10px] text-amber-200">
+            Reward Credit ledger validation failed — spendable balance hidden রাখা হয়েছে।
+          </p>
+        )}
       </section>
 
       {current.scoreCoverage !== "complete" && (
@@ -147,9 +192,9 @@ export default async function PerformancePage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-950">কী করলে XP বাড়বে</h2>
-            <p className="mt-0.5 text-[10px] text-slate-400">শুধু verified clinic activity ধরা হবে।</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">শুধু immutable verified event + active Owner config থেকে XP হবে।</p>
           </div>
-          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">Verified only</span>
+          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">Ledger-backed</span>
         </div>
         <div className="mt-3 space-y-2">
           {xpDirections(current.roleLabel).map((direction) => (
@@ -164,9 +209,9 @@ export default async function PerformancePage() {
       <section className="mb-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
         <h2 className="text-sm font-bold text-violet-950">XP, Score আর Reward Credit আলাদা</h2>
         <div className="mt-2 space-y-1 text-xs leading-5 text-violet-800">
-          <p>• XP = verified কাজের career progress; spend হবে না।</p>
+          <p>• XP = immutable ledger-এর lifetime career progress; spend হবে না।</p>
           <p>• Weekly Score = role-normalized 0–100; official Leaderboard এই score দিয়ে হবে।</p>
-          <p>• Reward Credit = আলাদা spendable balance; Reward claim করলে XP বা score কমবে না।</p>
+          <p>• Reward Credit = আলাদা spendable ledger; Reward claim করলে XP বা score কমবে না।</p>
         </div>
       </section>
 
@@ -222,7 +267,7 @@ export default async function PerformancePage() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-slate-950">{entry.fullName}</p>
                 <p className="mt-0.5 truncate text-[10px] text-slate-500">
-                  {entry.roleLabel} · {entry.departmentLabel} · {entry.xpEarnedThisWeek} XP
+                  {entry.roleLabel} · {entry.departmentLabel}
                 </p>
               </div>
               <div className="text-right">
@@ -244,12 +289,35 @@ export default async function PerformancePage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-950">Reward Credits</h2>
-            <p className="mt-0.5 text-[10px] text-slate-400">XP/Weekly Score spend হয় না; Reward-এর জন্য আলাদা RC ledger থাকবে।</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">Spendable balance immutable RC ledger থেকে আসে; weekly award preview আলাদা।</p>
           </div>
           <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">
-            {currentRewardCredits} RC rank preview
+            {availableRc === null ? "RC —" : `${availableRc} RC available`}
           </span>
         </div>
+
+        {ledger && rewardBalanceValid && (
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <p className="text-sm font-bold tabular-nums text-slate-900">{ledger.rewardCredits.ledgerBalance}</p>
+              <p className="mt-0.5 text-[9px] text-slate-500">Ledger RC</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <p className="text-sm font-bold tabular-nums text-slate-900">{ledger.rewardCredits.reservedBalance}</p>
+              <p className="mt-0.5 text-[9px] text-slate-500">Reserved</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <p className="text-sm font-bold tabular-nums text-slate-900">{ledger.rewardCredits.availableBalance}</p>
+              <p className="mt-0.5 text-[9px] text-slate-500">Available</p>
+            </div>
+          </div>
+        )}
+
+        {rankRewardPreview > 0 && (
+          <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-800">
+            Current official rank হলে weekly award preview: +{rankRewardPreview} RC. এটা available balance নয়; award writer final করলে ledger-এ earn হবে।
+          </p>
+        )}
 
         {rewardPolicy.catalog.length > 0 ? (
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -277,7 +345,7 @@ export default async function PerformancePage() {
         )}
 
         <p className="mt-3 text-[10px] leading-4 text-slate-400">
-          Claim writer এখনো disabled; RC reserve/approve/claim workflow চালু না হওয়া পর্যন্ত এখানে কোনো credit deduct হবে না।
+          Claim writer এখনো disabled; RC reserve/approve/claim workflow চালু না হওয়া পর্যন্ত নতুন redemption request নেওয়া হবে না।
         </p>
       </section>
 
@@ -288,7 +356,7 @@ export default async function PerformancePage() {
 
       <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
         <h2 className="text-sm font-bold text-slate-950">Verified activity milestones</h2>
-        <p className="mt-0.5 text-[10px] text-slate-400">এগুলো recognition progress; hard-coded cash payout নয়।</p>
+        <p className="mt-0.5 text-[10px] text-slate-400">এগুলো canonical activity recognition; Lifetime XP-এর source হলো immutable XP ledger।</p>
         <div className="mt-3 space-y-2">
           {current.milestones.map((milestone) => {
             const percent = Math.min(100, Math.round((milestone.progress / milestone.target) * 100));
@@ -319,7 +387,7 @@ export default async function PerformancePage() {
         <h2 className="text-sm font-bold text-slate-950">এখন কীভাবে কাজ করবে</h2>
         <div className="mt-2 space-y-1.5">
           <p>• নিজের নিয়মিত clinic কাজ app-এর ভেতর complete করুন।</p>
-          <p>• Session, Payment, Registration, Booking ও Attendance-এর verified activity আলাদা manual XP লিখতে হবে না।</p>
+          <p>• Session, Payment, Registration, Booking ও Attendance verified event হলে server-side rule XP নির্ধারণ করবে।</p>
           <p>• Required role metrics complete না হওয়া পর্যন্ত provisional score দেখা যাবে, official rank নয়।</p>
           <p>• Reward Claim চালু হলে Family Time, Half-day, Priority Off-day, Voucher বা Family Treat request এখান থেকেই হবে।</p>
         </div>
