@@ -6,14 +6,41 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+type ScoreResult = {
+  officialScore: number | null;
+  provisionalScore: number | null;
+  coveredWeight: number;
+  missingMetrics: string[];
+  complete: boolean;
+  components: Record<string, {
+    score: number | null;
+    numerator: number | null;
+    denominator: number | null;
+  }>;
+};
+
+type EarningResult = {
+  rewardCredits: number;
+  matchedMinScore: number | null;
+  eligible: boolean;
+};
+
 async function engine() {
   const href = new URL(
     "../lib/domain/gamification/weeklyFinalizer.ts",
     import.meta.url
   ).href;
   return import(href) as Promise<{
-    weeklyScoreForVerifiedCounts: (...args: any[]) => any;
-    weeklyRewardCreditsForScore: (...args: any[]) => any;
+    weeklyScoreForVerifiedCounts: (
+      role: string,
+      policy: object,
+      counts: object
+    ) => ScoreResult;
+    weeklyRewardCreditsForScore: (
+      role: string,
+      officialScore: number | null,
+      policy: object
+    ) => EarningResult;
   }>;
 }
 
