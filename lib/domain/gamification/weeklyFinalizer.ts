@@ -17,6 +17,14 @@ export interface WeeklyVerifiedCounts {
   bookingsCreated: number;
   cashReconciliationsExact: number;
   cashReconciliationsTotal: number;
+  /** Reserved for a future genuine verified source; production adapter leaves null today. */
+  qualityPercent?: number | null;
+  /** Reserved for a future genuine verified source; production adapter leaves null today. */
+  reliabilityPercent?: number | null;
+  /** Reserved for a future genuine verified source; production adapter leaves null today. */
+  appointmentAccuracyPercent?: number | null;
+  /** Reserved for a future genuine verified source; production adapter leaves null today. */
+  errorControlPercent?: number | null;
 }
 
 export interface WeeklyMetricComponent {
@@ -64,6 +72,12 @@ function ratioPercent(numerator: number, denominator: number): number | null {
   if (!Number.isFinite(numerator) || numerator < 0) return null;
   if (!Number.isFinite(denominator) || denominator <= 0) return null;
   return round2(Math.min(100, (numerator / denominator) * 100));
+}
+
+function verifiedPercent(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 100) return null;
+  return round2(value);
 }
 
 function target(policy: WeeklyRoleScorePolicy, key: string): number | null {
@@ -159,6 +173,8 @@ export function weeklyScoreForVerifiedCounts(
       Math.min(counts.documentedSessions, counts.completedSessions),
       counts.completedSessions
     );
+    const quality = verifiedPercent(counts.qualityPercent);
+    const reliability = verifiedPercent(counts.reliabilityPercent);
 
     components = {
       productivity: metric(
@@ -179,8 +195,18 @@ export function weeklyScoreForVerifiedCounts(
         counts.completedSessions,
         "performance_events:treatment_documented"
       ),
-      quality: metric(null, null, null, "verified_source_missing"),
-      reliability: metric(null, null, null, "verified_source_missing"),
+      quality: metric(
+        quality,
+        quality,
+        quality === null ? null : 100,
+        quality === null ? "verified_source_missing" : "future_verified_quality_source"
+      ),
+      reliability: metric(
+        reliability,
+        reliability,
+        reliability === null ? null : 100,
+        reliability === null ? "verified_source_missing" : "future_verified_reliability_source"
+      ),
     };
   } else {
     const workflowTarget = target(policy, "workflow_transactions_per_week");
@@ -195,6 +221,8 @@ export function weeklyScoreForVerifiedCounts(
       counts.cashReconciliationsExact,
       counts.cashReconciliationsTotal
     );
+    const appointmentAccuracy = verifiedPercent(counts.appointmentAccuracyPercent);
+    const errorControl = verifiedPercent(counts.errorControlPercent);
 
     components = {
       workflow: metric(
@@ -209,14 +237,24 @@ export function weeklyScoreForVerifiedCounts(
         counts.cashReconciliationsTotal,
         "performance_events:cash_reconciliation_exact|cash_reconciliation_mismatch"
       ),
-      appointment_accuracy: metric(null, null, null, "verified_source_missing"),
+      appointment_accuracy: metric(
+        appointmentAccuracy,
+        appointmentAccuracy,
+        appointmentAccuracy === null ? null : 100,
+        appointmentAccuracy === null ? "verified_source_missing" : "future_verified_appointment_accuracy_source"
+      ),
       attendance: metric(
         attendance,
         counts.onTimeAttendances,
         counts.totalAttendances,
         "performance_events:attendance_on_time|attendance_check_in"
       ),
-      error_control: metric(null, null, null, "verified_source_missing"),
+      error_control: metric(
+        errorControl,
+        errorControl,
+        errorControl === null ? null : 100,
+        errorControl === null ? "verified_source_missing" : "future_verified_error_control_source"
+      ),
     };
   }
 
