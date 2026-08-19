@@ -15,6 +15,16 @@ export interface RewardRankConfig {
   participation: number;
 }
 
+export interface RewardCatalogConfigItem {
+  key: string;
+  type: string;
+  creditCost: number;
+  cooldownDays: number | null;
+  maxPerMonth: number | null;
+  maxPerQuarter: number | null;
+  coverageRequired: boolean;
+}
+
 export interface BonusTierConfig {
   key: string;
   min: number;
@@ -30,6 +40,11 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 function finiteNonNegative(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function optionalNonNegative(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  return finiteNonNegative(value);
 }
 
 function parseNumericMap(value: unknown): Record<string, number> | null {
@@ -95,6 +110,41 @@ export function parseRewardRankConfig(
     return null;
   }
   return { rank1, rank2, rank3, participation };
+}
+
+export function parseRewardCatalog(
+  configs: Record<string, unknown>
+): RewardCatalogConfigItem[] {
+  const raw = objectValue(configs["reward.catalog"]);
+  if (!raw || !Array.isArray(raw.items)) return [];
+
+  return raw.items.flatMap((item) => {
+    const row = objectValue(item);
+    if (!row) return [];
+    const key = String(row.key || "").trim();
+    const type = String(row.type || "").trim();
+    const creditCost = finiteNonNegative(row.credit_cost);
+    if (!key || !type || creditCost === null || creditCost <= 0) return [];
+    return [{
+      key,
+      type,
+      creditCost,
+      cooldownDays: optionalNonNegative(row.cooldown_days),
+      maxPerMonth: optionalNonNegative(row.max_per_month),
+      maxPerQuarter: optionalNonNegative(row.max_per_quarter),
+      coverageRequired: row.coverage_required === true,
+    }];
+  });
+}
+
+export function parseWeeklyWinnerChoices(
+  configs: Record<string, unknown>
+): string[] {
+  const raw = objectValue(configs["reward.weekly_winner_choices"]);
+  if (!raw || !Array.isArray(raw.choices)) return [];
+  return raw.choices
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
 }
 
 export function parseBonusTiers(
