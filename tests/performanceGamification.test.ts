@@ -87,7 +87,7 @@ test("Reward Credit values come from Owner config and salary remains a separate 
   assert.match(rewards, /rewardCreditsCanBuySalaryBonus: false/);
   assert.match(rewards, /automaticSalaryChange: false/);
   assert.match(rewards, /monthlyBonusOwnerApprovalRequired: true/);
-  assert.match(rewards, /enabledForClaim: false as const/);
+  assert.match(rewards, /enabledForClaim: true as const/);
   assert.match(config, /reward\.weekly_rank/);
   assert.match(config, /reward\.catalog/);
 });
@@ -107,6 +107,9 @@ test("performance screen separates normalized score, XP and Reward Credit", () =
   assert.match(page, /rewardPolicy\.catalog/);
   assert.match(page, /reward\.creditCost/);
   assert.match(page, /fallback cost/);
+  assert.match(page, /href="\/performance\/claims"/);
+  assert.match(page, /Claim Writer v1 active/);
+  assert.doesNotMatch(page, /Claim writer এখনো disabled/);
   assert.doesNotMatch(page, /Salary Bonus Review বা Family Treat/);
   assert.match(page, /PERFORMANCE_SALARY_POLICY\.label/);
   assert.match(page, /PERFORMANCE_SALARY_POLICY\.note/);
