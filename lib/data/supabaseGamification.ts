@@ -38,6 +38,36 @@ export interface VerifiedGamificationEventResult {
   duplicate: boolean;
 }
 
+export interface GamificationEventCount {
+  eventType: string;
+  roleContext: string;
+  count: number;
+}
+
+export interface GamificationWeeklyLedgerSnapshot {
+  weekStart: string;
+  weekEnd: string;
+  normalizedScore: number;
+  rank: number | null;
+  status: string;
+  calculationVersion: string;
+}
+
+export interface GamificationStaffSummary {
+  staffId: string;
+  lifetimeXp: number;
+  weekXp: number;
+  todayXp: number;
+  rewardCredits: {
+    ledgerBalance: number;
+    reservedBalance: number;
+    availableBalance: number;
+    valid: boolean;
+  };
+  eventCounts: GamificationEventCount[];
+  weeklyPerformance: GamificationWeeklyLedgerSnapshot | null;
+}
+
 const DEFAULT_GAMIFICATION_EDGE_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-gamification-api";
 
@@ -129,6 +159,72 @@ export async function getGamificationConfig(
         : "All",
     configs,
     versions,
+  };
+}
+
+export async function getGamificationStaffSummary(input: {
+  staffId: string;
+  weekStart: string;
+  weekEnd: string;
+  today: string;
+}): Promise<GamificationStaffSummary> {
+  const result = await callGamification<Record<string, unknown>>(
+    "staff_summary",
+    input,
+    3_000
+  );
+  const staffId = String(result.staffId || "").trim();
+  if (!staffId) throw new Error("GAMIFICATION_STAFF_SUMMARY_INVALID");
+
+  const rewardRaw =
+    result.rewardCredits &&
+    typeof result.rewardCredits === "object" &&
+    !Array.isArray(result.rewardCredits)
+      ? (result.rewardCredits as Record<string, unknown>)
+      : {};
+  const eventCounts = Array.isArray(result.eventCounts)
+    ? result.eventCounts.flatMap((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+        const row = value as Record<string, unknown>;
+        return [{
+          eventType: String(row.eventType || "").trim(),
+          roleContext: String(row.roleContext || "").trim(),
+          count: Number(row.count || 0),
+        }];
+      })
+    : [];
+  const weeklyRaw =
+    result.weeklyPerformance &&
+    typeof result.weeklyPerformance === "object" &&
+    !Array.isArray(result.weeklyPerformance)
+      ? (result.weeklyPerformance as Record<string, unknown>)
+      : null;
+
+  return {
+    staffId,
+    lifetimeXp: Number(result.lifetimeXp || 0),
+    weekXp: Number(result.weekXp || 0),
+    todayXp: Number(result.todayXp || 0),
+    rewardCredits: {
+      ledgerBalance: Number(rewardRaw.ledgerBalance || 0),
+      reservedBalance: Number(rewardRaw.reservedBalance || 0),
+      availableBalance: Number(rewardRaw.availableBalance || 0),
+      valid: rewardRaw.valid === true,
+    },
+    eventCounts,
+    weeklyPerformance: weeklyRaw
+      ? {
+          weekStart: String(weeklyRaw.weekStart || "").trim(),
+          weekEnd: String(weeklyRaw.weekEnd || "").trim(),
+          normalizedScore: Number(weeklyRaw.normalizedScore || 0),
+          rank:
+            weeklyRaw.rank === null || weeklyRaw.rank === undefined
+              ? null
+              : Number(weeklyRaw.rank),
+          status: String(weeklyRaw.status || "").trim(),
+          calculationVersion: String(weeklyRaw.calculationVersion || "").trim(),
+        }
+      : null,
   };
 }
 
