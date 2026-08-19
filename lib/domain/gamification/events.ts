@@ -32,6 +32,25 @@ export interface AppointmentCompletionGamificationInput {
   previousStatus: string;
 }
 
+export interface TreatmentDocumentationGamificationInput {
+  treatmentId: string;
+  patientId: string;
+  department: ClinicDepartment;
+  clinicianReference: string;
+  documentedAt: string;
+  actorContext: AccessContext;
+  sourceType: "clinical_session" | "chamber_completion";
+}
+
+export interface CashReconciliationGamificationInput {
+  movementId: string;
+  department: ClinicDepartment;
+  staffReference: string;
+  reconciledAt: string;
+  difference: number;
+  actorContext: AccessContext;
+}
+
 export interface ActorWorkGamificationInput {
   context: AccessContext;
   department: ClinicDepartment;
@@ -57,6 +76,7 @@ export interface GamificationEventOutcome {
     | "duplicate"
     | "not_configured"
     | "clinician_unresolved"
+    | "staff_unresolved"
     | "actor_role_unresolved"
     | "write_failed";
 }
@@ -69,17 +89,46 @@ function expectedRole(department: ClinicDepartment): "Therapist" | "Dentist" {
   return department === "Dental" ? "Dentist" : "Therapist";
 }
 
-function clinicianMatchesDepartment(
+function roleMatchesDepartment(
   identity: WebStaffIdentity,
-  department: ClinicDepartment
+  department: ClinicDepartment,
+  role: "Therapist" | "Dentist" | "Receptionist"
 ): boolean {
   return (
     identity.status === "Active" &&
-    identity.roles.includes(expectedRole(department)) &&
+    identity.roles.includes(role) &&
     (identity.departmentAccess.includes("All") ||
       identity.departmentAccess.includes(department) ||
       identity.primaryDepartment === department)
   );
+}
+
+function clinicianMatchesDepartment(
+  identity: WebStaffIdentity,
+  department: ClinicDepartment
+): boolean {
+  return roleMatchesDepartment(identity, department, expectedRole(department));
+}
+
+async function resolveRoleReference(
+  referenceInput: string,
+  department: ClinicDepartment,
+  role: "Therapist" | "Dentist" | "Receptionist"
+): Promise<WebStaffIdentity | null> {
+  const reference = normalize(referenceInput);
+  if (!reference) return null;
+  const directory = (await getWebStaffDirectory()).filter((identity) =>
+    roleMatchesDepartment(identity, department, role)
+  );
+  const byId = directory.filter(
+    (identity) => normalize(identity.staffId) === reference
+  );
+  if (byId.length === 1) return byId[0];
+  if (byId.length > 1) return null;
+  const byName = directory.filter(
+    (identity) => normalize(identity.fullName) === reference
+  );
+  return byName.length === 1 ? byName[0] : null;
 }
 
 export function actorGamificationRole(
@@ -222,6 +271,172 @@ export async function recordActorWorkGamification(
       duplicate: false,
       eventId: null,
       staffId: input.context.staffId,
+      reason: "write_failed",
+    };
+  }
+}
+
+/**
+ * Project a canonical human-verified treatment note to the immutable scoring
+ * event stream. The clinical note stays authoritative; projection is fail-soft.
+ */
+export async function recordTreatmentDocumentationGamification(
+  input: TreatmentDocumentationGamificationInput
+): Promise<GamificationEventOutcome> {
+  if (!gamificationSupabaseConfigured()) {
+    return {
+      recorded: false,
+      duplicate: false,
+      eventId: null,
+      staffId: null,
+      reason: "not_configured",
+    };
+  }
+
+  let clinician: WebStaffIdentity | null = null;
+  try {
+    clinician = await resolveAppointmentClinician(
+      input.clinicianReference,
+      input.department
+    );
+    if (!clinician) {
+      return {
+        recorded: false,
+        duplicate: false,
+        eventId: null,
+        staffId: null,
+        reason: "clinician_unresolved",
+      };
+    }
+
+    const result = await recordVerifiedGamificationEvent({
+      requestId: `gam-${randomUUID()}`,
+      staffId: clinician.staffId,
+      department: input.department,
+      roleContext: expectedRole(input.department),
+      eventType: "treatment_documented",
+      eventKey: `treatment:${input.department}:${input.treatmentId}:documented:v2`,
+      sourceType: input.sourceType,
+      sourceId: input.treatmentId,
+      eventAt: input.documentedAt,
+      metricValue: 1,
+      reason: "Verified treatment documentation recorded",
+      verifiedBy: `${input.sourceType}:${input.actorContext.staffId}`,
+      verificationMethod: "canonical_human_verified_treatment_note",
+      actorId: input.actorContext.staffId,
+      payload: {
+        treatmentId: input.treatmentId,
+        patientId: input.patientId,
+        assignedClinician: clinician.staffId,
+        documentationVerified: true,
+      },
+    });
+    return {
+      recorded: true,
+      duplicate: result.duplicate,
+      eventId: result.eventId,
+      staffId: clinician.staffId,
+      reason: result.duplicate ? "duplicate" : "recorded",
+    };
+  } catch (error) {
+    console.error("Treatment documentation Gamification projection failed", {
+      treatmentId: input.treatmentId,
+      department: input.department,
+      clinician: clinician?.staffId || null,
+      error,
+    });
+    return {
+      recorded: false,
+      duplicate: false,
+      eventId: null,
+      staffId: clinician?.staffId || null,
+      reason: "write_failed",
+    };
+  }
+}
+
+/**
+ * Project a human-confirmed cash handover result to Receptionist scoring. The
+ * staff being measured is the cash originator (`Moved_By`), never the approver.
+ * Monetary amounts are deliberately not copied into the Gamification payload.
+ */
+export async function recordCashReconciliationGamification(
+  input: CashReconciliationGamificationInput
+): Promise<GamificationEventOutcome> {
+  if (!gamificationSupabaseConfigured()) {
+    return {
+      recorded: false,
+      duplicate: false,
+      eventId: null,
+      staffId: null,
+      reason: "not_configured",
+    };
+  }
+
+  let receptionist: WebStaffIdentity | null = null;
+  try {
+    receptionist = await resolveRoleReference(
+      input.staffReference,
+      input.department,
+      "Receptionist"
+    );
+    if (!receptionist) {
+      return {
+        recorded: false,
+        duplicate: false,
+        eventId: null,
+        staffId: null,
+        reason: "staff_unresolved",
+      };
+    }
+
+    const exact = Math.abs(input.difference) <= 0.01;
+    const eventType = exact
+      ? "cash_reconciliation_exact"
+      : "cash_reconciliation_mismatch";
+    const result = await recordVerifiedGamificationEvent({
+      requestId: `gam-${randomUUID()}`,
+      staffId: receptionist.staffId,
+      department: input.department,
+      roleContext: "Receptionist",
+      eventType,
+      eventKey: `cash-movement:${input.department}:${input.movementId}:reconciled:v2`,
+      sourceType: "cash_movement_acceptance",
+      sourceId: input.movementId,
+      eventAt: input.reconciledAt,
+      metricValue: 1,
+      reason: exact
+        ? "Verified cash handover reconciled exactly"
+        : "Verified cash handover mismatch",
+      verifiedBy: `cash_movement_acceptance:${input.actorContext.staffId}`,
+      verificationMethod: "canonical_cash_handover_confirmation",
+      actorId: input.actorContext.staffId,
+      payload: {
+        movementId: input.movementId,
+        staffId: receptionist.staffId,
+        differenceWasZero: exact,
+        confirmedBy: input.actorContext.staffId,
+      },
+    });
+    return {
+      recorded: true,
+      duplicate: result.duplicate,
+      eventId: result.eventId,
+      staffId: receptionist.staffId,
+      reason: result.duplicate ? "duplicate" : "recorded",
+    };
+  } catch (error) {
+    console.error("Cash reconciliation Gamification projection failed", {
+      movementId: input.movementId,
+      department: input.department,
+      receptionist: receptionist?.staffId || null,
+      error,
+    });
+    return {
+      recorded: false,
+      duplicate: false,
+      eventId: null,
+      staffId: receptionist?.staffId || null,
       reason: "write_failed",
     };
   }
