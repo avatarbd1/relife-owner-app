@@ -6,6 +6,7 @@ import {
   PERFORMANCE_SALARY_POLICY,
   weeklyRewardCredits,
   weeklyWinnerReward,
+  type PerformanceRewardApprovalMode,
 } from "@/lib/webos/performanceRewards";
 
 function medal(rank: number): string {
@@ -37,6 +38,12 @@ function pointDirections(roleLabel: string): string[] {
     );
   }
   return rows;
+}
+
+function approvalLabel(mode: PerformanceRewardApprovalMode): string {
+  if (mode === "coverage_auto") return "Coverage check required";
+  if (mode === "manager_coverage") return "Manager coverage approval";
+  return "Owner approval required";
 }
 
 export default async function PerformancePage() {
@@ -171,8 +178,8 @@ export default async function PerformancePage() {
       <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-slate-950">Points থেকে Reward</h2>
-            <p className="mt-0.5 text-[10px] text-slate-400">Leaderboard Points আলাদা থাকবে; Reward নেওয়ার জন্য আলাদা Reward Credit ব্যবহার হবে।</p>
+            <h2 className="text-sm font-bold text-slate-950">Reward Credits</h2>
+            <p className="mt-0.5 text-[10px] text-slate-400">XP/Leaderboard score spend হয় না; Reward নেওয়ার জন্য আলাদা Reward Credit ব্যবহার হবে।</p>
           </div>
           <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">
             {currentRewardCredits} Reward Credit
@@ -187,7 +194,7 @@ export default async function PerformancePage() {
                   <p className="text-xs font-bold text-slate-900">{reward.title}</p>
                   <p className="mt-1 text-[10px] leading-4 text-slate-500">{reward.description}</p>
                   <p className="mt-2 text-[9px] font-semibold text-amber-700">
-                    {reward.pointCost} Reward Credit লাগবে · Owner approval required
+                    {reward.creditCost} Reward Credit লাগবে · {approvalLabel(reward.approvalMode)}
                   </p>
                 </div>
               </div>
@@ -235,7 +242,7 @@ export default async function PerformancePage() {
           <p>• নিজের নিয়মিত কাজ app-এর ভেতরেই complete করুন।</p>
           <p>• Session, Payment, Registration, Booking ও Attendance আলাদা করে manual Point লিখতে হবে না।</p>
           <p>• Weekly Leaderboard-এ নিজের Position দেখুন।</p>
-          <p>• Reward Claim চালু হলে Half-day, Family time, Off-day, Salary Bonus Review বা Family Treat request এখান থেকেই করবেন।</p>
+          <p>• Reward Claim চালু হলে Family Time, Half-day, Priority Off-day, Voucher বা Family Treat request এখান থেকেই করবেন।</p>
         </div>
       </section>
 
