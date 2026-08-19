@@ -1,4 +1,4 @@
-create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_cron;
 create extension if not exists pg_net with schema extensions;
 
 create table if not exists relife.weekly_gamification_finalizations (
