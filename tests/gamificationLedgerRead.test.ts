@@ -69,5 +69,6 @@ test("weekly rank Reward Credit remains a preview and is not mislabeled as spend
   assert.match(page, /weekly award preview/);
   assert.match(page, /এটা available balance নয়/);
   assert.match(page, /ledger\.rewardCredits\.availableBalance/);
+  assert.match(page, /Spendable balance immutable RC ledger থেকে আসে/);
   assert.doesNotMatch(page, /RC rank preview/);
 });
