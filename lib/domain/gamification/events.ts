@@ -88,8 +88,8 @@ export async function resolveAppointmentClinician(
 
 /**
  * Post-commit gamification projection for a verified appointment completion.
- * The deterministic eventKey makes retries idempotent. Failure never awards
- * guessed XP and never rewrites the canonical appointment mutation.
+ * The deterministic eventKey makes retries idempotent. Any projection failure
+ * is contained here so a successful clinic mutation is never turned into a 500.
  */
 export async function recordAppointmentCompletionGamification(
   input: AppointmentCompletionGamificationInput
@@ -104,21 +104,22 @@ export async function recordAppointmentCompletionGamification(
     };
   }
 
-  const clinician = await resolveAppointmentClinician(
-    input.therapistReference,
-    input.department
-  );
-  if (!clinician) {
-    return {
-      recorded: false,
-      duplicate: false,
-      eventId: null,
-      staffId: null,
-      reason: "clinician_unresolved",
-    };
-  }
-
+  let clinician: WebStaffIdentity | null = null;
   try {
+    clinician = await resolveAppointmentClinician(
+      input.therapistReference,
+      input.department
+    );
+    if (!clinician) {
+      return {
+        recorded: false,
+        duplicate: false,
+        eventId: null,
+        staffId: null,
+        reason: "clinician_unresolved",
+      };
+    }
+
     const result = await recordVerifiedGamificationEvent({
       requestId: `gam-${randomUUID()}`,
       staffId: clinician.staffId,
@@ -157,14 +158,14 @@ export async function recordAppointmentCompletionGamification(
     console.error("Appointment completion gamification projection failed", {
       appointmentId: input.appointmentId,
       department: input.department,
-      clinician: clinician.staffId,
+      clinician: clinician?.staffId || null,
       error,
     });
     return {
       recorded: false,
       duplicate: false,
       eventId: null,
-      staffId: clinician.staffId,
+      staffId: clinician?.staffId || null,
       reason: "write_failed",
     };
   }
