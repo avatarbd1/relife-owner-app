@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUnifiedPhysioBooking } from "@/lib/domain/appointments/create";
+import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import type { BookingValidationResult } from "@/lib/webos/appointmentScheduling";
 import { assertCanPerform } from "@/lib/webos/access";
@@ -86,6 +87,26 @@ export async function POST(request: NextRequest) {
         remarks: body.remarks,
       });
     });
+
+    await recordActorWorkGamification({
+      context,
+      department: patient.department,
+      purpose: "reception",
+      eventType: "appointment_booked",
+      eventKey: `appointment:${patient.department}:${result.appointmentId}:booked:v2`,
+      sourceType: "appointment_create",
+      sourceId: result.appointmentId,
+      eventAt: new Date().toISOString(),
+      reason: "Verified appointment booking",
+      verificationMethod: "canonical_appointment_create",
+      payload: {
+        appointmentId: result.appointmentId,
+        patientId: patient.patientId,
+        appointmentDate: String(body.date || "").trim(),
+        therapistReference: String(body.therapist || "").trim(),
+      },
+    });
+
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
