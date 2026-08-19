@@ -14,6 +14,12 @@ const DEFAULT_CLINIC_SLUG = "amtali-main";
 const DEPARTMENTS = new Set(["Physio", "Dental"]);
 
 type Tenant = { organizationId: string; clinicId: string };
+type XpRule = {
+  mode: "per_event" | "every_n";
+  xp: number;
+  n: number;
+  configVersion: number;
+};
 
 function response(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -32,6 +38,11 @@ function norm(value: unknown): string {
 function jsonObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function positiveNumber(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 function validRequestId(value: string): boolean {
@@ -112,6 +123,62 @@ async function activeConfig(
   return { department, configs, versions };
 }
 
+async function activeXpRule(input: {
+  tenant: Tenant;
+  department: string;
+  eventType: string;
+  roleContext: string;
+}): Promise<XpRule | null> {
+  const rows = await sql`
+    select version, config_value
+    from relife.gamification_config
+    where clinic_id = ${input.tenant.clinicId}::uuid
+      and status = 'active'
+      and config_key = 'xp.rules'
+      and department in ('All', ${input.department})
+      and effective_from <= now()
+      and (effective_until is null or effective_until > now())
+    order by
+      case when department = ${input.department} then 0 else 1 end,
+      version desc
+    limit 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  const config = jsonObject(row.config_value);
+  const rules = Array.isArray(config.rules) ? config.rules : [];
+
+  for (const raw of rules) {
+    const rule = jsonObject(raw);
+    if (norm(rule.event_type) !== input.eventType) continue;
+    const roles = Array.isArray(rule.roles) ? rule.roles.map(norm) : [];
+    if (!roles.includes(input.roleContext)) continue;
+
+    const xp = positiveNumber(rule.xp);
+    const mode = norm(rule.mode);
+    if (!xp || (mode !== "per_event" && mode !== "every_n")) return null;
+    if (mode === "per_event") {
+      return {
+        mode,
+        xp,
+        n: 1,
+        configVersion: Number(row.version || 0),
+      };
+    }
+
+    const n = Number(rule.n);
+    if (!Number.isInteger(n) || n <= 0) return null;
+    return {
+      mode,
+      xp,
+      n,
+      configVersion: Number(row.version || 0),
+    };
+  }
+
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return response({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
@@ -164,7 +231,6 @@ Deno.serve(async (req) => {
     const reason = norm(body.reason || eventType);
     const actorId = norm(body.actorId || verifiedBy || "system");
     const metricValue = Number(body.metricValue ?? 1);
-    const xpAwarded = Number(body.xpAwarded ?? 0);
     const qualityRaw = body.qualityScore;
     const qualityScore =
       qualityRaw === null || qualityRaw === undefined || qualityRaw === ""
@@ -184,9 +250,6 @@ Deno.serve(async (req) => {
     if (!Number.isFinite(metricValue) || metricValue < 0) {
       return response({ ok: false, error: "INVALID_METRIC_VALUE" }, 400);
     }
-    if (!Number.isFinite(xpAwarded) || xpAwarded < 0) {
-      return response({ ok: false, error: "INVALID_XP" }, 400);
-    }
     if (
       qualityScore !== null &&
       (!Number.isFinite(qualityScore) || qualityScore < 0 || qualityScore > 100)
@@ -196,6 +259,13 @@ Deno.serve(async (req) => {
     if (Number.isNaN(Date.parse(eventAt))) {
       return response({ ok: false, error: "INVALID_EVENT_AT" }, 400);
     }
+
+    const xpRule = await activeXpRule({
+      tenant,
+      department,
+      eventType,
+      roleContext,
+    });
 
     const result = await sql.begin(async (tx) => {
       await tx`
@@ -224,6 +294,23 @@ Deno.serve(async (req) => {
           duplicate: true,
         };
       }
+
+      if (xpRule) {
+        await tx`
+          select pg_advisory_xact_lock(
+            hashtext(${`relife-xp-rule:${tenant.clinicId}:${staffId}:${roleContext}:${eventType}`})
+          )
+        `;
+      }
+
+      const storedPayload = {
+        ...payload,
+        gamification: {
+          xpRuleVersion: xpRule?.configVersion ?? null,
+          xpRuleMode: xpRule?.mode ?? null,
+          xpRuleEveryN: xpRule?.mode === "every_n" ? xpRule.n : null,
+        },
+      };
 
       const eventRows = await tx`
         insert into relife.performance_events(
@@ -257,14 +344,32 @@ Deno.serve(async (req) => {
           ${qualityScore},
           ${verifiedBy},
           ${verificationMethod},
-          ${JSON.stringify(payload)}::jsonb
+          ${JSON.stringify(storedPayload)}::jsonb
         )
         returning id::text
       `;
       const eventId = norm(eventRows[0]?.id);
       if (!eventId) throw new Error("PERFORMANCE_EVENT_INSERT_FAILED");
 
-      if (xpAwarded > 0) {
+      let xpAwarded = 0;
+      if (xpRule?.mode === "per_event") {
+        xpAwarded = xpRule.xp;
+      } else if (xpRule?.mode === "every_n") {
+        const countRows = await tx`
+          select count(*)::int as event_count
+          from relife.performance_events
+          where clinic_id = ${tenant.clinicId}::uuid
+            and staff_id = ${staffId}
+            and role_context = ${roleContext}
+            and event_type = ${eventType}
+        `;
+        const eventCount = Number(countRows[0]?.event_count || 0);
+        if (eventCount > 0 && eventCount % xpRule.n === 0) {
+          xpAwarded = xpRule.xp;
+        }
+      }
+
+      if (xpAwarded > 0 && xpRule) {
         await tx`
           insert into relife.xp_ledger(
             organization_id,
@@ -285,7 +390,7 @@ Deno.serve(async (req) => {
             ${eventId}::uuid,
             ${xpAwarded},
             ${reason},
-            'v2'
+            ${`v2:xp.rules:${xpRule.configVersion}`}
           )
         `;
       }
@@ -321,6 +426,7 @@ Deno.serve(async (req) => {
             metricValue,
             qualityScore,
             xpAwarded,
+            xpRuleVersion: xpRule?.configVersion ?? null,
             reason,
           })}::jsonb
         )

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPayment } from "@/lib/domain/finance/production";
+import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
 import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
@@ -31,6 +32,13 @@ function errorResponse(error: unknown): NextResponse {
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
+function departmentFromPatientId(value: unknown): "Physio" | "Dental" | null {
+  const patientId = String(value || "").trim().toUpperCase();
+  if (patientId.startsWith("PT")) return "Physio";
+  if (patientId.startsWith("DT")) return "Dental";
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
@@ -52,6 +60,29 @@ export async function POST(request: NextRequest) {
       requestId: body.requestId,
     });
     invalidatePatientsCache();
+
+    const department = departmentFromPatientId(body.patientId);
+    if (department) {
+      await recordActorWorkGamification({
+        context,
+        department,
+        purpose: "reception",
+        eventType: "payment_processed",
+        eventKey: `payment:${department}:${result.receiptNo}:processed:v2`,
+        sourceType: "finance_payment",
+        sourceId: result.receiptNo,
+        eventAt: new Date().toISOString(),
+        reason: "Verified patient payment processed",
+        verificationMethod: "canonical_finance_payment",
+        payload: {
+          receiptNo: result.receiptNo,
+          patientId: String(body.patientId || "").trim().toUpperCase(),
+          paymentMethod: String(body.paymentMethod || "").trim(),
+          sheetsDuplicate: result.duplicate,
+        },
+      });
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
