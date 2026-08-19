@@ -49,6 +49,24 @@ function validRequestId(value: string): boolean {
   return /^[A-Za-z0-9_-]{8,160}$/.test(value);
 }
 
+function validDateKey(value: unknown): string {
+  const text = norm(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error("INVALID_DATE");
+  const parsed = new Date(`${text}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) {
+    throw new Error("INVALID_DATE");
+  }
+  return text;
+}
+
+function validateWeek(start: string, end: string): void {
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  if (endMs - startMs !== 6 * 24 * 60 * 60 * 1000) {
+    throw new Error("INVALID_WEEK_RANGE");
+  }
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const hash = await crypto.subtle.digest(
     "SHA-256",
@@ -179,6 +197,127 @@ async function activeXpRule(input: {
   return null;
 }
 
+async function staffSummary(
+  tenant: Tenant,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const staffId = norm(body.staffId);
+  if (!staffId) throw new Error("STAFF_REQUIRED");
+  const weekStart = validDateKey(body.weekStart);
+  const weekEnd = validDateKey(body.weekEnd);
+  const today = validDateKey(body.today);
+  validateWeek(weekStart, weekEnd);
+
+  const [xpRows, creditRows, eventRows, weeklyRows] = await Promise.all([
+    sql`
+      select
+        coalesce(sum(x.xp_awarded), 0)::numeric as lifetime_xp,
+        coalesce(sum(x.xp_awarded) filter (
+          where (e.event_at at time zone 'Asia/Dhaka')::date
+            between ${weekStart}::date and ${weekEnd}::date
+        ), 0)::numeric as week_xp,
+        coalesce(sum(x.xp_awarded) filter (
+          where (e.event_at at time zone 'Asia/Dhaka')::date = ${today}::date
+        ), 0)::numeric as today_xp
+      from relife.xp_ledger x
+      join relife.performance_events e
+        on e.id = x.performance_event_id
+       and e.clinic_id = x.clinic_id
+       and e.organization_id = x.organization_id
+      where x.clinic_id = ${tenant.clinicId}::uuid
+        and x.staff_id = ${staffId}
+    `,
+    sql`
+      select
+        coalesce(sum(
+          case
+            when entry_type in ('earned','refunded','adjustment_credit') then credit_amount
+            when entry_type in ('redeemed','expired','adjustment_debit') then -credit_amount
+            else 0
+          end
+        ), 0)::numeric as ledger_balance,
+        coalesce(sum(
+          case
+            when entry_type = 'reserved' then credit_amount
+            when entry_type in ('released','redeemed') then -credit_amount
+            else 0
+          end
+        ), 0)::numeric as reserved_balance
+      from relife.reward_credit_ledger
+      where clinic_id = ${tenant.clinicId}::uuid
+        and staff_id = ${staffId}
+    `,
+    sql`
+      select event_type, role_context, count(*)::int as event_count
+      from relife.performance_events
+      where clinic_id = ${tenant.clinicId}::uuid
+        and staff_id = ${staffId}
+      group by event_type, role_context
+      order by event_type, role_context
+    `,
+    sql`
+      select
+        week_start::text,
+        week_end::text,
+        normalized_score::numeric,
+        ranking_position,
+        status,
+        calculation_version
+      from relife.weekly_performance
+      where clinic_id = ${tenant.clinicId}::uuid
+        and staff_id = ${staffId}
+        and week_start = ${weekStart}::date
+      limit 1
+    `,
+  ]);
+
+  const lifetimeXp = Number(xpRows[0]?.lifetime_xp || 0);
+  const weekXp = Number(xpRows[0]?.week_xp || 0);
+  const todayXp = Number(xpRows[0]?.today_xp || 0);
+  const ledgerBalance = Number(creditRows[0]?.ledger_balance || 0);
+  const reservedBalance = Number(creditRows[0]?.reserved_balance || 0);
+  const availableBalance = ledgerBalance - reservedBalance;
+  const valid =
+    Number.isFinite(ledgerBalance) &&
+    Number.isFinite(reservedBalance) &&
+    ledgerBalance >= 0 &&
+    reservedBalance >= 0 &&
+    availableBalance >= 0;
+
+  const weekly = weeklyRows[0]
+    ? {
+        weekStart: norm(weeklyRows[0].week_start),
+        weekEnd: norm(weeklyRows[0].week_end),
+        normalizedScore: Number(weeklyRows[0].normalized_score),
+        rank:
+          weeklyRows[0].ranking_position === null
+            ? null
+            : Number(weeklyRows[0].ranking_position),
+        status: norm(weeklyRows[0].status),
+        calculationVersion: norm(weeklyRows[0].calculation_version),
+      }
+    : null;
+
+  return {
+    staffId,
+    lifetimeXp,
+    weekXp,
+    todayXp,
+    rewardCredits: {
+      ledgerBalance,
+      reservedBalance,
+      availableBalance,
+      valid,
+    },
+    eventCounts: eventRows.map((row) => ({
+      eventType: norm(row.event_type),
+      roleContext: norm(row.role_context),
+      count: Number(row.event_count || 0),
+    })),
+    weeklyPerformance: weekly,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return response({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
@@ -210,6 +349,11 @@ Deno.serve(async (req) => {
 
     if (action === "config") {
       const result = await activeConfig(tenant, norm(body.department));
+      return response({ ok: true, tenant, ...result });
+    }
+
+    if (action === "staff_summary") {
+      const result = await staffSummary(tenant, body);
       return response({ ok: true, tenant, ...result });
     }
 
