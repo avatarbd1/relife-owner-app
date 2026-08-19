@@ -37,6 +37,9 @@ export type WebAction =
   | "salary.pay"
   | "attendance.self"
   | "attendance.read_team"
+  | "performance.read_self"
+  | "performance.read_leaderboard"
+  | "performance.read_team"
   | "clinical.read"
   | "clinical.write"
   | "clinical.clearance_read"
@@ -94,6 +97,9 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "salary.pay",
     "attendance.self",
     "attendance.read_team",
+    "performance.read_self",
+    "performance.read_leaderboard",
+    "performance.read_team",
     "clinical.read",
     "clinical.write",
     "clinical.clearance_read",
@@ -124,6 +130,9 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "cash.accept",
     "attendance.self",
     "attendance.read_team",
+    "performance.read_self",
+    "performance.read_leaderboard",
+    "performance.read_team",
     "clinical.read",
     "clinical.clearance_read",
     "inventory.read",
@@ -151,6 +160,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "cash.read",
     "cash.request",
     "attendance.self",
+    "performance.read_self",
+    "performance.read_leaderboard",
     "inventory.read",
     "inventory.write",
     "chamber.read",
@@ -164,6 +175,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.create",
     "register.read",
     "attendance.self",
+    "performance.read_self",
+    "performance.read_leaderboard",
     "clinical.read",
     "clinical.write",
     "clinical.clearance_read",
@@ -179,6 +192,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "appointment.create",
     "register.read",
     "attendance.self",
+    "performance.read_self",
+    "performance.read_leaderboard",
     "clinical.read",
     "clinical.write",
     "clinical.clearance_read",

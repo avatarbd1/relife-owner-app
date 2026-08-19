@@ -9,6 +9,7 @@ export default async function MorePage() {
 
   const canReports =
     actions.has("report.read_operational") || actions.has("report.read_financial");
+  const canPerformance = actions.has("performance.read_self");
   const canAudit =
     canPerform(context, "audit.read", "Physio") ||
     canPerform(context, "audit.read", "Dental");
@@ -38,20 +39,32 @@ export default async function MorePage() {
         subtitle="Reports, tools, security and account settings"
       />
 
-      {canReports && (
+      {(canReports || canPerformance) && (
         <Section title="Insights">
-          <ActionRow
-            href="/reports"
-            icon="reports"
-            title="Reports & analysis"
-            subtitle="Operational and financial performance"
-          />
-          <ActionRow
-            href="/reports/export"
-            icon="reports"
-            title="CSV export"
-            subtitle="Permission-scoped patients, appointments, clinical and finance export"
-          />
+          {canPerformance && (
+            <ActionRow
+              href="/performance"
+              icon="reports"
+              title="Performance & rewards"
+              subtitle="নিজের Points, Milestones, Weekly Leaderboard ও Reward দেখুন"
+            />
+          )}
+          {canReports && (
+            <>
+              <ActionRow
+                href="/reports"
+                icon="reports"
+                title="Reports & analysis"
+                subtitle="Operational and financial performance"
+              />
+              <ActionRow
+                href="/reports/export"
+                icon="reports"
+                title="CSV export"
+                subtitle="Permission-scoped patients, appointments, clinical and finance export"
+              />
+            </>
+          )}
         </Section>
       )}
 

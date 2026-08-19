@@ -7,6 +7,7 @@ import {
   updateSheetValues,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import { recordAppointmentCompletionGamification } from "@/lib/domain/gamification/events";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
 export const APPOINTMENT_STATUSES = [
@@ -80,6 +81,33 @@ function dhakaNow(ref = new Date()) {
   };
 }
 
+async function projectCompletedAppointment(
+  context: AccessContext,
+  input: {
+    appointmentId: string;
+    department: ClinicDepartment;
+    patientId: string;
+    therapistReference: string;
+    appointmentDate: string;
+    appointmentTime: string;
+    completedAt: string;
+    previousStatus: string;
+  }
+): Promise<void> {
+  const outcome = await recordAppointmentCompletionGamification({
+    ...input,
+    actorContext: context,
+  });
+  if (!outcome.recorded) {
+    console.warn("Appointment completed without Gamification v2 projection", {
+      appointmentId: input.appointmentId,
+      department: input.department,
+      reason: outcome.reason,
+      staffId: outcome.staffId,
+    });
+  }
+}
+
 export async function updateAppointmentStatus(
   context: AccessContext,
   input: {
@@ -107,6 +135,9 @@ export async function updateAppointmentStatus(
   const statusIdx = headerIndex(headers, "Status");
   const departmentIdx = headerIndex(headers, "Department");
   const patientIdx = headerIndex(headers, "Patient_ID");
+  const therapistIdx = headerIndex(headers, "Therapist");
+  const dateIdx = headerIndex(headers, "Date");
+  const timeIdx = headerIndex(headers, "Time");
   const updatedIdx = headerIndex(headers, "Last_Updated", "Updated_At");
   if (idIdx < 0 || statusIdx < 0) throw new Error("SCHEMA_MISMATCH");
 
@@ -118,12 +149,27 @@ export async function updateAppointmentStatus(
     throw new Error("DEPARTMENT_MISMATCH");
   }
   const previous = at(row, statusIdx) || "Scheduled";
+  const now = dhakaNow();
+
+  // A repeated Completed mutation is also a safe repair opportunity. The
+  // deterministic event key in the Gamification API prevents duplicate XP.
   if (normalized(previous) === normalized(status)) {
+    if (status === "Completed") {
+      await projectCompletedAppointment(context, {
+        appointmentId,
+        department,
+        patientId: at(row, patientIdx),
+        therapistReference: at(row, therapistIdx),
+        appointmentDate: at(row, dateIdx),
+        appointmentTime: at(row, timeIdx),
+        completedAt: now.provenance,
+        previousStatus: previous,
+      });
+    }
     return { appointmentId, status };
   }
 
   const sheetRow = rowOffset + 2;
-  const now = dhakaNow();
   const updates: Array<Promise<void>> = [
     updateSheetValues(
       workbook,
@@ -171,6 +217,19 @@ export async function updateAppointmentStatus(
     ]]);
   } catch (error) {
     console.error("Appointment status audit append failed", error);
+  }
+
+  if (status === "Completed") {
+    await projectCompletedAppointment(context, {
+      appointmentId,
+      department,
+      patientId: at(row, patientIdx),
+      therapistReference: at(row, therapistIdx),
+      appointmentDate: at(row, dateIdx),
+      appointmentTime: at(row, timeIdx),
+      completedAt: now.provenance,
+      previousStatus: previous,
+    });
   }
 
   return { appointmentId, status };
