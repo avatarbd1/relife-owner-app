@@ -36,16 +36,20 @@ test("session XP belongs to the assigned clinician, not the mutation actor", () 
   assert.doesNotMatch(events, /staffId: input\.actorContext\.staffId/);
 });
 
-test("completed appointment event is deterministic and awards one XP", () => {
+test("completed appointment event is deterministic but XP amount is server-owned", () => {
   const events = source("lib/domain/gamification/events.ts");
+  const edge = source("supabase/functions/relife-gamification-api/index.ts");
 
   assert.match(events, /eventType: "session_completed"/);
   assert.match(events, /eventKey: `appointment:\$\{input\.department\}:\$\{input\.appointmentId\}:completed:v2`/);
   assert.match(events, /sourceType: "appointment_status"/);
   assert.match(events, /sourceId: input\.appointmentId/);
   assert.match(events, /metricValue: 1/);
-  assert.match(events, /xpAwarded: 1/);
+  assert.doesNotMatch(events, /xpAwarded: 1/);
   assert.match(events, /verificationMethod: "canonical_appointment_transition"/);
+  assert.match(edge, /activeXpRule/);
+  assert.match(edge, /config_key = 'xp\.rules'/);
+  assert.match(edge, /xpAwarded = xpRule\.xp/);
 });
 
 test("gamification projection never guesses a clinician or rewrites canonical mutation", () => {
