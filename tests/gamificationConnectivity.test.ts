@@ -9,6 +9,7 @@ function source(path: string): string {
 test("Gamification adapter prefers a dedicated edge secret without breaking shared edge auth", () => {
   const adapter = source("lib/data/supabaseGamification.ts");
 
+  assert.match(adapter, /function gamificationEdgeSecret\(\): string/);
   assert.match(adapter, /RELIFE_GAMIFICATION_EDGE_SECRET/);
   assert.match(adapter, /RELIFE_EDGE_SECRET/);
   assert.match(
