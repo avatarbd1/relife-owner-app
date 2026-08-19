@@ -108,7 +108,8 @@ test("performance screen separates normalized score, XP and Reward Credit", () =
   assert.match(page, /reward\.creditCost/);
   assert.match(page, /fallback cost/);
   assert.doesNotMatch(page, /Salary Bonus Review বা Family Treat/);
-  assert.match(page, /Performance Bonus/);
+  assert.match(page, /PERFORMANCE_SALARY_POLICY\.label/);
+  assert.match(page, /PERFORMANCE_SALARY_POLICY\.note/);
   assert.match(page, /Verified activity milestones/);
   assert.match(more, /href="\/performance"/);
   assert.match(more, /Performance & rewards/);
