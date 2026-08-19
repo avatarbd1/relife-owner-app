@@ -5,6 +5,21 @@ import {
   fetchSheetRanges,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import {
+  gamificationSupabaseConfigured,
+  getGamificationConfig,
+  type GamificationConfigSnapshot,
+} from "@/lib/data/supabaseGamification";
+import {
+  parseRoleScoreConfig,
+  type RoleScoreConfig,
+} from "@/lib/domain/gamification/config";
+import {
+  calculateNormalizedScore,
+  percentOfTarget,
+  rankNormalizedScores,
+  type GamificationRole,
+} from "@/lib/domain/gamification/rules";
 import type { Department } from "@/lib/types";
 import {
   assertCanPerform,
@@ -43,13 +58,13 @@ export interface PerformanceMetricSummary {
   bookingsCreated: number;
 }
 
-export interface PerformancePointBreakdown {
-  sessionPoints: number;
-  attendancePoints: number;
-  registrationPoints: number;
-  paymentPoints: number;
-  bookingPoints: number;
-  totalPoints: number;
+export interface PerformanceXpBreakdown {
+  sessionXp: number;
+  attendanceXp: number;
+  registrationXp: number;
+  paymentXp: number;
+  bookingXp: number;
+  totalXp: number;
 }
 
 export interface PerformanceMilestone {
@@ -61,22 +76,27 @@ export interface PerformanceMilestone {
   target: number;
   unlocked: boolean;
   rewardLabel: string;
-  rewardAmount: number;
 }
+
+export type PerformanceScoreCoverage = "complete" | "partial" | "disabled";
 
 export interface PerformanceEntry {
   staffId: string;
   fullName: string;
   roleLabel: string;
+  scoringRole: GamificationRole | null;
   departmentLabel: string;
-  rank: number;
-  points: number;
-  todayPoints: number;
+  rank: number | null;
+  normalizedScore: number | null;
+  provisionalScore: number | null;
+  scoreCoveredWeight: number;
+  missingScoreMetrics: string[];
+  scoreCoverage: PerformanceScoreCoverage;
+  xpEarnedThisWeek: number;
+  xpEarnedToday: number;
   metrics: PerformanceMetricSummary;
-  pointBreakdown: PerformancePointBreakdown;
+  xpBreakdown: PerformanceXpBreakdown;
   milestones: PerformanceMilestone[];
-  pendingRewardPreview: number;
-  scoreCoverage: "live" | "partial";
 }
 
 export interface PerformanceSnapshot {
@@ -89,6 +109,7 @@ export interface PerformanceSnapshot {
   leaderboard: PerformanceEntry[];
   canReadTeam: boolean;
   rewardPayoutEnabled: false;
+  scoringConfigReady: boolean;
   scoringNote: string;
 }
 
@@ -110,6 +131,8 @@ type PerformanceEvents = {
   registrations: RegistrationEvent[];
   payments: Awaited<ReturnType<typeof getPayments>>;
 };
+
+type ConfigByDepartment = Map<"Physio" | "Dental", GamificationConfigSnapshot>;
 
 function normalize(value: unknown): string {
   return String(value ?? "")
@@ -168,6 +191,18 @@ function allowedDepartments(context: AccessContext): Array<"Physio" | "Dental"> 
 
 function performanceRole(identity: WebStaffIdentity): WebRole[] {
   return identity.roles.filter((role) => PERFORMANCE_ROLES.has(role));
+}
+
+function scoringRole(identity: WebStaffIdentity): GamificationRole | null {
+  const roles = performanceRole(identity).filter(
+    (role): role is GamificationRole =>
+      role === "Owner" ||
+      role === "Manager" ||
+      role === "Receptionist" ||
+      role === "Therapist" ||
+      role === "Dentist"
+  );
+  return roles.length === 1 ? roles[0] : null;
 }
 
 function roleLabel(identity: WebStaffIdentity): string {
@@ -305,33 +340,28 @@ function metricsForWindow(
   };
 }
 
-function pointsForMetrics(
+function xpForMetrics(
   identity: WebStaffIdentity,
   metrics: PerformanceMetricSummary
-): PerformancePointBreakdown {
+): PerformanceXpBreakdown {
   const clinician =
     identity.roles.includes("Therapist") || identity.roles.includes("Dentist");
   const receptionist = identity.roles.includes("Receptionist");
 
-  // Phase 1 only scores signals already verifiable from canonical clinic data.
-  // Additional rules from the product spec are deliberately not guessed.
-  const sessionPoints = clinician ? metrics.completedSessions : 0;
-  const attendancePoints = metrics.onTimeDays;
-  const registrationPoints = receptionist ? Math.floor(metrics.registrations / 5) : 0;
-  const paymentPoints = receptionist ? Math.floor(metrics.paymentsProcessed / 10) : 0;
-  const bookingPoints = receptionist ? Math.floor(metrics.bookingsCreated / 5) : 0;
+  // These are verified-source XP signals already available in current clinic data.
+  // Unsupported v2 XP rules stay absent until their canonical source is wired.
+  const sessionXp = clinician ? metrics.completedSessions : 0;
+  const attendanceXp = metrics.onTimeDays;
+  const registrationXp = receptionist ? Math.floor(metrics.registrations / 5) : 0;
+  const paymentXp = receptionist ? Math.floor(metrics.paymentsProcessed / 10) : 0;
+  const bookingXp = receptionist ? Math.floor(metrics.bookingsCreated / 5) : 0;
   return {
-    sessionPoints,
-    attendancePoints,
-    registrationPoints,
-    paymentPoints,
-    bookingPoints,
-    totalPoints:
-      sessionPoints +
-      attendancePoints +
-      registrationPoints +
-      paymentPoints +
-      bookingPoints,
+    sessionXp,
+    attendanceXp,
+    registrationXp,
+    paymentXp,
+    bookingXp,
+    totalXp: sessionXp + attendanceXp + registrationXp + paymentXp + bookingXp,
   };
 }
 
@@ -350,8 +380,7 @@ function milestonesFor(
       progress: Math.min(metrics.onTimeDays, 5),
       target: 5,
       unlocked: metrics.onTimeDays >= 5,
-      rewardLabel: "Badge + 2-hour break certificate",
-      rewardAmount: 0,
+      rewardLabel: "Recognition milestone",
     },
   ];
 
@@ -360,35 +389,32 @@ function milestonesFor(
       key: "first_session",
       icon: "🎯",
       title: "First Session",
-      description: "Complete 1 session",
+      description: "Complete 1 verified session",
       progress: Math.min(metrics.completedSessions, 1),
       target: 1,
       unlocked: metrics.completedSessions >= 1,
-      rewardLabel: "Badge + 100 XP preview",
-      rewardAmount: 0,
+      rewardLabel: "Recognition milestone",
     });
     milestones.push(
       {
         key: "golden_hands",
         icon: "🏆",
         title: "Golden Hands",
-        description: "Complete 10+ sessions this week",
+        description: "Complete 10+ verified sessions this week",
         progress: Math.min(metrics.completedSessions, 10),
         target: 10,
         unlocked: metrics.completedSessions >= 10,
-        rewardLabel: "৳500 reward preview",
-        rewardAmount: 500,
+        rewardLabel: "Recognition milestone",
       },
       {
         key: "speed_demon",
         icon: "⚡",
         title: "Speed Demon",
-        description: "Complete 3 sessions before noon",
+        description: "Complete 3 verified sessions before noon",
         progress: Math.min(metrics.completedBeforeNoon, 3),
         target: 3,
         unlocked: metrics.completedBeforeNoon >= 3,
-        rewardLabel: "Coffee voucher preview",
-        rewardAmount: 0,
+        rewardLabel: "Recognition milestone",
       }
     );
   }
@@ -396,44 +422,147 @@ function milestonesFor(
   return milestones;
 }
 
-function scoreCoverage(identity: WebStaffIdentity): "live" | "partial" {
-  if (
-    identity.roles.includes("Therapist") ||
-    identity.roles.includes("Dentist") ||
-    identity.roles.includes("Receptionist")
-  ) {
-    return "live";
+function configForIdentity(
+  identity: WebStaffIdentity,
+  configs: ConfigByDepartment
+): GamificationConfigSnapshot | null {
+  if (identity.primaryDepartment === "Physio" || identity.primaryDepartment === "Dental") {
+    return configs.get(identity.primaryDepartment) || null;
   }
-  return "partial";
+  const visible = identity.departmentAccess.filter(
+    (department): department is "Physio" | "Dental" =>
+      department === "Physio" || department === "Dental"
+  );
+  for (const department of visible) {
+    const config = configs.get(department);
+    if (config) return config;
+  }
+  return configs.values().next().value || null;
+}
+
+function scoreComponentsFor(
+  role: GamificationRole,
+  policy: RoleScoreConfig,
+  metrics: PerformanceMetricSummary
+): Record<string, number | null> {
+  const target = (key: string): number | null => {
+    const value = policy.targets[key];
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+
+  if (role === "Therapist") {
+    const sessionsTarget = target("sessions_per_week");
+    const attendanceTarget = target("attendance_days_per_week");
+    return {
+      productivity:
+        sessionsTarget === null
+          ? null
+          : percentOfTarget(metrics.completedSessions, sessionsTarget),
+      attendance:
+        attendanceTarget === null
+          ? null
+          : percentOfTarget(metrics.onTimeDays, attendanceTarget),
+      documentation: null,
+      quality: null,
+      reliability: null,
+    };
+  }
+
+  if (role === "Receptionist") {
+    const workflowTarget = target("workflow_transactions_per_week");
+    const attendanceTarget = target("attendance_days_per_week");
+    const workflowTotal =
+      metrics.registrations + metrics.paymentsProcessed + metrics.bookingsCreated;
+    return {
+      workflow:
+        workflowTarget === null
+          ? null
+          : percentOfTarget(workflowTotal, workflowTarget),
+      cash_accuracy: null,
+      appointment_accuracy: null,
+      attendance:
+        attendanceTarget === null
+          ? null
+          : percentOfTarget(metrics.onTimeDays, attendanceTarget),
+      error_control: null,
+    };
+  }
+
+  if (role === "Manager") {
+    const attendanceTarget = target("attendance_days_per_week");
+    return {
+      coordination: null,
+      incidents: null,
+      schedule: null,
+      staff_satisfaction: null,
+      attendance:
+        attendanceTarget === null
+          ? null
+          : percentOfTarget(metrics.onTimeDays, attendanceTarget),
+    };
+  }
+
+  return {};
 }
 
 function buildEntry(
   identity: WebStaffIdentity,
   events: PerformanceEvents,
+  configs: ConfigByDepartment,
   weekStart: string,
   weekEnd: string,
   today: string
 ): PerformanceEntry {
   const metrics = metricsForWindow(identity, events, weekStart, weekEnd);
-  const pointBreakdown = pointsForMetrics(identity, metrics);
+  const xpBreakdown = xpForMetrics(identity, metrics);
   const todayMetrics = metricsForWindow(identity, events, today, today);
-  const todayPoints = pointsForMetrics(identity, todayMetrics).totalPoints;
-  const milestones = milestonesFor(identity, metrics);
+  const xpEarnedToday = xpForMetrics(identity, todayMetrics).totalXp;
+  const role = scoringRole(identity);
+  const configSnapshot = configForIdentity(identity, configs);
+  const policy =
+    role && configSnapshot
+      ? parseRoleScoreConfig(configSnapshot.configs, role)
+      : null;
+
+  let normalizedScore: number | null = null;
+  let provisionalScore: number | null = null;
+  let scoreCoveredWeight = 0;
+  let missingScoreMetrics: string[] = [];
+  let scoreCoverage: PerformanceScoreCoverage = "disabled";
+
+  if (role && policy) {
+    const score = calculateNormalizedScore(
+      policy,
+      scoreComponentsFor(role, policy, metrics)
+    );
+    normalizedScore = score.officialScore;
+    provisionalScore = score.provisionalScore;
+    scoreCoveredWeight = score.coveredWeight;
+    missingScoreMetrics = score.missingMetrics;
+    scoreCoverage = score.complete ? "complete" : "partial";
+  } else if (role && !policy) {
+    missingScoreMetrics = ["role_config_or_verified_sources"];
+  } else {
+    missingScoreMetrics = ["single_scoring_role_required"];
+  }
+
   return {
     staffId: identity.staffId,
     fullName: identity.fullName || identity.staffId,
     roleLabel: roleLabel(identity),
+    scoringRole: role,
     departmentLabel: departmentLabel(identity),
-    rank: 0,
-    points: pointBreakdown.totalPoints,
-    todayPoints,
+    rank: null,
+    normalizedScore,
+    provisionalScore,
+    scoreCoveredWeight,
+    missingScoreMetrics,
+    scoreCoverage,
+    xpEarnedThisWeek: xpBreakdown.totalXp,
+    xpEarnedToday,
     metrics,
-    pointBreakdown,
-    milestones,
-    pendingRewardPreview: milestones
-      .filter((milestone) => milestone.unlocked)
-      .reduce((sum, milestone) => sum + milestone.rewardAmount, 0),
-    scoreCoverage: scoreCoverage(identity),
+    xpBreakdown,
+    milestones: milestonesFor(identity, metrics),
   };
 }
 
@@ -450,10 +579,32 @@ async function loadRegistrationEvents(
   return snapshots.flat();
 }
 
+async function loadGamificationConfigs(
+  departments: Array<"Physio" | "Dental">
+): Promise<ConfigByDepartment> {
+  const configs: ConfigByDepartment = new Map();
+  if (!gamificationSupabaseConfigured()) return configs;
+
+  const loaded = await Promise.all(
+    departments.map(async (department) => {
+      try {
+        return [department, await getGamificationConfig(department)] as const;
+      } catch (error) {
+        console.error(`Gamification config unavailable for ${department}`, error);
+        return [department, null] as const;
+      }
+    })
+  );
+  for (const [department, config] of loaded) {
+    if (config) configs.set(department, config);
+  }
+  return configs;
+}
+
 function scopeLabelForDepartments(
   departments: Array<"Physio" | "Dental">
 ): string {
-  if (departments.length >= 2) return "Combined";
+  if (departments.length >= 2) return "All departments";
   return departments[0] || "No department";
 }
 
@@ -466,14 +617,21 @@ export async function getPerformanceSnapshot(
 
   const today = todayDhaka();
   const week = performanceWeekRange(today);
-  const [directory, appointments, payments, attendanceSheet, registrations] =
-    await Promise.all([
-      getWebStaffDirectory(),
-      getAppointmentsForContext(context, "combined"),
-      getPayments(),
-      fetchSheetRanges("physio", ["03_Attendance"]),
-      loadRegistrationEvents(departments),
-    ]);
+  const [
+    directory,
+    appointments,
+    payments,
+    attendanceSheet,
+    registrations,
+    scoreConfigs,
+  ] = await Promise.all([
+    getWebStaffDirectory(),
+    getAppointmentsForContext(context, "combined"),
+    getPayments(),
+    fetchSheetRanges("physio", ["03_Attendance"]),
+    loadRegistrationEvents(departments),
+    loadGamificationConfigs(departments),
+  ]);
 
   const currentIdentity = directory.find(
     (identity) => identity.staffId === context.staffId && identity.status === "Active"
@@ -508,27 +666,38 @@ export async function getPerformanceSnapshot(
       identityVisibleInDepartments(identity, departments)
   );
 
-  const entries = candidates
-    .map((identity) => buildEntry(identity, events, week.start, week.end, today))
+  const rawEntries = candidates.map((identity) =>
+    buildEntry(identity, events, scoreConfigs, week.start, week.end, today)
+  );
+  const ranks = rankNormalizedScores(
+    rawEntries.map((entry) => ({
+      staffId: entry.staffId,
+      normalizedScore: entry.normalizedScore,
+    }))
+  );
+  const rankByStaff = new Map(ranks.map((entry) => [entry.staffId, entry.rank]));
+  const entries = rawEntries.map((entry) => ({
+    ...entry,
+    rank: rankByStaff.get(entry.staffId) ?? null,
+  }));
+  const officialLeaderboard = entries
+    .filter(
+      (entry): entry is PerformanceEntry & { normalizedScore: number; rank: number } =>
+        entry.normalizedScore !== null && entry.rank !== null
+    )
     .sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points;
-      if (b.metrics.completedSessions !== a.metrics.completedSessions) {
-        return b.metrics.completedSessions - a.metrics.completedSessions;
-      }
-      if (b.metrics.paymentsProcessed !== a.metrics.paymentsProcessed) {
-        return b.metrics.paymentsProcessed - a.metrics.paymentsProcessed;
-      }
-      if (b.metrics.bookingsCreated !== a.metrics.bookingsCreated) {
-        return b.metrics.bookingsCreated - a.metrics.bookingsCreated;
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      if (b.normalizedScore !== a.normalizedScore) {
+        return b.normalizedScore - a.normalizedScore;
       }
       return a.fullName.localeCompare(b.fullName);
-    })
-    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+    });
 
   const current =
     entries.find((entry) => entry.staffId === context.staffId) ||
-    buildEntry(currentIdentity, events, week.start, week.end, today);
+    buildEntry(currentIdentity, events, scoreConfigs, week.start, week.end, today);
 
+  const scoringConfigReady = scoreConfigs.size > 0;
   return {
     weekStart: week.start,
     weekEnd: week.end,
@@ -536,10 +705,12 @@ export async function getPerformanceSnapshot(
     scopeLabel: scopeLabelForDepartments(departments),
     generatedAt: new Date().toISOString(),
     current,
-    leaderboard: canReadLeaderboard ? entries.slice(0, 10) : [current],
+    leaderboard: canReadLeaderboard ? officialLeaderboard.slice(0, 10) : [],
     canReadTeam,
     rewardPayoutEnabled: false,
-    scoringNote:
-      "Phase 1 uses only verified clinic events: completed sessions, on-time attendance, receptionist registrations, payments and bookings. Other spec metrics stay unscored until their source data is wired.",
+    scoringConfigReady,
+    scoringNote: scoringConfigReady
+      ? "Official Leaderboard uses only complete role-normalized 0-100 scores. Missing documentation, quality, cash-accuracy or other required sources remain partial and receive no rank; verified clinic activity is shown separately as XP progress."
+      : "Gamification configuration is unavailable, so no normalized score or official rank is produced. Verified clinic activity remains visible without inventing scoring rules.",
   };
 }
