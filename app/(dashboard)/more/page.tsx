@@ -10,6 +10,7 @@ export default async function MorePage() {
   const canReports =
     actions.has("report.read_operational") || actions.has("report.read_financial");
   const canPerformance = actions.has("performance.read_self");
+  const canWeeklyFinalization = actions.has("performance.weekly.finalize");
   const canAudit =
     canPerform(context, "audit.read", "Physio") ||
     canPerform(context, "audit.read", "Dental");
@@ -39,7 +40,7 @@ export default async function MorePage() {
         subtitle="Reports, tools, security and account settings"
       />
 
-      {(canReports || canPerformance) && (
+      {(canReports || canPerformance || canWeeklyFinalization) && (
         <Section title="Insights">
           {canPerformance && (
             <ActionRow
@@ -47,6 +48,14 @@ export default async function MorePage() {
               icon="reports"
               title="Performance & rewards"
               subtitle="নিজের Points, Milestones, Weekly Leaderboard ও Reward দেখুন"
+            />
+          )}
+          {canWeeklyFinalization && (
+            <ActionRow
+              href="/performance/weekly"
+              icon="approval"
+              title="Weekly Gamification finalizer"
+              subtitle="Owner recovery, score coverage, config versions and RC earning status"
             />
           )}
           {canReports && (

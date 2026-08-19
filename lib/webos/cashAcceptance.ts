@@ -10,6 +10,7 @@ import {
   type Workbook,
 } from "@/lib/data/googleSheets";
 import type { Scope } from "@/lib/types";
+import { recordCashReconciliationGamification } from "@/lib/domain/gamification/events";
 import { assertCanPerform, canPerform, type AccessContext } from "@/lib/webos/access";
 
 type ClinicDepartment = "Physio" | "Dental";
@@ -194,6 +195,7 @@ export async function finalizeCashMovement(
   const receivedIdx = headerIndex(headers, "Received_Amount");
   const differenceIdx = headerIndex(headers, "Difference");
   const updatedIdx = headerIndex(headers, "Updated_At");
+  const movedByIdx = headerIndex(headers, "Moved_By", "From_Staff_ID");
   if ([idIdx, statusIdx, confirmedByIdx, confirmedAtIdx].some((idx) => idx < 0)) {
     throw new Error("SCHEMA_MISMATCH");
   }
@@ -207,6 +209,7 @@ export async function finalizeCashMovement(
   }
   const currentStatus = normalize(at(row, statusIdx)) || "Pending";
   if (normalized(currentStatus) !== "pending") throw new Error("CASH_MOVEMENT_ALREADY_DECIDED");
+  const movedBy = at(row, movedByIdx);
 
   const requestedAmount = money(at(row, requestedIdx));
   const receivedAmount = decision === "Accepted"
@@ -267,6 +270,17 @@ export async function finalizeCashMovement(
     ]]);
   } catch (error) {
     console.error("Cash finalization audit append failed", error);
+  }
+
+  if (decision === "Accepted" && movedBy) {
+    await recordCashReconciliationGamification({
+      movementId,
+      department,
+      staffReference: movedBy,
+      reconciledAt: now.provenance,
+      difference,
+      actorContext: context,
+    });
   }
 
   return { movementId, decision, difference };

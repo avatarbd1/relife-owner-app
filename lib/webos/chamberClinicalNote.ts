@@ -11,6 +11,7 @@ import {
   buildChamberClinicalFields,
   type ChamberTreatmentStepInput,
 } from "@/lib/domain/chamber/clinicalNote";
+import { recordTreatmentDocumentationGamification } from "@/lib/domain/gamification/events";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getPatientForContext, todayDhaka } from "@/lib/webos/reception";
 import {
@@ -397,5 +398,14 @@ export async function recordChamberCompletionTreatmentNote(
       now
     )
   );
+  await recordTreatmentDocumentationGamification({
+    treatmentId,
+    patientId: capture.patientId,
+    department: "Physio",
+    clinicianReference: capture.therapist || patient.therapist,
+    documentedAt: now.iso,
+    actorContext: context,
+    sourceType: "chamber_completion",
+  });
   return { treatmentId, sessionNo, duplicate: false };
 }

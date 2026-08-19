@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
+import { recordTreatmentDocumentationGamification } from "@/lib/domain/gamification/events";
 import type { PatientRecord } from "@/lib/patients";
 import { assertCanPerform, canPerform, type AccessConditions, type AccessContext } from "@/lib/webos/access";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
@@ -506,5 +507,14 @@ export async function recordTreatmentSession(
       now
     )
   );
+  await recordTreatmentDocumentationGamification({
+    treatmentId,
+    patientId: patient.patientId,
+    department: "Physio",
+    clinicianReference: context.staffId,
+    documentedAt: now.provenance,
+    actorContext: context,
+    sourceType: "clinical_session",
+  });
   return { treatmentId, sessionNo };
 }
