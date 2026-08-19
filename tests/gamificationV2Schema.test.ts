@@ -12,6 +12,9 @@ const foundation = source(
 const indexes = source(
   "supabase/migrations/20260819043447_gamification_v2_fk_indexes.sql"
 );
+const roleTargets = source(
+  "supabase/migrations/20260819044032_gamification_v2_role_targets.sql"
+);
 
 test("Gamification v2 creates the seven core domains plus versioned Owner config", () => {
   for (const table of [
@@ -74,7 +77,7 @@ test("reward and bonus defaults live in configuration, not UI constants", () => 
   assert.match(foundation, /"owner_approval_required":true/);
 });
 
-test("role scoring weights are versioned config and unsupported roles fail closed", () => {
+test("role scoring weights are versioned and operational targets are explicit config", () => {
   assert.match(foundation, /'score\.role\.therapist'/);
   assert.match(foundation, /"productivity":0\.40/);
   assert.match(foundation, /"attendance":0\.20/);
@@ -86,6 +89,16 @@ test("role scoring weights are versioned config and unsupported roles fail close
   assert.match(foundation, /'score\.role\.manager'/);
   assert.match(foundation, /'score\.role\.dentist', '\{"enabled":false/);
   assert.match(foundation, /'score\.role\.owner', '\{"enabled":false/);
+
+  assert.match(roleTargets, /version, config_value/);
+  assert.match(roleTargets, /'score\.role\.therapist'/);
+  assert.match(roleTargets, /"sessions_per_week":8/);
+  assert.match(roleTargets, /"attendance_days_per_week":5/);
+  assert.match(roleTargets, /'score\.role\.receptionist'/);
+  assert.match(roleTargets, /"workflow_transactions_per_week":125/);
+  assert.match(roleTargets, /"registration_phone_required_for_score":false/);
+  assert.match(roleTargets, /'score\.role\.manager'/);
+  assert.match(roleTargets, /"coordination_tasks_per_week":10/);
 });
 
 test("tenant foreign keys have explicit covering indexes", () => {
