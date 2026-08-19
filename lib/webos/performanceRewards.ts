@@ -3,9 +3,13 @@ import type { PerformanceEntry } from "@/lib/webos/performance";
 export type PerformanceRewardKind =
   | "leave"
   | "family_time"
-  | "recognition"
-  | "salary_review"
+  | "voucher"
   | "treat";
+
+export type PerformanceRewardApprovalMode =
+  | "coverage_auto"
+  | "manager_coverage"
+  | "owner";
 
 export interface PerformanceRewardOption {
   key: string;
@@ -13,8 +17,8 @@ export interface PerformanceRewardOption {
   title: string;
   description: string;
   kind: PerformanceRewardKind;
-  pointCost: number;
-  ownerApprovalRequired: boolean;
+  creditCost: number;
+  approvalMode: PerformanceRewardApprovalMode;
   enabledForClaim: boolean;
 }
 
@@ -29,82 +33,86 @@ export interface WeeklyWinnerReward {
 }
 
 /**
- * XP/Points এবং Reward Credit আলাদা রাখা হয়। Leaderboard Points কখনও spend হয় না;
- * Reward Credit spend করলে rank বা earned Points কমে না। Claim writer Phase 1-এ
- * disabled থাকে, যাতে Owner approval ছাড়া leave/payroll mutation না হয়।
+ * Gamification v2 keeps three economies separate:
+ * - XP / performance score is never spent.
+ * - Reward Credit is spendable through controlled redemption.
+ * - Performance Bonus is finance-controlled and cannot be purchased with Reward Credit.
+ *
+ * Claim writers stay disabled until the reservation/approval ledger is wired.
  */
 export const PERFORMANCE_REWARD_CATALOG: PerformanceRewardOption[] = [
   {
-    key: "two_hour_break",
-    icon: "☕",
-    title: "2-hour Break",
-    description: "40 Reward Credit হলে 2-hour Break request করতে পারবেন।",
-    kind: "leave",
-    pointCost: 40,
-    ownerApprovalRequired: true,
+    key: "two_hour_early_leave",
+    icon: "🕑",
+    title: "2-hour Early Leave",
+    description: "40 Reward Credit হলে coverage থাকা সাপেক্ষে 2 ঘণ্টা আগে ছুটির request করা যাবে।",
+    kind: "family_time",
+    creditCost: 40,
+    approvalMode: "coverage_auto",
     enabledForClaim: false,
   },
   {
     key: "half_day_family_time",
     icon: "👨‍👩‍👧‍👦",
     title: "Half-day Family Time",
-    description: "70 Reward Credit হলে Half-day Family Time request করতে পারবেন।",
+    description: "70 Reward Credit হলে coverage plan সহ Half-day Family Time request করা যাবে।",
     kind: "family_time",
-    pointCost: 70,
-    ownerApprovalRequired: true,
+    creditCost: 70,
+    approvalMode: "manager_coverage",
     enabledForClaim: false,
   },
   {
     key: "paid_half_day",
     icon: "🌤️",
     title: "Paid Half-day",
-    description: "100 Reward Credit হলে Paid Half-day request করতে পারবেন।",
+    description: "100 Reward Credit হলে Paid Half-day request করা যাবে; approval ছাড়া salary effect হবে না।",
     kind: "leave",
-    pointCost: 100,
-    ownerApprovalRequired: true,
+    creditCost: 100,
+    approvalMode: "owner",
     enabledForClaim: false,
   },
   {
-    key: "priority_off_day",
+    key: "priority_weekly_off",
     icon: "🏖️",
-    title: "Priority Off-day",
-    description: "110 Reward Credit হলে পরের roster-এ Priority Off-day request করতে পারবেন।",
+    title: "Priority Weekly Off",
+    description: "100 Reward Credit হলে coverage ও roster capacity অনুযায়ী priority off-day request করা যাবে।",
     kind: "leave",
-    pointCost: 110,
-    ownerApprovalRequired: true,
+    creditCost: 100,
+    approvalMode: "manager_coverage",
     enabledForClaim: false,
   },
   {
-    key: "salary_review",
-    icon: "📈",
-    title: "Salary Bonus Review",
-    description: "120 Reward Credit হলে Salary Bonus review request করতে পারবেন। Salary automatic change হবে না।",
-    kind: "salary_review",
-    pointCost: 120,
-    ownerApprovalRequired: true,
+    key: "meal_voucher",
+    icon: "🎁",
+    title: "Meal / Treat Voucher",
+    description: "50 Reward Credit হলে configured voucher request করা যাবে।",
+    kind: "voucher",
+    creditCost: 50,
+    approvalMode: "owner",
     enabledForClaim: false,
   },
   {
-    key: "family_treat",
+    key: "family_treat_outing",
     icon: "🍽️",
     title: "Family Treat / Outing",
-    description: "150 Reward Credit হলে Family Treat বা Outing support request করতে পারবেন।",
+    description: "150 Reward Credit হলে Family Treat বা Outing allowance request করা যাবে।",
     kind: "treat",
-    pointCost: 150,
-    ownerApprovalRequired: true,
+    creditCost: 150,
+    approvalMode: "owner",
     enabledForClaim: false,
   },
 ];
 
 /**
- * Weekly rank থেকে Reward Credit preview। Persistence/claim পরের controlled writer-এ যাবে.
+ * v2 weekly placement credits. This is display/policy logic only until the
+ * normalized weekly score writer and immutable Reward Credit ledger are wired.
  */
 export function weeklyRewardCredits(entry: PerformanceEntry): number {
   if (entry.scoreCoverage !== "live" || entry.points <= 0) return 0;
-  if (entry.rank === 1) return 50;
-  if (entry.rank === 2) return 30;
-  if (entry.rank === 3) return 20;
-  return entry.points >= 5 ? 10 : 0;
+  if (entry.rank === 1) return 250;
+  if (entry.rank === 2) return 150;
+  if (entry.rank === 3) return 100;
+  return 50;
 }
 
 export function weeklyWinnerReward(
@@ -114,21 +122,30 @@ export function weeklyWinnerReward(
     leaderboard.find(
       (entry) => entry.scoreCoverage === "live" && entry.rank === 1 && entry.points > 0
     ) || null;
+
   return {
     eligible: Boolean(winner),
-    title: "Weekly #1 Winner Pack",
+    title: "Weekly #1 Winner Choice",
     description:
-      "Weekly #1 হলে 50 Reward Credit পাবেন এবং Owner approval অনুযায়ী Family time, Half-day, Clinic treat/outing বা Priority Off-day থেকে একটি perk বেছে নিতে পারবেন।",
+      "Weekly #1 normalized score winner 250 Reward Credit পাবে এবং Owner/coverage approval অনুযায়ী একটি choice reward নিতে পারবে।",
     winnerStaffId: winner?.staffId || null,
     winnerName: winner?.fullName || null,
-    rewardCredits: winner ? 50 : 0,
-    perks: ["Family time", "Half-day", "Clinic treat / outing", "Priority Off-day"],
+    rewardCredits: winner ? 250 : 0,
+    perks: [
+      "Family half-day",
+      "Dinner / treat",
+      "৳300–500 voucher",
+      "Priority weekly off",
+      "2-hour early leave",
+    ],
   };
 }
 
 export const PERFORMANCE_SALARY_POLICY = {
   automaticSalaryChange: false,
-  label: "Salary Bonus Review",
+  rewardCreditsCanBuySalaryBonus: false,
+  monthlyBonusOwnerApprovalRequired: true,
+  label: "Performance Bonus",
   note:
-    "ভালো Performance Salary Bonus review-এর evidence হবে। Base salary বা payroll কোনোভাবেই Leaderboard rank থেকে automatic change হবে না; Owner approval লাগবে।",
+    "Base salary Gamification থেকে automatic change হবে না। Monthly normalized performance tier থেকে আলাদা Performance Bonus proposal তৈরি হবে; Owner approval-এর পরেই payroll-এ যাবে।",
 } as const;
