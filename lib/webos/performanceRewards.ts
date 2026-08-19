@@ -104,11 +104,17 @@ export const PERFORMANCE_REWARD_CATALOG: PerformanceRewardOption[] = [
 ];
 
 /**
- * v2 weekly placement credits. This is display/policy logic only until the
- * normalized weekly score writer and immutable Reward Credit ledger are wired.
+ * v2 weekly placement credits. This is a preview only until the immutable
+ * Reward Credit writer is wired. No incomplete/provisional score can earn it.
  */
 export function weeklyRewardCredits(entry: PerformanceEntry): number {
-  if (entry.scoreCoverage !== "live" || entry.points <= 0) return 0;
+  if (
+    entry.scoreCoverage !== "complete" ||
+    entry.normalizedScore === null ||
+    entry.rank === null
+  ) {
+    return 0;
+  }
   if (entry.rank === 1) return 250;
   if (entry.rank === 2) return 150;
   if (entry.rank === 3) return 100;
@@ -120,7 +126,10 @@ export function weeklyWinnerReward(
 ): WeeklyWinnerReward {
   const winner =
     leaderboard.find(
-      (entry) => entry.scoreCoverage === "live" && entry.rank === 1 && entry.points > 0
+      (entry) =>
+        entry.scoreCoverage === "complete" &&
+        entry.normalizedScore !== null &&
+        entry.rank === 1
     ) || null;
 
   return {
