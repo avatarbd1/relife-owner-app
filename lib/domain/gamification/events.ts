@@ -12,6 +12,13 @@ import {
 } from "@/lib/webos/staffDirectory";
 
 type ClinicDepartment = "Physio" | "Dental";
+type GamificationRoleContext =
+  | "Owner"
+  | "Manager"
+  | "Receptionist"
+  | "Therapist"
+  | "Dentist";
+type ActorEventPurpose = "reception" | "attendance";
 
 export interface AppointmentCompletionGamificationInput {
   appointmentId: string;
@@ -25,6 +32,21 @@ export interface AppointmentCompletionGamificationInput {
   previousStatus: string;
 }
 
+export interface ActorWorkGamificationInput {
+  context: AccessContext;
+  department: ClinicDepartment;
+  purpose: ActorEventPurpose;
+  eventType: string;
+  eventKey: string;
+  sourceType: string;
+  sourceId: string;
+  eventAt: string;
+  metricValue?: number;
+  reason: string;
+  verificationMethod: string;
+  payload?: Record<string, unknown>;
+}
+
 export interface GamificationEventOutcome {
   recorded: boolean;
   duplicate: boolean;
@@ -35,6 +57,7 @@ export interface GamificationEventOutcome {
     | "duplicate"
     | "not_configured"
     | "clinician_unresolved"
+    | "actor_role_unresolved"
     | "write_failed";
 }
 
@@ -57,6 +80,52 @@ function clinicianMatchesDepartment(
       identity.departmentAccess.includes(department) ||
       identity.primaryDepartment === department)
   );
+}
+
+export function actorGamificationRole(
+  context: AccessContext,
+  purpose: ActorEventPurpose
+): GamificationRoleContext | null {
+  const has = (role: GamificationRoleContext) => context.roles.includes(role);
+
+  if (purpose === "reception") {
+    for (const role of [
+      "Receptionist",
+      "Manager",
+      "Owner",
+      "Dentist",
+      "Therapist",
+    ] as const) {
+      if (has(role)) return role;
+    }
+    return null;
+  }
+
+  if (context.primaryDepartment === "Dental" && has("Dentist")) return "Dentist";
+  if (context.primaryDepartment === "Physio" && has("Therapist")) return "Therapist";
+  for (const role of [
+    "Receptionist",
+    "Manager",
+    "Dentist",
+    "Therapist",
+    "Owner",
+  ] as const) {
+    if (has(role)) return role;
+  }
+  return null;
+}
+
+export function gamificationDepartmentForContext(
+  context: AccessContext
+): ClinicDepartment | null {
+  if (context.primaryDepartment === "Physio" || context.primaryDepartment === "Dental") {
+    return context.primaryDepartment;
+  }
+  const scoped = context.departmentAccess.filter(
+    (department): department is ClinicDepartment =>
+      department === "Physio" || department === "Dental"
+  );
+  return scoped.length === 1 ? scoped[0] : null;
 }
 
 /**
@@ -84,6 +153,78 @@ export async function resolveAppointmentClinician(
     (identity) => normalize(identity.fullName) === reference
   );
   return byName.length === 1 ? byName[0] : null;
+}
+
+/**
+ * Post-commit projection for canonical work performed by the current actor.
+ * XP is never supplied by this app helper; the Edge Function calculates it
+ * from active Owner-configured xp.rules after the verified event is appended.
+ */
+export async function recordActorWorkGamification(
+  input: ActorWorkGamificationInput
+): Promise<GamificationEventOutcome> {
+  if (!gamificationSupabaseConfigured()) {
+    return {
+      recorded: false,
+      duplicate: false,
+      eventId: null,
+      staffId: input.context.staffId,
+      reason: "not_configured",
+    };
+  }
+
+  const roleContext = actorGamificationRole(input.context, input.purpose);
+  if (!roleContext) {
+    return {
+      recorded: false,
+      duplicate: false,
+      eventId: null,
+      staffId: input.context.staffId,
+      reason: "actor_role_unresolved",
+    };
+  }
+
+  try {
+    const result = await recordVerifiedGamificationEvent({
+      requestId: `gam-${randomUUID()}`,
+      staffId: input.context.staffId,
+      department: input.department,
+      roleContext,
+      eventType: input.eventType,
+      eventKey: input.eventKey,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      eventAt: input.eventAt,
+      metricValue: input.metricValue ?? 1,
+      reason: input.reason,
+      verifiedBy: `${input.sourceType}:${input.context.staffId}`,
+      verificationMethod: input.verificationMethod,
+      actorId: input.context.staffId,
+      payload: input.payload || {},
+    });
+    return {
+      recorded: true,
+      duplicate: result.duplicate,
+      eventId: result.eventId,
+      staffId: input.context.staffId,
+      reason: result.duplicate ? "duplicate" : "recorded",
+    };
+  } catch (error) {
+    console.error("Actor work Gamification projection failed", {
+      eventType: input.eventType,
+      sourceId: input.sourceId,
+      staffId: input.context.staffId,
+      department: input.department,
+      error,
+    });
+    return {
+      recorded: false,
+      duplicate: false,
+      eventId: null,
+      staffId: input.context.staffId,
+      reason: "write_failed",
+    };
+  }
 }
 
 /**
@@ -131,7 +272,6 @@ export async function recordAppointmentCompletionGamification(
       sourceId: input.appointmentId,
       eventAt: input.completedAt,
       metricValue: 1,
-      xpAwarded: 1,
       reason: "Verified appointment completed",
       verifiedBy: `appointment_status:${input.actorContext.staffId}`,
       verificationMethod: "canonical_appointment_transition",
