@@ -25,7 +25,7 @@ test("performance RBAC is explicit and staff roles do not inherit team authority
   );
 });
 
-test("phase 1 performance points come from canonical clinic events", () => {
+test("phase 1 performance activity comes only from canonical clinic events", () => {
   const performance = source("lib/webos/performance.ts");
 
   assert.match(performance, /getAppointmentsForContext/);
@@ -41,39 +41,42 @@ test("phase 1 performance points come from canonical clinic events", () => {
   assert.match(performance, /Math\.floor\(metrics\.bookingsCreated \/ 5\)/);
 });
 
-test("Reward Credit stays separate from leaderboard Points and supports approved perks", () => {
+test("Gamification v2 keeps XP, Reward Credit and Performance Bonus separate", () => {
   const rewards = source("lib/webos/performanceRewards.ts");
 
-  assert.match(rewards, /title: "2-hour Break"/);
-  assert.match(rewards, /pointCost: 40/);
+  assert.match(rewards, /title: "2-hour Early Leave"/);
+  assert.match(rewards, /creditCost: 40/);
   assert.match(rewards, /title: "Half-day Family Time"/);
-  assert.match(rewards, /pointCost: 70/);
+  assert.match(rewards, /creditCost: 70/);
   assert.match(rewards, /title: "Paid Half-day"/);
-  assert.match(rewards, /pointCost: 100/);
-  assert.match(rewards, /title: "Salary Bonus Review"/);
-  assert.match(rewards, /pointCost: 120/);
+  assert.match(rewards, /creditCost: 100/);
+  assert.match(rewards, /title: "Priority Weekly Off"/);
   assert.match(rewards, /title: "Family Treat \/ Outing"/);
-  assert.match(rewards, /pointCost: 150/);
-  assert.match(rewards, /weeklyRewardCredits/);
-  assert.match(rewards, /entry\.rank === 1\) return 50/);
-  assert.match(rewards, /entry\.rank === 2\) return 30/);
-  assert.match(rewards, /entry\.rank === 3\) return 20/);
-  assert.match(rewards, /rewardCredits: winner \? 50 : 0/);
+  assert.match(rewards, /creditCost: 150/);
+  assert.doesNotMatch(rewards, /title: "Salary Bonus Review"/);
+  assert.match(rewards, /rewardCreditsCanBuySalaryBonus: false/);
   assert.match(rewards, /automaticSalaryChange: false/);
+  assert.match(rewards, /monthlyBonusOwnerApprovalRequired: true/);
+  assert.match(rewards, /entry\.rank === 1\) return 250/);
+  assert.match(rewards, /entry\.rank === 2\) return 150/);
+  assert.match(rewards, /entry\.rank === 3\) return 100/);
+  assert.match(rewards, /return 50/);
+  assert.match(rewards, /rewardCredits: winner \? 250 : 0/);
   assert.match(rewards, /enabledForClaim: false/);
 });
 
-test("performance screen gives user directions in Bangla while keeping product terms", () => {
+test("performance screen uses Reward Credit terminology and does not offer salary bonus redemption", () => {
   const page = source("app/(dashboard)/performance/page.tsx");
   const more = source("app/(dashboard)/more/page.tsx");
 
   assert.match(page, /getPerformanceSnapshot/);
   assert.match(page, /কী করলে Points বাড়বে/);
-  assert.match(page, /প্রতিটি Session completed হলে \+1 Point পাবেন/);
   assert.match(page, /Weekly Leaderboard/);
-  assert.match(page, /Points থেকে Reward/);
-  assert.match(page, /এখন আপনার যা করতে হবে/);
-  assert.match(page, /Reward Credit/);
+  assert.match(page, /Reward Credits/);
+  assert.match(page, /XP\/Leaderboard score spend হয় না/);
+  assert.match(page, /reward\.creditCost/);
+  assert.doesNotMatch(page, /Salary Bonus Review বা Family Treat/);
+  assert.match(page, /Performance Bonus/);
   assert.match(page, /Milestones/);
   assert.match(more, /href="\/performance"/);
   assert.match(more, /Performance & rewards/);
