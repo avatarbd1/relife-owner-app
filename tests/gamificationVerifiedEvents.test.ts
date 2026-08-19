@@ -84,7 +84,7 @@ test("payment projects workflow count without copying the payment amount into Ga
   assert.match(route, /eventType: "payment_processed"/);
   assert.match(route, /eventKey: `payment:\$\{department\}:\$\{result\.receiptNo\}:processed:v2`/);
   assert.match(route, /sourceType: "finance_payment"/);
-  const projection = route.slice(route.indexOf("recordActorWorkGamification"));
+  const projection = route.slice(route.lastIndexOf("await recordActorWorkGamification"));
   assert.doesNotMatch(projection, /amount:/);
   assert.doesNotMatch(route, /xpAwarded/);
 });
