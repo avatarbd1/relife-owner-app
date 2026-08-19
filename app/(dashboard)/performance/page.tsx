@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeading } from "@/components/WorkspaceUI";
 import {
   getGamificationStaffSummary,
@@ -344,8 +345,14 @@ export default async function PerformancePage() {
           </div>
         )}
 
+        <Link
+          href="/performance/claims"
+          className="mt-4 block w-full rounded-xl bg-violet-700 px-4 py-3 text-center text-sm font-bold text-white"
+        >
+          Open Reward Claims
+        </Link>
         <p className="mt-3 text-[10px] leading-4 text-slate-400">
-          Claim writer এখনো disabled; RC reserve/approve/claim workflow চালু না হওয়া পর্যন্ত নতুন redemption request নেওয়া হবে না।
+          Claim Writer v1 active: request-এ RC reserve হয়, Owner approve করলে reserve held থাকে, deny/cancel-এ release হয়, আর fulfilled claim-এ redeem হয়।
         </p>
       </section>
 
@@ -389,7 +396,7 @@ export default async function PerformancePage() {
           <p>• নিজের নিয়মিত clinic কাজ app-এর ভেতর complete করুন।</p>
           <p>• Session, Payment, Registration, Booking ও Attendance verified event হলে server-side rule XP নির্ধারণ করবে।</p>
           <p>• Required role metrics complete না হওয়া পর্যন্ত provisional score দেখা যাবে, official rank নয়।</p>
-          <p>• Reward Claim চালু হলে Family Time, Half-day, Priority Off-day, Voucher বা Family Treat request এখান থেকেই হবে।</p>
+          <p>• Reward Claims থেকে Family Time, Half-day, Priority Off-day বা Family Treat request করলে available RC transactionalভাবে reserve হবে।</p>
         </div>
       </section>
 
