@@ -2,11 +2,10 @@ import { PageHeading } from "@/components/WorkspaceUI";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getPerformanceSnapshot } from "@/lib/webos/performance";
 import {
-  PERFORMANCE_REWARD_CATALOG,
+  getPerformanceRewardPolicy,
   PERFORMANCE_SALARY_POLICY,
   weeklyRewardCredits,
   weeklyWinnerReward,
-  type PerformanceRewardApprovalMode,
 } from "@/lib/webos/performanceRewards";
 
 function medal(rank: number): string {
@@ -40,12 +39,6 @@ function xpDirections(roleLabel: string): string[] {
   return rows;
 }
 
-function approvalLabel(mode: PerformanceRewardApprovalMode): string {
-  if (mode === "coverage_auto") return "Coverage check required";
-  if (mode === "manager_coverage") return "Manager coverage approval";
-  return "Owner approval required";
-}
-
 function metricLabel(key: string): string {
   const labels: Record<string, string> = {
     documentation: "Documentation",
@@ -66,10 +59,17 @@ function metricLabel(key: string): string {
 
 export default async function PerformancePage() {
   const context = await requireCurrentAccessContext();
-  const snapshot = await getPerformanceSnapshot(context);
-  const winnerReward = weeklyWinnerReward(snapshot.leaderboard);
+  const [snapshot, rewardPolicy] = await Promise.all([
+    getPerformanceSnapshot(context),
+    getPerformanceRewardPolicy(),
+  ]);
   const current = snapshot.current;
-  const currentRewardCredits = weeklyRewardCredits(current);
+  const winnerReward = weeklyWinnerReward(
+    snapshot.leaderboard,
+    rewardPolicy.rank,
+    rewardPolicy.winnerChoices
+  );
+  const currentRewardCredits = weeklyRewardCredits(current, rewardPolicy.rank);
   const displayedScore = current.normalizedScore ?? current.provisionalScore;
   const scoreIsOfficial = current.normalizedScore !== null;
 
@@ -182,19 +182,21 @@ export default async function PerformancePage() {
               </p>
             ) : (
               <p className="mt-2 text-xs font-semibold text-amber-800">
-                Complete normalized score তৈরি হলে winner activate হবে।
+                Complete normalized score এবং valid Owner config থাকলে winner activate হবে।
               </p>
             )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {winnerReward.perks.map((perk) => (
-                <span
-                  key={perk}
-                  className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-amber-900 ring-1 ring-amber-200"
-                >
-                  {perk}
-                </span>
-              ))}
-            </div>
+            {winnerReward.perks.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {winnerReward.perks.map((perk) => (
+                  <span
+                    key={perk}
+                    className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-amber-900 ring-1 ring-amber-200"
+                  >
+                    {perk}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -248,22 +250,32 @@ export default async function PerformancePage() {
             {currentRewardCredits} RC rank preview
           </span>
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {PERFORMANCE_REWARD_CATALOG.map((reward) => (
-            <div key={reward.key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-start gap-2.5">
-                <span className="text-xl">{reward.icon}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-900">{reward.title}</p>
-                  <p className="mt-1 text-[10px] leading-4 text-slate-500">{reward.description}</p>
-                  <p className="mt-2 text-[9px] font-semibold text-amber-700">
-                    {reward.creditCost} RC · {approvalLabel(reward.approvalMode)}
-                  </p>
+
+        {rewardPolicy.catalog.length > 0 ? (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {rewardPolicy.catalog.map((reward) => (
+              <div key={reward.key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-xl">{reward.icon}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-900">{reward.title}</p>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">{reward.description}</p>
+                    <p className="mt-2 text-[9px] font-semibold text-violet-700">
+                      {reward.creditCost} RC
+                      {reward.coverageRequired ? " · Coverage required" : ""}
+                      {reward.cooldownDays !== null ? ` · ${reward.cooldownDays}d cooldown` : ""}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-xl bg-slate-50 px-3 py-4 text-xs text-slate-500">
+            Reward catalog config unavailable—কোনো fallback cost দেখানো হচ্ছে না।
+          </div>
+        )}
+
         <p className="mt-3 text-[10px] leading-4 text-slate-400">
           Claim writer এখনো disabled; RC reserve/approve/claim workflow চালু না হওয়া পর্যন্ত এখানে কোনো credit deduct হবে না।
         </p>
