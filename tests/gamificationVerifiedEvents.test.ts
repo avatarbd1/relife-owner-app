@@ -35,6 +35,18 @@ test("Edge owns XP calculation and serializes every-N threshold checks", () => {
   assert.doesNotMatch(edge, /body\.xpAwarded/);
 });
 
+test("server adapter does not expose an XP amount input", () => {
+  const adapter = source("lib/data/supabaseGamification.ts");
+  const inputBlock = adapter.slice(
+    adapter.indexOf("export interface VerifiedGamificationEventInput"),
+    adapter.indexOf("export interface VerifiedGamificationEventResult")
+  );
+
+  assert.doesNotMatch(inputBlock, /xpAwarded/);
+  assert.match(adapter, /recordVerifiedGamificationEvent/);
+  assert.match(adapter, /3_000/);
+});
+
 test("actor role attribution is purpose-aware and does not invent a role", () => {
   assert.match(events, /purpose === "reception"/);
   assert.match(events, /"Receptionist",[\s\S]*?"Manager",[\s\S]*?"Owner"/);
