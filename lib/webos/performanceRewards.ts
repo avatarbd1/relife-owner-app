@@ -23,7 +23,7 @@ export interface PerformanceRewardOption {
   cooldownDays: number | null;
   maxPerMonth: number | null;
   maxPerQuarter: number | null;
-  enabledForClaim: false;
+  enabledForClaim: true;
 }
 
 export interface PerformanceRewardPolicy {
@@ -122,7 +122,7 @@ export async function getPerformanceRewardPolicy(): Promise<PerformanceRewardPol
         cooldownDays: item.cooldownDays,
         maxPerMonth: item.maxPerMonth,
         maxPerQuarter: item.maxPerQuarter,
-        enabledForClaim: false as const,
+        enabledForClaim: true as const,
       };
     });
     const winnerChoices = parseWeeklyWinnerChoices(snapshot.configs).map(
@@ -142,7 +142,7 @@ export async function getPerformanceRewardPolicy(): Promise<PerformanceRewardPol
 
 /**
  * v2 weekly placement credits are only a preview until the immutable Reward
- * Credit writer is wired. Incomplete/provisional scores never earn credits.
+ * Credit award writer is wired. Incomplete/provisional scores never earn credits.
  */
 export function weeklyRewardCredits(
   entry: PerformanceEntry,
