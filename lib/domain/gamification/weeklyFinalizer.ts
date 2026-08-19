@@ -1,15 +1,9 @@
-import {
-  calculateNormalizedScore,
-  percentOfTarget,
-  type GamificationRole,
-  type NormalizedScorePolicy,
-  type NormalizedScoreResult,
-} from "@/lib/domain/gamification/rules";
-
 export type WeeklyFinalizerRole = "Therapist" | "Receptionist";
 
-export interface WeeklyRoleScorePolicy extends NormalizedScorePolicy {
+export interface WeeklyRoleScorePolicy {
   role: WeeklyFinalizerRole;
+  enabled: boolean;
+  weights: Record<string, number>;
   targets: Record<string, number>;
 }
 
@@ -33,7 +27,15 @@ export interface WeeklyMetricComponent {
   verified: boolean;
 }
 
-export interface WeeklyRoleScoreResult extends NormalizedScoreResult {
+export interface WeeklyNormalizedScoreResult {
+  officialScore: number | null;
+  provisionalScore: number | null;
+  coveredWeight: number;
+  missingMetrics: string[];
+  complete: boolean;
+}
+
+export interface WeeklyRoleScoreResult extends WeeklyNormalizedScoreResult {
   role: WeeklyFinalizerRole;
   components: Record<string, WeeklyMetricComponent>;
 }
@@ -50,6 +52,12 @@ export interface WeeklyEarningPolicy {
 
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function percentOfTarget(actual: number, denominator: number | null): number | null {
+  if (!Number.isFinite(actual) || actual < 0) return null;
+  if (denominator === null || !Number.isFinite(denominator) || denominator <= 0) return null;
+  return round2(Math.min(100, (actual / denominator) * 100));
 }
 
 function ratioPercent(numerator: number, denominator: number): number | null {
@@ -78,6 +86,60 @@ function metric(
   };
 }
 
+function calculateNormalizedScore(
+  policy: WeeklyRoleScorePolicy,
+  components: Record<string, number | null | undefined>
+): WeeklyNormalizedScoreResult {
+  const entries = Object.entries(policy.weights);
+  if (!policy.enabled || entries.length === 0) {
+    return {
+      officialScore: null,
+      provisionalScore: null,
+      coveredWeight: 0,
+      missingMetrics: entries.map(([key]) => key),
+      complete: false,
+    };
+  }
+
+  const totalWeight = entries.reduce((sum, [, weight]) => {
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 1) {
+      throw new Error("INVALID_SCORE_WEIGHT");
+    }
+    return sum + weight;
+  }, 0);
+  if (Math.abs(totalWeight - 1) > 0.0001) {
+    throw new Error("SCORE_WEIGHTS_MUST_SUM_TO_ONE");
+  }
+
+  let weightedTotal = 0;
+  let coveredWeight = 0;
+  const missingMetrics: string[] = [];
+  for (const [key, weight] of entries) {
+    const value = components[key];
+    if (value === null || value === undefined) {
+      missingMetrics.push(key);
+      continue;
+    }
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+      throw new Error(`INVALID_SCORE_COMPONENT:${key}`);
+    }
+    weightedTotal += value * weight;
+    coveredWeight += weight;
+  }
+
+  const provisionalScore = coveredWeight > 0
+    ? round2(weightedTotal / coveredWeight)
+    : null;
+  const complete = missingMetrics.length === 0;
+  return {
+    officialScore: complete ? round2(weightedTotal) : null,
+    provisionalScore,
+    coveredWeight: round2(coveredWeight),
+    missingMetrics,
+    complete,
+  };
+}
+
 export function weeklyScoreForVerifiedCounts(
   role: WeeklyFinalizerRole,
   policy: WeeklyRoleScorePolicy,
@@ -88,9 +150,7 @@ export function weeklyScoreForVerifiedCounts(
   let components: Record<string, WeeklyMetricComponent>;
   if (role === "Therapist") {
     const sessionsTarget = target(policy, "sessions_per_week");
-    const productivity = sessionsTarget === null
-      ? null
-      : percentOfTarget(counts.completedSessions, sessionsTarget);
+    const productivity = percentOfTarget(counts.completedSessions, sessionsTarget);
     const attendance = ratioPercent(
       counts.onTimeAttendances,
       counts.totalAttendances
@@ -126,9 +186,7 @@ export function weeklyScoreForVerifiedCounts(
     const workflowTarget = target(policy, "workflow_transactions_per_week");
     const workflowTotal =
       counts.registrations + counts.paymentsProcessed + counts.bookingsCreated;
-    const workflow = workflowTarget === null
-      ? null
-      : percentOfTarget(workflowTotal, workflowTarget);
+    const workflow = percentOfTarget(workflowTotal, workflowTarget);
     const attendance = ratioPercent(
       counts.onTimeAttendances,
       counts.totalAttendances
