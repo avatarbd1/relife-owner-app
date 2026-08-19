@@ -25,7 +25,6 @@ export interface VerifiedGamificationEventInput {
   eventAt: string;
   metricValue?: number;
   qualityScore?: number | null;
-  xpAwarded?: number;
   reason?: string;
   verifiedBy?: string;
   verificationMethod?: string;
@@ -63,13 +62,14 @@ export function gamificationSupabaseConfigured(): boolean {
 
 async function callGamification<T>(
   action: string,
-  payload: Record<string, unknown> = {}
+  payload: Record<string, unknown> = {},
+  timeoutMs = 5_000
 ): Promise<T> {
   const secret = gamificationEdgeSecret();
   if (!secret) throw new Error("GAMIFICATION_EDGE_SECRET_MISSING");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(endpoint(), {
       method: "POST",
@@ -139,7 +139,11 @@ export async function recordVerifiedGamificationEvent(
     eventId?: unknown;
     xpAwarded?: unknown;
     duplicate?: unknown;
-  }>("record_verified_event", input as unknown as Record<string, unknown>);
+  }>(
+    "record_verified_event",
+    input as unknown as Record<string, unknown>,
+    3_000
+  );
 
   const eventId = String(result.eventId || "").trim();
   if (!eventId) throw new Error("GAMIFICATION_EVENT_ID_MISSING");
