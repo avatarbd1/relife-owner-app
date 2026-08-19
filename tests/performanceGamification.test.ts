@@ -67,29 +67,29 @@ test("missing role metrics fail closed instead of being treated as zero", () => 
   assert.match(performance, /staff_satisfaction: null/);
 });
 
-test("Gamification v2 keeps XP, Reward Credit and Performance Bonus separate", () => {
+test("Reward Credit values come from Owner config and salary remains a separate economy", () => {
   const rewards = source("lib/webos/performanceRewards.ts");
+  const config = source("lib/domain/gamification/config.ts");
 
-  assert.match(rewards, /title: "2-hour Early Leave"/);
-  assert.match(rewards, /creditCost: 40/);
-  assert.match(rewards, /title: "Half-day Family Time"/);
-  assert.match(rewards, /creditCost: 70/);
-  assert.match(rewards, /title: "Paid Half-day"/);
-  assert.match(rewards, /creditCost: 100/);
-  assert.match(rewards, /title: "Priority Weekly Off"/);
-  assert.match(rewards, /title: "Family Treat \/ Outing"/);
-  assert.match(rewards, /creditCost: 150/);
-  assert.doesNotMatch(rewards, /title: "Salary Bonus Review"/);
+  assert.match(rewards, /getPerformanceRewardPolicy/);
+  assert.match(rewards, /getGamificationConfig\("All"\)/);
+  assert.match(rewards, /parseRewardRankConfig/);
+  assert.match(rewards, /parseRewardCatalog/);
+  assert.match(rewards, /parseWeeklyWinnerChoices/);
+  assert.match(rewards, /return rankConfig\.rank1/);
+  assert.match(rewards, /return rankConfig\.rank2/);
+  assert.match(rewards, /return rankConfig\.rank3/);
+  assert.match(rewards, /return rankConfig\.participation/);
+  assert.doesNotMatch(rewards, /entry\.rank === 1\) return 250/);
+  assert.doesNotMatch(rewards, /creditCost: 40/);
+  assert.doesNotMatch(rewards, /creditCost: 70/);
+  assert.doesNotMatch(rewards, /creditCost: 100/);
   assert.match(rewards, /rewardCreditsCanBuySalaryBonus: false/);
   assert.match(rewards, /automaticSalaryChange: false/);
   assert.match(rewards, /monthlyBonusOwnerApprovalRequired: true/);
-  assert.match(rewards, /entry\.scoreCoverage !== "complete"/);
-  assert.match(rewards, /entry\.normalizedScore === null/);
-  assert.match(rewards, /entry\.rank === 1\) return 250/);
-  assert.match(rewards, /entry\.rank === 2\) return 150/);
-  assert.match(rewards, /entry\.rank === 3\) return 100/);
-  assert.match(rewards, /return 50/);
-  assert.match(rewards, /enabledForClaim: false/);
+  assert.match(rewards, /enabledForClaim: false as const/);
+  assert.match(config, /reward\.weekly_rank/);
+  assert.match(config, /reward\.catalog/);
 });
 
 test("performance screen separates normalized score, XP and Reward Credit", () => {
@@ -104,7 +104,9 @@ test("performance screen separates normalized score, XP and Reward Credit", () =
   assert.match(page, /Weekly Leaderboard/);
   assert.match(page, /Raw session\/payment count নয়/);
   assert.match(page, /Reward Credits/);
+  assert.match(page, /rewardPolicy\.catalog/);
   assert.match(page, /reward\.creditCost/);
+  assert.match(page, /fallback cost/);
   assert.doesNotMatch(page, /Salary Bonus Review বা Family Treat/);
   assert.match(page, /Performance Bonus/);
   assert.match(page, /Verified activity milestones/);
