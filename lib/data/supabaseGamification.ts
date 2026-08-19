@@ -49,16 +49,24 @@ function endpoint(): string {
   ).trim();
 }
 
+function gamificationEdgeSecret(): string {
+  return (
+    process.env.RELIFE_GAMIFICATION_EDGE_SECRET ||
+    process.env.RELIFE_EDGE_SECRET ||
+    ""
+  ).trim();
+}
+
 export function gamificationSupabaseConfigured(): boolean {
-  return Boolean(endpoint() && process.env.RELIFE_EDGE_SECRET?.trim());
+  return Boolean(endpoint() && gamificationEdgeSecret());
 }
 
 async function callGamification<T>(
   action: string,
   payload: Record<string, unknown> = {}
 ): Promise<T> {
-  const secret = process.env.RELIFE_EDGE_SECRET?.trim();
-  if (!secret) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
+  const secret = gamificationEdgeSecret();
+  if (!secret) throw new Error("GAMIFICATION_EDGE_SECRET_MISSING");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8_000);

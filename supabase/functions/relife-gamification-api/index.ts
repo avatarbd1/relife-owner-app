@@ -5,8 +5,10 @@ const dbUrl = Deno.env.get("SUPABASE_DB_URL");
 if (!dbUrl) throw new Error("SUPABASE_DB_URL missing");
 const sql = postgres(dbUrl, { prepare: false, max: 3, idle_timeout: 20 });
 
-const SERVER_KEY_HASH =
-  "50840a8a74de86a912cb2a268ff6d24b2a9fc3cf4ab016229e52d3219a3772fe";
+const SERVER_KEY_HASHES = new Set([
+  "50840a8a74de86a912cb2a268ff6d24b2a9fc3cf4ab016229e52d3219a3772fe",
+  "340a6b07dbfe883d2ecad82971bb4226a32974c00e89138ad71e8279a89e58d2",
+]);
 const DEFAULT_ORGANIZATION_SLUG = "relife";
 const DEFAULT_CLINIC_SLUG = "amtali-main";
 const DEPARTMENTS = new Set(["Physio", "Dental"]);
@@ -49,7 +51,7 @@ async function sha256Hex(value: string): Promise<string> {
 async function authorized(req: Request): Promise<boolean> {
   const key = req.headers.get("x-relife-server-key") || "";
   if (!key) return false;
-  return (await sha256Hex(key)) === SERVER_KEY_HASH;
+  return SERVER_KEY_HASHES.has(await sha256Hex(key));
 }
 
 async function resolveTenant(body: Record<string, unknown>): Promise<Tenant> {
