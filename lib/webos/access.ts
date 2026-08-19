@@ -40,6 +40,7 @@ export type WebAction =
   | "performance.read_self"
   | "performance.read_leaderboard"
   | "performance.read_team"
+  | "performance.weekly.finalize"
   | "clinical.read"
   | "clinical.write"
   | "clinical.clearance_read"
@@ -100,6 +101,7 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "performance.read_self",
     "performance.read_leaderboard",
     "performance.read_team",
+    "performance.weekly.finalize",
     "clinical.read",
     "clinical.write",
     "clinical.clearance_read",
