@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  gamificationDepartmentForContext,
+  recordActorWorkGamification,
+} from "@/lib/domain/gamification/events";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import {
   performAttendanceAction,
@@ -44,6 +48,39 @@ export async function POST(request: NextRequest) {
       action === "check_in"
         ? await performNormalAttendanceCheckIn(context)
         : await performAttendanceAction(context, action);
+
+    if (action === "check_in") {
+      const department = gamificationDepartmentForContext(context);
+      if (department) {
+        const eventType =
+          Number(record.lateMinutes || 0) <= 2
+            ? "attendance_on_time"
+            : "attendance_check_in";
+        await recordActorWorkGamification({
+          context,
+          department,
+          purpose: "attendance",
+          eventType,
+          eventKey: `attendance:${record.attendanceId}:check_in:v2`,
+          sourceType: "attendance_check_in",
+          sourceId: record.attendanceId,
+          eventAt: new Date().toISOString(),
+          metricValue: 1,
+          reason:
+            eventType === "attendance_on_time"
+              ? "Verified on-time attendance"
+              : "Verified attendance check-in",
+          verificationMethod: "canonical_attendance_check_in",
+          payload: {
+            attendanceId: record.attendanceId,
+            date: record.date,
+            checkIn: record.checkIn,
+            lateMinutes: record.lateMinutes,
+            attendanceStatus: record.status,
+          },
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true, record });
   } catch (error) {
