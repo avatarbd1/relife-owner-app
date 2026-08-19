@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
 import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
@@ -74,6 +75,27 @@ export async function POST(request: NextRequest) {
         console.error("Patient saved but automatic inventory consumption failed", error);
       }
     }
+
+    if (department === "Physio" || department === "Dental") {
+      await recordActorWorkGamification({
+        context,
+        department,
+        purpose: "reception",
+        eventType: "patient_registered",
+        eventKey: `patient:${department}:${result.patientId}:registered:v2`,
+        sourceType: "patient_registration",
+        sourceId: result.patientId,
+        eventAt: new Date().toISOString(),
+        reason: "Verified patient registration",
+        verificationMethod: "canonical_patient_registration",
+        payload: {
+          patientId: result.patientId,
+          department,
+          phonePresent: Boolean(String(body.phone || "").trim()),
+        },
+      });
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
