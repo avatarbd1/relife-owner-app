@@ -38,18 +38,20 @@ test("Supabase runtime transitions are transactional, tenant scoped and audited"
   assert.match(edge, /status='Completed'/);
 });
 
-test("fixed-hour browser retry uses one stable request id", () => {
-  const board = source("components/ChamberHourlyBedBoard.tsx");
+test("booking compatibility does not reactivate fixed-bed Supabase writes", () => {
+  const handler = source("app/api/chamber/schedule/handler.ts");
   const scheduler = source("lib/domain/chamber/scheduler.ts");
+  const capacity = source("lib/domain/appointments/capacityBooking.ts");
 
-  assert.match(board, /bookingRequestId/);
-  assert.match(board, /newBookingRequestId/);
-  assert.match(board, /requestedBedId: openSlot\.bedId, requestId/);
-  assert.match(scheduler, /stableRequestId/);
-  assert.match(scheduler, /createSupabaseFixedHourBooking/);
+  assert.match(handler, /capacityBooking/);
+  assert.match(scheduler, /capacityBooking/);
+  assert.match(capacity, /machineReservationsCreated: false/);
+  assert.doesNotMatch(handler, /createSupabaseFixedHourBooking/);
+  assert.doesNotMatch(scheduler, /createSupabaseFixedHourBooking/);
+  assert.doesNotMatch(scheduler, /stableRequestId/);
 });
 
-test("exact Supabase board mode fails closed instead of hiding Supabase-only bookings", () => {
+test("exact Supabase board mode still fails closed instead of hiding runtime data", () => {
   const board = source("lib/domain/chamber/board.ts");
   assert.match(board, /chamberDbMode\(\) !== "supabase"/);
   assert.match(board, /SUPABASE_EDGE_SECRET_MISSING/);
