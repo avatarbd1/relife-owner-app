@@ -137,7 +137,7 @@ export default function AppointmentBookingGate({
         </label>
 
         <p className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-          Physio booking gender/room capacity check করবে। Machine শুধু expected demand হিসেবে দেখাবে—reserve করবে না।
+          Physio booking শুধু gender-safe hourly capacity check করবে। Bed, machine ও treatment sequence patient arrive করার পর Live Chamber handle করবে।
         </p>
         {error ? <p className="text-xs font-semibold text-red-600">{error}</p> : null}
       </div>
