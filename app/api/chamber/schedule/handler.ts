@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  createUnifiedPhysioBooking,
-  validateUnifiedPhysioBooking,
-  type UnifiedPhysioBookingInput,
-} from "@/lib/domain/appointments/create";
-import { isPhysioChamberStart } from "@/lib/domain/chamber/hours";
+  createCapacityBooking,
+  validateCapacityBooking,
+  type CapacityBookingInput,
+} from "@/lib/domain/appointments/capacityBooking";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
-import {
-  createFixedHourBooking,
-  validateFixedHourBooking,
-  type FixedHourInput,
-} from "@/lib/webos/chamberFixedHour";
-import { withMutationLock } from "@/lib/webos/mutationLock";
-import { getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function errorResponse(error: unknown): NextResponse {
   const message =
@@ -38,56 +31,35 @@ function errorResponse(error: unknown): NextResponse {
       { status: 409 }
     );
   }
-  if (
-    [
-      "INVALID_DATE",
-      "INVALID_TIME",
-      "INVALID_SLOT",
-      "INVALID_BED",
-      "INVALID_THERAPIST",
-      "INVALID_REQUEST_ID",
-    ].includes(message)
-  ) {
+  if (["INVALID_DATE", "INVALID_TIME", "INVALID_SLOT"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-  if (
-    [
-      "SCHEMA_MISMATCH",
-      "SUPABASE_EDGE_SECRET_MISSING",
-      "TENANT_NOT_FOUND",
-    ].includes(message)
-  ) {
+  if (message === "SCHEMA_MISMATCH") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
 
-  console.error("Chamber schedule failed", error);
+  console.error("Chamber schedule compatibility route failed", error);
   return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
-function parseInput(body: Record<string, unknown>): UnifiedPhysioBookingInput {
+function parseInput(body: Record<string, unknown>): CapacityBookingInput {
   return {
     patientId: String(body.patientId || ""),
     date: String(body.date || ""),
     time: String(body.time || ""),
     therapist: String(body.therapist || ""),
-    modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
-    remarks: String(body.remarks || ""),
-    requestId: String(body.requestId || ""),
-  };
-}
-
-function parseFixedBedInput(body: Record<string, unknown>): FixedHourInput {
-  return {
-    patientId: String(body.patientId || ""),
-    date: String(body.date || ""),
-    time: String(body.time || ""),
-    therapist: String(body.therapist || ""),
-    requestedBedId: String(body.requestedBedId || ""),
-    modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
     remarks: String(body.remarks || ""),
   };
 }
 
+/**
+ * Compatibility HTTP boundary for old Chamber booking clients.
+ *
+ * Physio booking owns only booking intent and automatic gender/capacity safety.
+ * requestedBedId, modalities and machine timing from legacy clients are
+ * intentionally ignored: general beds and machines are allocated at live
+ * operation time, not at booking time.
+ */
 export async function chamberSchedulePost(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json(
@@ -98,6 +70,8 @@ export async function chamberSchedulePost(request: NextRequest) {
 
   try {
     const context = await requireCurrentAccessContext();
+    assertCanPerform(context, "appointment.create", "Physio");
+
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json(
@@ -108,53 +82,23 @@ export async function chamberSchedulePost(request: NextRequest) {
 
     const record = body as Record<string, unknown>;
     const action = String(record.action || "validate");
-    const requestedBedId = String(record.requestedBedId || "").trim();
     const input = parseInput(record);
 
-    // The fixed-bed path previously accepted any clock-hour (for example 02:00)
-    // while the normal Physio path enforced configured chamber hours. Keep one
-    // source of truth for both entry points.
-    if (requestedBedId && !isPhysioChamberStart(input.time)) {
-      throw new Error("INVALID_SLOT");
-    }
-
     if (action === "validate") {
-      assertCanPerform(context, "appointment.create", "Physio");
-      const patient = await getPatientForContext(context, input.patientId);
-      if (!patient || patient.department !== "Physio") {
-        return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
-      }
-      if (requestedBedId) {
-        const validation = await validateFixedHourBooking(
-          context,
-          parseFixedBedInput(record)
-        );
-        return NextResponse.json({ ok: true, validation });
-      }
-      const validation = await validateUnifiedPhysioBooking(context, input);
+      const validation = await validateCapacityBooking(context, input);
       return NextResponse.json({ ok: true, validation });
     }
+
     if (action === "create") {
-      assertCanPerform(context, "appointment.create", "Physio");
-      const patient = await getPatientForContext(context, input.patientId);
-      if (!patient || patient.department !== "Physio") {
-        return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
-      }
-      const lockKey = `appointment-create:${String(input.date || "")}`;
-      if (requestedBedId) {
-        const result = await withMutationLock(lockKey, () =>
-          createFixedHourBooking(context, parseFixedBedInput(record))
-        );
-        return NextResponse.json({ ok: true, ...result });
-      }
-      const result = await withMutationLock(lockKey, () =>
-        createUnifiedPhysioBooking(context, input)
+      const result = await withMutationLock(
+        `capacity-booking:${input.date}`,
+        () => createCapacityBooking(context, input)
       );
       return NextResponse.json({ ok: true, ...result });
     }
 
     return NextResponse.json(
-      { ok: false, error: "Unknown action" },
+      { ok: false, error: "INVALID_ACTION" },
       { status: 400 }
     );
   } catch (error) {
