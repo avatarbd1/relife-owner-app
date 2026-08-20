@@ -33,9 +33,11 @@ export default function BiometricLogin({
       const startPayload = await startResponse.json().catch(() => ({}));
       if (!startResponse.ok) {
         if (startPayload?.error === "NO_PASSKEYS_REGISTERED") {
-          throw new Error("এখনো এই অ্যাপে Fingerprint / Face ID সেটআপ করা নেই। PIN ব্যবহার করুন।");
+          throw new Error(
+            "এই staff device এখনো activate করা নেই। Owner-এর setup link দিয়ে প্রথমবার activate করুন।"
+          );
         }
-        throw new Error("Biometric login শুরু করা যায়নি। PIN ব্যবহার করুন।");
+        throw new Error("Staff biometric login শুরু করা যায়নি। আবার চেষ্টা করুন।");
       }
 
       const credential = await startAuthentication({
@@ -48,7 +50,7 @@ export default function BiometricLogin({
       });
       const verifyPayload = await verifyResponse.json().catch(() => ({}));
       if (!verifyResponse.ok || !verifyPayload?.ok) {
-        throw new Error("Biometric verification ব্যর্থ হয়েছে। PIN ব্যবহার করুন।");
+        throw new Error("Staff biometric verification ব্যর্থ হয়েছে। আবার চেষ্টা করুন।");
       }
       onSuccess();
     } catch (error) {
@@ -70,7 +72,7 @@ export default function BiometricLogin({
       className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition duration-150 active:scale-[0.98] active:bg-emerald-700 disabled:opacity-50 motion-reduce:transition-none"
     >
       <span aria-hidden="true">🔐</span>
-      {busy ? "Verifying..." : "Fingerprint / Face ID"}
+      {busy ? "Verifying..." : "Staff sign in · Fingerprint / Face ID"}
     </button>
   );
 }
