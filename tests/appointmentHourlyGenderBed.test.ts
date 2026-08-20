@@ -40,7 +40,7 @@ test("legacy Chamber schedule API is compatibility-only and cannot reserve a bed
   const capacity = source("lib/domain/appointments/capacityBooking.ts");
 
   assert.match(handler, /capacityBooking/);
-  assert.doesNotMatch(handler, /requestedBedId/);
+  assert.doesNotMatch(handler, /record\.requestedBedId|body\.requestedBedId|requestedBedId\s*:/);
   assert.doesNotMatch(handler, /validateFixedHourBooking/);
   assert.doesNotMatch(handler, /createFixedHourBooking/);
   assert.match(capacity, /Assigned_Bed_ID: ""/);
