@@ -88,11 +88,14 @@ Booking rules:
 - Traction is machine demand with a 20-minute expected-use reminder, not a pre-assigned patient bed.
 - Reception must not have to resolve therapist workload, machine availability, treatment sequencing, or runtime duration to save an appointment.
 
-Canonical live-operation authority:
+Current live-operation boundaries:
 
 ```text
-lib/domain/chamber/runtime.ts
+lib/domain/chamber/runtime.ts     # receive/start/complete general session state
+lib/webos/machineRuntime.ts       # actual machine start/finish/exclusivity (migration-era)
 ```
+
+`lib/domain/chamber/runtime.ts` is the domain boundary for the general Chamber session. Actual machine operations are still implemented by the migration-era `lib/webos/machineRuntime.ts` behind `/api/chamber/machines`; this remains post-booking operational logic and should later move behind the Chamber domain boundary without changing the booking contract.
 
 Live-operation rules:
 
