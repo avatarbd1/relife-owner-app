@@ -3,11 +3,13 @@
 ## Booking invariants
 
 - Physio general-treatment planning window is 60 minutes with an operational tolerance of ±5 minutes.
-- Booking hard-blocks only unsafe gender/room-capacity conflicts and overlapping duplicate-patient bookings.
+- Booking hard-blocks only automatic unsafe gender/room-capacity conflicts and overlapping duplicate-patient bookings.
+- Reception does not select a general bed or machine slot during booking.
 - General beds are not pre-assigned to patients at booking time.
 - Therapist selection is optional. Therapist overlap is advisory and does not block booking.
 - Machine modalities are expected demand only. Booking does not create machine reservations or exact machine timelines.
 - Traction is treated as a machine demand with a 20-minute expected-use reminder, not as a patient bed.
+- Reception should not need to resolve therapist load, machine availability, treatment sequence, or treatment duration before saving a booking.
 
 ## Live operating invariants
 
