@@ -17,9 +17,10 @@ test("PIN endpoint remains owner-only authentication", () => {
 test("staff sign-in remains passkey\/biometric based rather than per-staff PIN", () => {
   const page = source("app/login/page.tsx");
   assert.match(page, /<BiometricLogin/);
-  assert.match(page, /Staff \/ passkey/);
-  assert.match(page, /Owner PIN/);
-  assert.match(page, /Registered staff devices can use the biometric\/passkey button/);
+  assert.match(page, /Staff access/);
+  assert.match(page, /Fingerprint \/ Face ID/);
+  assert.match(page, /Owner access/);
+  assert.doesNotMatch(page, /Staff PIN/);
 });
 
 test("owner PIN cookie remains HttpOnly and same-site", () => {
