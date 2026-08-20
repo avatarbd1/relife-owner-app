@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createUnifiedPhysioBooking } from "@/lib/domain/appointments/create";
+import {
+  createCapacityBooking,
+  type CapacityBookingValidation,
+} from "@/lib/domain/appointments/capacityBooking";
 import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import type { BookingValidationResult } from "@/lib/webos/appointmentScheduling";
 import { assertCanPerform } from "@/lib/webos/access";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { createAppointment, getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
-  const typed = error as Error & { validation?: BookingValidationResult };
+  const typed = error as Error & { validation?: CapacityBookingValidation };
   const message = error instanceof Error ? error.message : "APPOINTMENT_CREATE_FAILED";
   if (message === "ACCESS_DENIED") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
@@ -35,11 +37,15 @@ function errorResponse(error: unknown): NextResponse {
   }
   if (message.startsWith("APPOINTMENT_CAPACITY:")) {
     return NextResponse.json(
-      { ok: false, error: "APPOINTMENT_CAPACITY", detail: message.split(":").slice(1).join(":") },
+      {
+        ok: false,
+        error: "APPOINTMENT_CAPACITY",
+        detail: message.split(":").slice(1).join(":"),
+      },
       { status: 409 }
     );
   }
-  if (["INVALID_DATE", "INVALID_TIME", "INVALID_THERAPIST", "INVALID_REQUEST_ID"].includes(message)) {
+  if (["INVALID_DATE", "INVALID_TIME", "INVALID_SLOT", "INVALID_THERAPIST", "INVALID_REQUEST_ID"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
   if (["SCHEMA_MISMATCH", "SUPABASE_EDGE_SECRET_MISSING", "TENANT_NOT_FOUND"].includes(message)) {
@@ -66,17 +72,19 @@ export async function POST(request: NextRequest) {
 
     assertCanPerform(context, "appointment.create", patient.department);
 
-    const lockKey = `appointment-create:${String(body.date || "")}`;
+    const isPhysio = patient.department === "Physio";
+    const lockKey = isPhysio
+      ? `capacity-booking:${String(body.date || "")}`
+      : `appointment-create:${String(body.date || "")}`;
+
     const result = await withMutationLock(lockKey, () => {
-      if (patient.department === "Physio") {
-        return createUnifiedPhysioBooking(context, {
+      if (isPhysio) {
+        return createCapacityBooking(context, {
           patientId: patient.patientId,
-          date: body.date,
-          time: body.time,
-          therapist: body.therapist,
-          remarks: body.remarks,
-          modalities: Array.isArray(body.modalities) ? body.modalities.map(String) : [],
-          requestId: body.requestId,
+          date: String(body.date || ""),
+          time: String(body.time || ""),
+          therapist: String(body.therapist || ""),
+          remarks: String(body.remarks || ""),
         });
       }
       return createAppointment(context, {
