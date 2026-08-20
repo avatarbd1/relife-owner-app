@@ -56,6 +56,10 @@ function digitsOnly(value: unknown): string {
   return normalizeSearchDigits(value).replace(/\D/g, "");
 }
 
+function hasExactWord(value: string, query: string): boolean {
+  return Boolean(query) && value.split(" ").some((token) => token === query);
+}
+
 function startsWord(value: string, query: string): boolean {
   return value.split(" ").some((token) => token.startsWith(query));
 }
@@ -95,6 +99,9 @@ function scoreRecord<T extends PatientSearchRecord>(patient: T, rawQuery: string
   }
   if (queryDigits.length >= 4 && phoneDigits.startsWith(queryDigits)) {
     return { patient, score: 860, matchedBy: "Phone" };
+  }
+  if (hasExactWord(fullName, query)) {
+    return { patient, score: 850, matchedBy: "Name" };
   }
   if (queryDigits.length >= 4 && phoneDigits.endsWith(queryDigits)) {
     return { patient, score: 840, matchedBy: "Phone" };
