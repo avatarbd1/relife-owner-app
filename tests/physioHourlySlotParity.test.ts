@@ -6,16 +6,15 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-const bookingUi = source("components/AppointmentFormMultiDate.tsx");
-const bookingDomain = source("lib/domain/appointments/create.ts");
-const scheduling = source("lib/webos/appointmentScheduling.ts");
+const bookingUi = source("components/AppointmentCapacityForm.tsx");
+const bookingDomain = source("lib/domain/appointments/capacityBooking.ts");
 const hours = source("lib/domain/chamber/hours.ts");
 const chamberBoard = source("lib/domain/chamber/board.ts");
-const chamberUi = source("components/ChamberHourlyBedBoard.tsx");
+const chamberCapacityUi = source("components/ChamberCapacityBoard.tsx");
 const chamberPage = source("app/(dashboard)/chamber/page.tsx");
 
-describe("Physio Chamber schedule and four-bed capacity parity", () => {
-  it("uses the same 9-1 and 3-9 hourly starts in appointment and Chamber UI", () => {
+describe("Physio booking hour and four-patient capacity parity", () => {
+  it("uses the same 9-1 and 3-9 hourly starts in booking and Chamber schedule views", () => {
     for (const time of [
       "09:00",
       "10:00",
@@ -36,43 +35,34 @@ describe("Physio Chamber schedule and four-bed capacity parity", () => {
     ok(hours.includes("PHYSIO_CHAMBER_STARTS.length * PHYSIO_CHAMBER_BED_IDS.length"));
     ok(bookingUi.includes("PHYSIO_CHAMBER_STARTS"));
     ok(chamberBoard.includes("PHYSIO_CHAMBER_STARTS.map"));
-    ok(bookingUi.includes('selectedPatient?.department === "Physio" ? PHYSIO_TIME_SLOTS : DENTAL_TIME_SLOTS'));
-    ok(bookingUi.includes("9 AM–1 PM & 3–9 PM"));
   });
 
-  it("rejects every Physio start outside the canonical Chamber schedule", () => {
-    ok(bookingDomain.includes("assertPhysioChamberStart"));
-    ok(bookingDomain.includes("isPhysioChamberStart(value)"));
+  it("rejects Physio starts outside the canonical Chamber schedule", () => {
+    ok(bookingDomain.includes("isPhysioChamberStart(input.time)"));
     ok(bookingDomain.includes('throw new Error("INVALID_SLOT")'));
-    ok(bookingDomain.includes("withTherapist.suggestions.filter"));
-    ok(bookingDomain.includes("isPhysioChamberStart(item.time)"));
-    ok(scheduling.includes("if (!isPhysioChamberStart(input.time)) throw new Error(\"INVALID_SLOT\")"));
   });
 
-  it("keeps Traction out of the four general-bed booking capacity", () => {
+  it("counts four general-treatment places without pre-assigning a bed", () => {
     ok(hours.includes('"BED-1"'));
     ok(hours.includes('"BED-4"'));
     equal(hours.includes('"TRACTION-BED"'), false);
-    equal(chamberUi.includes("renderBedCell(TRACTION"), false);
-    ok(scheduling.includes("overlappingAppointments.length >= 4"));
-    ok(scheduling.includes('message: "All 4 treatment beds are already booked for this hour."'));
-    ok(scheduling.includes('station: needsTraction ? "Traction" : "Treatment"'));
-    equal(
-      scheduling.includes('return { bedId: "TRACTION-BED", roomId: "Traction Room", station: "Traction" }'),
-      false
-    );
+    ok(bookingDomain.includes("overlapping.length >= 4"));
+    ok(bookingDomain.includes('message: "Physio treatment capacity is full for this hour."'));
+    ok(bookingDomain.includes('Assigned_Bed_ID: ""'));
+    ok(bookingDomain.includes('Timeline_ID: ""'));
+    ok(chamberCapacityUi.includes("Hard block happens only when gender/room capacity or duplicate-patient conflict is unsafe"));
     ok(chamberPage.includes("Booking capacity"));
     ok(chamberPage.includes("10 hourly windows · 4 general beds · 60 ± 5 min"));
     ok(chamberPage.includes("Booking plans capacity. Live operation records what actually happens."));
   });
 
-  it("holds legacy fixed-hour scheduling records for at least the full 60-minute booking hour", () => {
-    ok(scheduling.includes("startMinute + Math.max(60, durationMin)"));
-    ok(scheduling.includes("existingStart + Math.max(60, item.expectedDurationMin)"));
-  });
-
-  it("preserves the existing explicit Supabase cutover boundary", () => {
-    ok(bookingDomain.includes('chamberDbMode() !== "supabase"'));
-    ok(bookingDomain.includes("SUPABASE_EDGE_SECRET_MISSING"));
+  it("keeps machine and therapist demand outside booking hard-block policy", () => {
+    ok(bookingDomain.includes('type: "therapist_load"'));
+    ok(bookingDomain.includes("Booking is still allowed"));
+    ok(bookingDomain.includes('type: "machine_demand"'));
+    ok(bookingDomain.includes("advisory only; no machine time is reserved"));
+    ok(bookingDomain.includes("machineReservationsCreated: false"));
+    equal(bookingDomain.includes("25_Machine_Reservations"), false);
+    equal(bookingDomain.includes("26_Treatment_Timeline"), false);
   });
 });
