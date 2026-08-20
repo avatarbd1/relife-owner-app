@@ -86,10 +86,17 @@ async function assertAssignment(context: AccessContext, therapist: string): Prom
   if (!context.roles.includes("Therapist")) throw new Error("ACCESS_DENIED");
   const identity = await getActiveWebStaffById(context.staffId);
   if (!identity) throw new Error("STAFF_NOT_FOUND");
+
   const assigned = normalized(therapist);
-  if (!assigned || ![identity.staffId, identity.fullName].map(normalized).includes(assigned)) {
-    throw new Error("THERAPIST_NOT_ASSIGNED");
-  }
+  // Therapist is optional at booking. Any authorised Physio therapist may pick up
+  // an unassigned patient at actual treatment start.
+  if (!assigned) return;
+  if ([identity.staffId, identity.fullName].map(normalized).includes(assigned)) return;
+
+  // Respect the existing clinical scope used by Relife for same-day cross-cover.
+  const scope = normalized(identity.clinicalWriteScope).replace(/\s/g, "_");
+  if (scope.includes("today_cross_cover") || scope.includes("cross_cover")) return;
+  throw new Error("THERAPIST_NOT_ASSIGNED");
 }
 
 function auditRow(
