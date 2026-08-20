@@ -100,8 +100,8 @@ export default async function PatientsPage({
         title={todayView ? "My patients today" : "Patients"}
         subtitle={
           context.roles.includes("Owner")
-            ? "Combined Physio & Dental patient workspace"
-            : "Role and department scoped patient workspace"
+            ? "Fast search across permitted Physio & Dental patient files"
+            : "Fast search across your permitted patient files"
         }
         action={
           createDepartments.length > 0 ? (
@@ -135,6 +135,15 @@ export default async function PatientsPage({
           </Link>
         </div>
       )}
+
+      <section className="mb-4">
+        <PatientsClient
+          patients={patients}
+          showMoney={canSeeAnyMoney}
+          paymentDepartments={[...paymentDepartments]}
+          appointmentDepartments={[...appointmentDepartments]}
+        />
+      </section>
 
       <Section title="Patient snapshot" subtitle="Current visible patient set">
         <div className="px-4 pb-4">
@@ -174,19 +183,6 @@ export default async function PatientsPage({
           />
         </Section>
       )}
-
-      <section className="mb-4">
-        <div className="mb-2">
-          <h2 className="text-sm font-semibold text-slate-900">Patient list</h2>
-          <p className="mt-0.5 text-[11px] text-slate-500">Search, filter, sort and continue permitted workflows</p>
-        </div>
-        <PatientsClient
-          patients={patients}
-          showMoney={canSeeAnyMoney}
-          paymentDepartments={[...paymentDepartments]}
-          appointmentDepartments={[...appointmentDepartments]}
-        />
-      </section>
     </div>
   );
 }
