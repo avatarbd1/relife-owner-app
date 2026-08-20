@@ -7,7 +7,7 @@ import {
   therapistIntervalsOverlap,
 } from "../lib/domain/appointments/therapistCapacityRules.ts";
 
-test("Manual Therapy reserves at least ten minutes of therapist capacity", () => {
+test("Manual Therapy helper keeps a ten-minute therapist interval for live/legacy planning", () => {
   assert.equal(THERAPIST_MANUAL_MINUTES, 10);
   const intervals = therapistIntervalsForTimeline([
     { name: "Wax", resourceId: "WAX-01", startMinute: 600, endMinute: 610 },
@@ -17,7 +17,7 @@ test("Manual Therapy reserves at least ten minutes of therapist capacity", () =>
   assert.deepEqual(intervals, [{ startMinute: 611, endMinute: 621 }]);
 });
 
-test("machine-only treatment does not block the therapist for the whole bed slot", () => {
+test("machine-only treatment does not occupy therapist intervals", () => {
   const intervals = therapistIntervalsForTimeline([
     { name: "Wax", resourceId: "WAX-01", startMinute: 600, endMinute: 610 },
     { name: "TENS", resourceId: "TENS-01", startMinute: 611, endMinute: 631 },
@@ -26,14 +26,14 @@ test("machine-only treatment does not block the therapist for the whole bed slot
   assert.deepEqual(intervals, []);
 });
 
-test("general therapist session remains capacity-blocking", () => {
+test("general therapist session can still be represented by the runtime helper", () => {
   const intervals = therapistIntervalsForTimeline([
     { name: "General session", resourceId: "", startMinute: 600, endMinute: 630 },
   ]);
   assert.deepEqual(intervals, [{ startMinute: 600, endMinute: 630 }]);
 });
 
-test("legacy appointment without timeline fails closed to its whole session", () => {
+test("legacy appointment without timeline fails closed inside the interval helper", () => {
   const intervals = therapistIntervalsForTimeline([], { startMinute: 600, endMinute: 660 });
   assert.deepEqual(intervals, [{ startMinute: 600, endMinute: 660 }]);
 });
@@ -44,7 +44,7 @@ test("same therapist can serve sequential non-overlapping manual windows", () =>
   assert.equal(therapistIntervalsOverlap(first, second), null);
 });
 
-test("same therapist overlap is detected at the exact treatment interval", () => {
+test("same therapist overlap helper detects the exact treatment interval", () => {
   const overlap = therapistIntervalsOverlap(
     [{ startMinute: 610, endMinute: 620 }],
     [{ startMinute: 615, endMinute: 625 }]
@@ -52,12 +52,18 @@ test("same therapist overlap is detected at the exact treatment interval", () =>
   assert.deepEqual(overlap, { startMinute: 615, endMinute: 620 });
 });
 
-test("unified appointment flow enforces therapist capacity before write", () => {
-  const source = readFileSync(
-    new URL("../lib/domain/appointments/create.ts", import.meta.url),
+test("reception booking treats therapist overlap as advisory, not a hard block", () => {
+  const capacity = readFileSync(
+    new URL("../lib/domain/appointments/capacityBooking.ts", import.meta.url),
     "utf8"
   );
-  assert.match(source, /applyTherapistCapacityValidation/);
-  assert.match(source, /sheetValidationWithTherapist/);
-  assert.match(source, /throwValidationConflict/);
+  const route = readFileSync(
+    new URL("../app/api/appointments/route.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(capacity, /type: "therapist_load"/);
+  assert.match(capacity, /Booking is still allowed/);
+  assert.match(route, /createCapacityBooking/);
+  assert.doesNotMatch(route, /createUnifiedPhysioBooking/);
 });
