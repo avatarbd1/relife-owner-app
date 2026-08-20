@@ -1,154 +1,49 @@
 import "server-only";
 
 import {
-  chamberDbMode,
-  chamberSupabaseConfigured,
-  createSupabaseFixedHourBooking,
-  shouldUseSupabaseValidation,
-  syncSupabaseChamberCache,
-} from "@/lib/data/supabaseChamber";
+  createCapacityBooking,
+  validateCapacityBooking,
+  type CapacityBookingInput,
+  type CapacityBookingValidation,
+} from "@/lib/domain/appointments/capacityBooking";
 import type { AccessContext } from "@/lib/webos/access";
-import {
-  createFixedHourBooking,
-  validateFixedHourBooking,
-  type FixedHourInput,
-  type FixedHourValidation,
-} from "@/lib/webos/chamberFixedHour";
-import { validateFixedHourBookingWithSupabase } from "@/lib/webos/chamberSupabaseValidation";
-import { getPatientForContext } from "@/lib/webos/reception";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
-export type ChamberScheduleInput = FixedHourInput & { requestId?: string };
-export type ChamberScheduleValidation = FixedHourValidation;
+/**
+ * Deprecated Chamber-scheduling compatibility shape.
+ *
+ * requestedBedId, modalities and requestId are accepted only so old callers do
+ * not crash. They do not participate in booking policy. General-bed assignment,
+ * machine exclusivity, exact machine timing and treatment sequencing belong to
+ * live Chamber operation after the appointment exists.
+ */
+export type ChamberScheduleInput = CapacityBookingInput & {
+  requestedBedId?: string;
+  modalities?: string[];
+  requestId?: string;
+};
 
-function stableRequestId(value: unknown): string {
-  const text = String(value ?? "").trim();
-  if (!/^[A-Za-z0-9_-]{8,120}$/.test(text)) throw new Error("INVALID_REQUEST_ID");
-  return text;
-}
+export type ChamberScheduleValidation = CapacityBookingValidation;
 
-async function warmSupabaseReference(
-  context: AccessContext,
-  input: ChamberScheduleInput,
-  validation: ChamberScheduleValidation,
-  strict = false
-): Promise<void> {
-  try {
-    const patient = await getPatientForContext(context, input.patientId);
-    if (!patient || patient.department !== "Physio") {
-      if (strict) throw new Error("PATIENT_NOT_FOUND");
-      return;
-    }
-
-    const suggestedLabels = validation.suggestedModalities.flatMap((value) => {
-      const option = validation.modalityOptions.find((item) => item.value === value);
-      return option ? [option.label] : [];
-    });
-    if (validation.needsTraction) suggestedLabels.push("Traction");
-
-    await syncSupabaseChamberCache({
-      patients: [
-        {
-          patientId: patient.patientId,
-          fullName: patient.fullName,
-          gender: patient.gender,
-          therapist: patient.therapist,
-          status: patient.status,
-          department: "Physio",
-        },
-      ],
-      plans: [
-        {
-          patientId: patient.patientId,
-          electrotherapyPlan: suggestedLabels.join(" "),
-          manualTherapyPlan: validation.suggestedModalities.includes("MANUAL")
-            ? "Manual Therapy"
-            : "",
-          exercisePlan: "",
-          status: "Active",
-        },
-      ],
-    });
-  } catch (error) {
-    if (strict) throw error;
-    console.warn("Supabase Chamber cache warm failed", error);
-  }
-}
-
-function mergeCutoverValidation(
-  sheets: ChamberScheduleValidation,
-  supabase: ChamberScheduleValidation
-): ChamberScheduleValidation {
-  const conflicts = [...supabase.conflicts, ...sheets.conflicts];
-  const unique = [
-    ...new Map(conflicts.map((item) => [`${item.type}:${item.message}`, item])).values(),
-  ];
+function capacityInput(input: ChamberScheduleInput): CapacityBookingInput {
   return {
-    ...supabase,
-    isValid: unique.length === 0,
-    conflicts: unique,
-    suggestedModalities: [
-      ...new Set([...supabase.suggestedModalities, ...sheets.suggestedModalities]),
-    ],
-    needsTraction: supabase.needsTraction || sheets.needsTraction,
+    patientId: input.patientId,
+    date: input.date,
+    time: input.time,
+    therapist: input.therapist,
+    remarks: input.remarks,
   };
 }
 
-/**
- * Canonical Chamber booking validation entry point.
- *
- * shadow: Supabase validates when available, with Sheets as safe fallback.
- * supabase: transitional cutover validates both stores so legacy Sheets rows
- * cannot be double-booked while new transactional rows live in Supabase.
- */
+/** @deprecated Use validateCapacityBooking from appointments/capacityBooking. */
 export async function validateChamberSchedule(
   context: AccessContext,
   input: ChamberScheduleInput
 ): Promise<ChamberScheduleValidation> {
-  if (!shouldUseSupabaseValidation()) {
-    return validateFixedHourBooking(context, input);
-  }
-
-  if (chamberDbMode() === "supabase") {
-    if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
-    const sheets = await validateFixedHourBooking(context, input);
-    await warmSupabaseReference(context, input, sheets, true);
-    const supabase = await validateFixedHourBookingWithSupabase(context, input);
-    return mergeCutoverValidation(sheets, supabase);
-  }
-
-  try {
-    return await validateFixedHourBookingWithSupabase(context, input);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "SUPABASE_VALIDATION_FAILED";
-    if (
-      [
-        "INVALID_DATE",
-        "INVALID_TIME",
-        "INVALID_SLOT",
-        "INVALID_BED",
-        "INVALID_THERAPIST",
-        "ACCESS_DENIED",
-      ].includes(message)
-    ) {
-      throw error;
-    }
-
-    console.warn("Supabase Chamber validation fallback to Sheets:", message);
-    const validation = await validateFixedHourBooking(context, input);
-    void warmSupabaseReference(context, input, validation);
-    return validation;
-  }
+  return validateCapacityBooking(context, capacityInput(input));
 }
 
-/**
- * Canonical Chamber booking command.
- *
- * Sheets remains the default writer. When RELIFE_CHAMBER_DB_MODE=supabase is
- * deliberately enabled, the final write is one Postgres transaction. During
- * the transition validation still checks both stores to protect legacy rows.
- */
+/** @deprecated Use createCapacityBooking from appointments/capacityBooking. */
 export async function createChamberScheduleBooking(
   context: AccessContext,
   input: ChamberScheduleInput
@@ -156,53 +51,8 @@ export async function createChamberScheduleBooking(
   appointmentId: string;
   validation: ChamberScheduleValidation;
 }> {
-  if (chamberDbMode() !== "supabase") {
-    return withMutationLock(`appointment-create:${input.date}`, () =>
-      createFixedHourBooking(context, input)
-    );
-  }
-  if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
-  const requestId = stableRequestId(input.requestId);
-
-  const validation = await validateChamberSchedule(context, input);
-  if (!validation.isValid) {
-    const first = validation.conflicts[0];
-    const error = new Error(
-      `APPOINTMENT_CONFLICT:${first?.type || "other"}:${first?.message || "Booking conflict"}`
-    );
-    (error as Error & { validation?: ChamberScheduleValidation }).validation = validation;
-    throw error;
-  }
-
-  try {
-    const result = await createSupabaseFixedHourBooking({
-      patientId: validation.patientId,
-      date: input.date,
-      startMinute: validation.slotStartMinute,
-      therapist: input.therapist,
-      bedId: validation.requestedBedId,
-      modalities: input.modalities || [],
-      timeline: validation.timeline.map((step) => ({
-        name: step.name,
-        resourceId: step.resourceId,
-        resourceName: step.resourceId ? step.name : "",
-        durationMin: step.durationMin,
-        startMinute: step.startMinute,
-        endMinute: step.endMinute,
-      })),
-      remarks: input.remarks || "",
-      actorId: context.staffId,
-      requestId,
-    });
-    return { appointmentId: result.appointmentId, validation };
-  } catch (error) {
-    const status = (error as Error & { status?: number }).status;
-    if (status === 409) {
-      const detail = error instanceof Error ? error.message : "Booking conflict";
-      const wrapped = new Error(`APPOINTMENT_CONFLICT:database:${detail}`);
-      (wrapped as Error & { validation?: ChamberScheduleValidation }).validation = validation;
-      throw wrapped;
-    }
-    throw error;
-  }
+  const canonical = capacityInput(input);
+  return withMutationLock(`capacity-booking:${canonical.date}`, () =>
+    createCapacityBooking(context, canonical)
+  );
 }
