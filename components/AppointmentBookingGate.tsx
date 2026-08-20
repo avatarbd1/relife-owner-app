@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import AppointmentCapacityForm from "@/components/AppointmentCapacityForm";
 import AppointmentFormGenderBed from "@/components/AppointmentFormGenderBed";
 import { haptic } from "@/lib/interactions";
 
@@ -136,7 +137,7 @@ export default function AppointmentBookingGate({
         </label>
 
         <p className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-          Physio appointment-এ patient select করার পর শুধু hourly slot দেখাবে।
+          Physio booking gender/room capacity check করবে। Machine শুধু expected demand হিসেবে দেখাবে—reserve করবে না।
         </p>
         {error ? <p className="text-xs font-semibold text-red-600">{error}</p> : null}
       </div>
@@ -153,7 +154,7 @@ export default function AppointmentBookingGate({
 
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-sm font-bold text-amber-950">Gender missing</p>
-          <p className="mt-1 text-xs text-amber-800">Appointment fail করবে না। আগে gender select করুন, তারপর একই flow-তে booking খুলবে।</p>
+          <p className="mt-1 text-xs text-amber-800">Physio capacity gender-wise চলে। Gender একবার set করলে booking flow খুলবে।</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -197,7 +198,9 @@ export default function AppointmentBookingGate({
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Booking patient</p>
           <p className="text-sm font-bold text-slate-900">{gatedPatient.patientId} — {gatedPatient.fullName}</p>
-          {gatedPatient.department === "Physio" ? <p className="text-xs text-slate-500">Gender: {selectedGender} · Hourly slots · explicit bed</p> : null}
+          {gatedPatient.department === "Physio" ? (
+            <p className="text-xs text-slate-500">Gender: {selectedGender} · 60 ± 5 min · no fixed bed/machine</p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -208,14 +211,18 @@ export default function AppointmentBookingGate({
         </button>
       </div>
 
-      <AppointmentFormGenderBed
-        patients={[gatedPatient]}
-        clinicians={clinicians}
-        modalityOptions={modalityOptions}
-        defaultPatientId={gatedPatient.patientId}
-        startDate={startDate}
-        defaultDepartment={gatedPatient.department === "Dental" ? "Dental" : "Physio"}
-      />
+      {gatedPatient.department === "Physio" ? (
+        <AppointmentCapacityForm patient={gatedPatient} clinicians={clinicians} startDate={startDate} />
+      ) : (
+        <AppointmentFormGenderBed
+          patients={[gatedPatient]}
+          clinicians={clinicians}
+          modalityOptions={modalityOptions}
+          defaultPatientId={gatedPatient.patientId}
+          startDate={startDate}
+          defaultDepartment="Dental"
+        />
+      )}
     </div>
   );
 }

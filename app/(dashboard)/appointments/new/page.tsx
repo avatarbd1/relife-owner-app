@@ -52,7 +52,7 @@ export default async function NewAppointmentPage({
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">Appointments</p>
           <h1 className="mt-0.5 text-xl font-bold text-slate-950">New appointment</h1>
-          <p className="mt-1 text-xs text-slate-500">Patient → gender if missing → clinician → hourly slot → safe bed & machine validation</p>
+          <p className="mt-1 text-xs text-slate-500">Physio: patient → gender → hourly capacity. Machine demand is advisory; no fixed bed or machine time.</p>
         </div>
         <Link href="/appointments" className="relife-interactive rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600">
           Back

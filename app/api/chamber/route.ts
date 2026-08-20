@@ -17,6 +17,8 @@ import {
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { startGeneralTreatment } from "@/lib/webos/generalTreatmentRuntime";
+import { getMachineOperationSnapshot } from "@/lib/webos/machineRuntime";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function statusFor(message: string): number {
@@ -28,7 +30,8 @@ function statusFor(message: string): number {
     message.startsWith("CHAMBER_RUNTIME_CONFLICT:") ||
     message.startsWith("CHAMBER_PATIENT_ALREADY_ACTIVE:") ||
     message.startsWith("RESOURCE_BUSY:") ||
-    ["PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING", "APPOINTMENT_NOT_ACTIVE"].includes(message)
+    message.startsWith("MACHINE_ALREADY_RUNNING:") ||
+    ["MACHINE_STILL_RUNNING", "PATIENT_GENDER_REQUIRED", "CHAMBER_SESSION_COMPLETED", "CHAMBER_SESSION_NOT_RUNNING", "CHAMBER_SESSION_NOT_WAITING", "APPOINTMENT_NOT_ACTIVE"].includes(message)
   ) return 409;
   if (["CHAMBER_STEP_REQUIRED", "INVALID_STEP_DURATION", "INVALID_ACTION", "SCHEMA_MISMATCH"].includes(message)) return 400;
   return 500;
@@ -63,8 +66,6 @@ export async function POST(request: NextRequest) {
     if (action === "receive") {
       assertCanPerform(context, "chamber.receive", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
-      // Serialize receive across appointments so two taps for different bookings
-      // of the same patient cannot both pass the active-patient snapshot check.
       const result = await withMutationLock("chamber-receive", async () => {
         const snapshot = await getChamberRuntimeSnapshot(context);
         const target = snapshot.queue.find((item) => item.appointmentId === appointmentId);
@@ -93,9 +94,7 @@ export async function POST(request: NextRequest) {
             { appointmentId, patientId: target.patientId },
             activity
           );
-          if (conflict) {
-            throw new Error(`CHAMBER_PATIENT_ALREADY_ACTIVE:${conflict.appointmentId}`);
-          }
+          if (conflict) throw new Error(`CHAMBER_PATIENT_ALREADY_ACTIVE:${conflict.appointmentId}`);
         }
         return receiveChamberRuntimePatient(context, appointmentId);
       });
@@ -110,6 +109,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "prefer_station") {
+      // Legacy compatibility only. New Physio booking does not pre-assign beds.
       assertCanPerform(context, "chamber.run", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
       const result = await withMutationLock(`chamber-station:${appointmentId}`, () =>
@@ -121,11 +121,14 @@ export async function POST(request: NextRequest) {
       assertCanPerform(context, "chamber.run", "Physio");
       const sessionId = String(body.sessionId || "").trim();
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
-        startChamberRuntimeSession(context, sessionId)
+        sessionId.startsWith("CHW")
+          ? startGeneralTreatment(context, sessionId)
+          : startChamberRuntimeSession(context, sessionId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "step") {
+      // Legacy clinical-step API. Routine machine use now goes through /api/chamber/machines.
       assertCanPerform(context, "chamber.run", "Physio");
       const sessionId = String(body.sessionId || "").trim();
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
@@ -142,6 +145,11 @@ export async function POST(request: NextRequest) {
     if (action === "complete") {
       assertCanPerform(context, "chamber.run", "Physio");
       const sessionId = String(body.sessionId || "").trim();
+      if (sessionId.startsWith("CHW")) {
+        const machines = await getMachineOperationSnapshot(context);
+        const active = machines.sessions.find((item) => item.sessionId === sessionId);
+        if (active?.currentResourceId) throw new Error("MACHINE_STILL_RUNNING");
+      }
       const capture = await captureChamberTreatmentForCompletion(context, sessionId);
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
         completeChamberRuntimeSession(context, sessionId)
@@ -155,16 +163,12 @@ export async function POST(request: NextRequest) {
           treatmentNote,
         });
       } catch (noteError) {
-        console.error(
-          "Chamber completed but automatic treatment note save failed",
-          noteError
-        );
+        console.error("Chamber completed but automatic treatment note save failed", noteError);
         return NextResponse.json({
           ok: true,
           ...result,
           noteSaved: false,
-          noteError:
-            noteError instanceof Error ? noteError.message : "TREATMENT_NOTE_SAVE_FAILED",
+          noteError: noteError instanceof Error ? noteError.message : "TREATMENT_NOTE_SAVE_FAILED",
         });
       }
     }
