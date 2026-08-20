@@ -39,13 +39,6 @@ function departmentBadge(department: PatientDepartment) {
   return "bg-slate-100 text-slate-600 ring-slate-200";
 }
 
-function actionGrid(canPay: boolean, canBook: boolean): string {
-  const count = 1 + Number(canPay) + Number(canBook);
-  if (count === 3) return "grid-cols-3";
-  if (count === 2) return "grid-cols-2";
-  return "grid-cols-1";
-}
-
 export default function PatientsClient({
   patients,
   showMoney = true,
@@ -157,7 +150,7 @@ export default function PatientsClient({
             <button
               type="button"
               onClick={() => changeQuery("")}
-              className="min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600"
+              className="min-h-10 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600"
             >
               Clear
             </button>
@@ -183,10 +176,10 @@ export default function PatientsClient({
                 key={item.id}
                 type="button"
                 onClick={() => changeDepartment(item.id)}
-                className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 transition ${
+                className={`min-h-10 shrink-0 rounded-full px-3 text-xs font-semibold ring-1 transition ${
                   department === item.id
                     ? "bg-blue-800 text-white ring-blue-800"
-                    : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"
+                    : "bg-white text-slate-600 ring-slate-200"
                 }`}
               >
                 {item.label} · {item.count}
@@ -203,10 +196,10 @@ export default function PatientsClient({
                 key={item.id}
                 type="button"
                 onClick={() => changeStatus(item.id)}
-                className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 transition ${
+                className={`min-h-10 shrink-0 rounded-full px-3 text-xs font-semibold ring-1 transition ${
                   status === item.id
                     ? "bg-slate-900 text-white ring-slate-900"
-                    : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"
+                    : "bg-white text-slate-600 ring-slate-200"
                 }`}
               >
                 {item.label} · {item.count}
@@ -221,11 +214,9 @@ export default function PatientsClient({
               <span className="text-xs font-semibold text-slate-700">
                 {matches.length} result{matches.length === 1 ? "" : "s"}
               </span>
-              {hasQuery ? (
-                <span className="ml-2 text-[10px] text-blue-700">best matches first</span>
-              ) : null}
+              {hasQuery ? <span className="ml-2 text-[10px] text-blue-700">best first</span> : null}
             </div>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Sort ties</span>
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Sort</span>
           </div>
           <TapChoice
             value={sort}
@@ -293,28 +284,32 @@ export default function PatientsClient({
                 </div>
               ) : null}
 
-              <div className={`mt-3 grid gap-2 ${actionGrid(canPay, canBook)}`}>
+              <div className="mt-3 space-y-2">
                 <Link
                   href={`/patients/${encodeURIComponent(patient.patientId)}`}
-                  className="flex min-h-11 items-center justify-center rounded-lg bg-blue-800 px-3 py-2 text-center text-xs font-semibold text-white"
+                  className="flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-800 px-4 py-3 text-center text-sm font-semibold text-white active:scale-[0.99]"
                 >
-                  View file
+                  View patient file
                 </Link>
-                {canPay ? (
-                  <Link
-                    href={`/payments?patientId=${encodeURIComponent(patient.patientId)}`}
-                    className="flex min-h-11 items-center justify-center rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-semibold text-slate-700 hover:bg-slate-200"
-                  >
-                    Payment
-                  </Link>
-                ) : null}
-                {canBook ? (
-                  <Link
-                    href={`/appointments/new?patientId=${encodeURIComponent(patient.patientId)}`}
-                    className="flex min-h-11 items-center justify-center rounded-lg bg-slate-100 px-3 py-2 text-center text-xs font-semibold text-slate-700 hover:bg-slate-200"
-                  >
-                    Appointment
-                  </Link>
+                {canPay || canBook ? (
+                  <div className={`grid gap-2 ${canPay && canBook ? "grid-cols-2" : "grid-cols-1"}`}>
+                    {canPay ? (
+                      <Link
+                        href={`/payments?patientId=${encodeURIComponent(patient.patientId)}`}
+                        className="flex min-h-11 items-center justify-center rounded-xl bg-slate-100 px-3 py-2 text-center text-xs font-semibold text-slate-700"
+                      >
+                        Payment
+                      </Link>
+                    ) : null}
+                    {canBook ? (
+                      <Link
+                        href={`/appointments/new?patientId=${encodeURIComponent(patient.patientId)}`}
+                        className="flex min-h-11 items-center justify-center rounded-xl bg-slate-100 px-3 py-2 text-center text-xs font-semibold text-slate-700"
+                      >
+                        Appointment
+                      </Link>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </article>
@@ -327,11 +322,11 @@ export default function PatientsClient({
             <p className="mt-1 text-xs leading-5 text-slate-400">
               ID/name/phone check করুন বা department/status filter reset করুন।
             </p>
-            {(hasQuery || department !== "All" || status !== "All") ? (
+            {hasQuery || department !== "All" || status !== "All" ? (
               <button
                 type="button"
                 onClick={resetSearch}
-                className="mt-3 min-h-10 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600"
+                className="mt-3 min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600"
               >
                 Reset search
               </button>
@@ -344,7 +339,7 @@ export default function PatientsClient({
             <button
               type="button"
               onClick={() => setVisibleCount((current) => current + PAGE_SIZE)}
-              className="min-h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-xs font-semibold text-slate-700"
             >
               Load more · {matches.length - visibleCount} remaining
             </button>
