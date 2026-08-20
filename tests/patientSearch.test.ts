@@ -70,6 +70,13 @@ test("exact ID ranks above newer partial-name matches", () => {
   assert.ok(results[0].score > (results[1]?.score || 0));
 });
 
+test("exact name token ranks above a longer name prefix", () => {
+  const results = searchPatients(patients, { query: "Rahim" });
+  assert.equal(results[0]?.patient.patientId, "PT-103");
+  assert.equal(results[0]?.matchedBy, "Name");
+  assert.ok(results[0].score > (results[1]?.score || 0));
+});
+
 test("multi-word name search works regardless of extra spaces", () => {
   const results = searchPatients(patients, { query: "  rahim   uddin " });
   assert.equal(results[0]?.patient.patientId, "PT-103");
