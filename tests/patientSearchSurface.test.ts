@@ -12,7 +12,7 @@ test("PatientsClient delegates matching to the ranked patient search domain", ()
   assert.match(client, /@\/lib\/domain\/patients\/search/);
   assert.match(client, /searchPatients\(patients/);
   assert.match(client, /বাংলা\/English digits both work/);
-  assert.match(client, /best matches first/);
+  assert.match(client, /best first/);
   assert.doesNotMatch(client, /\.toLowerCase\(\)\.includes\(normalized\)/);
 });
 
@@ -46,4 +46,13 @@ test("search is rendered before summary and workflow cards on the Patients page"
   assert.ok(searchIndex >= 0);
   assert.ok(snapshotIndex > searchIndex);
   assert.ok(workflowIndex > searchIndex);
+});
+
+test("patient result actions are mobile-first instead of three cramped buttons", () => {
+  const client = source("components/PatientsClient.tsx");
+
+  assert.match(client, /View patient file/);
+  assert.match(client, /min-h-12 w-full/);
+  assert.match(client, /canPay && canBook \? "grid-cols-2" : "grid-cols-1"/);
+  assert.doesNotMatch(client, /grid-cols-3/);
 });
