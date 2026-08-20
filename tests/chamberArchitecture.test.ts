@@ -6,12 +6,27 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("canonical Chamber schedule handler delegates to unified Physio booking (V1-C consolidated)", () => {
+test("canonical Chamber schedule handler delegates to one domain booking facade", () => {
   const handler = source("app/api/chamber/schedule/handler.ts");
-  // V1-C consolidation: chamber/schedule delegates to createUnifiedPhysioBooking
-  assert.match(handler, /createUnifiedPhysioBooking/);
-  assert.match(handler, /@\/lib\/domain\/appointments\/create/);
-  assert.doesNotMatch(handler, /createChamberScheduleBooking/);
+  assert.match(handler, /createChamberBooking/);
+  assert.match(handler, /validateChamberBooking/);
+  assert.match(handler, /@\/lib\/domain\/chamber\/booking/);
+  assert.doesNotMatch(handler, /chamberFixedHour/);
+  assert.doesNotMatch(handler, /createFixedHourBooking/);
+  assert.doesNotMatch(handler, /validateFixedHourBooking/);
+  assert.doesNotMatch(handler, /createUnifiedPhysioBooking/);
+  assert.doesNotMatch(handler, /withMutationLock/);
+});
+
+test("Chamber booking facade owns requested-bed compatibility and one create lock", () => {
+  const booking = source("lib/domain/chamber/booking.ts");
+  assert.match(booking, /createUnifiedPhysioBooking/);
+  assert.match(booking, /validateUnifiedPhysioBooking/);
+  assert.match(booking, /createFixedHourBooking/);
+  assert.match(booking, /validateFixedHourBooking/);
+  assert.match(booking, /requestedBedId/);
+  assert.match(booking, /withMutationLock/);
+  assert.match(booking, /isPhysioChamberStart/);
 });
 
 test("legacy Chamber booking APIs are thin compatibility adapters", () => {
@@ -37,10 +52,8 @@ test("migration hourly module is read-only and cannot create bookings", () => {
   assert.doesNotMatch(hourly, /appointmentScheduling/);
 });
 
-test("chamber scheduler is no longer used as canonical path (V1-C consolidation to createUnifiedPhysioBooking)", () => {
+test("legacy chamber scheduler remains non-canonical during requested-bed migration", () => {
   const scheduler = source("lib/domain/chamber/scheduler.ts");
-  // V1-C: Canonical Physio booking moved to createUnifiedPhysioBooking
-  // Chamber scheduler functions remain for backward compatibility but are not used by active paths
   assert.match(scheduler, /validateFixedHourBooking/);
   assert.match(scheduler, /createFixedHourBooking/);
   assert.match(scheduler, /withMutationLock/);
