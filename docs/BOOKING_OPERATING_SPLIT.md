@@ -5,6 +5,7 @@
 - Physio general-treatment planning window is 60 minutes with an operational tolerance of ±5 minutes.
 - Booking hard-blocks only unsafe gender/room-capacity conflicts and overlapping duplicate-patient bookings.
 - General beds are not pre-assigned to patients at booking time.
+- Therapist selection is optional. Therapist overlap is advisory and does not block booking.
 - Machine modalities are expected demand only. Booking does not create machine reservations or exact machine timelines.
 - Traction is treated as a machine demand with a 20-minute expected-use reminder, not as a patient bed.
 
@@ -12,6 +13,7 @@
 
 - Reception marks Arrived.
 - Therapist/Owner/Manager starts and completes general treatment.
+- An unassigned patient can be picked up by an authorized Physio therapist; assigned patients follow the existing same-day cross-cover clinical scope.
 - A general bed is allocated only at actual treatment start using live gender-compatible capacity.
 - Authorized Physio operating staff (Owner, Manager, Receptionist, Therapist through existing chamber permissions) may start/finish actual machine use.
 - Only Traction may run while the patient is Waiting, allowing traction before general treatment.
