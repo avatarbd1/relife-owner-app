@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import TapChoice from "@/components/TapChoice";
 import {
   searchPatients,
@@ -69,10 +69,6 @@ export default function PatientsClient({
     [patients, query, department, status, sort]
   );
 
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [query, department, status, sort]);
-
   const counts = useMemo(
     () => ({
       all: patients.length,
@@ -118,6 +114,33 @@ export default function PatientsClient({
 
   const visibleMatches = matches.slice(0, visibleCount);
 
+  function changeQuery(value: string) {
+    setQuery(value);
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  function changeDepartment(value: PatientSearchDepartment) {
+    setDepartment(value);
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  function changeStatus(value: PatientSearchStatus) {
+    setStatus(value);
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  function changeSort(value: PatientSearchSort) {
+    setSort(value);
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  function resetSearch() {
+    setQuery("");
+    setDepartment("All");
+    setStatus("All");
+    setVisibleCount(PAGE_SIZE);
+  }
+
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="p-4">
@@ -133,7 +156,7 @@ export default function PatientsClient({
           {hasQuery ? (
             <button
               type="button"
-              onClick={() => setQuery("")}
+              onClick={() => changeQuery("")}
               className="min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600"
             >
               Clear
@@ -147,7 +170,7 @@ export default function PatientsClient({
           inputMode="search"
           autoComplete="off"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => changeQuery(event.target.value)}
           placeholder="e.g. PT-103, ১০৩, Rahim, 01712…"
           className="mt-2 min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-700 focus:bg-white focus:ring-2 focus:ring-blue-100"
         />
@@ -159,7 +182,7 @@ export default function PatientsClient({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setDepartment(item.id)}
+                onClick={() => changeDepartment(item.id)}
                 className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 transition ${
                   department === item.id
                     ? "bg-blue-800 text-white ring-blue-800"
@@ -179,7 +202,7 @@ export default function PatientsClient({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setStatus(item.id)}
+                onClick={() => changeStatus(item.id)}
                 className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold ring-1 transition ${
                   status === item.id
                     ? "bg-slate-900 text-white ring-slate-900"
@@ -209,7 +232,7 @@ export default function PatientsClient({
             options={sortOptions}
             columns={sortOptions.length === 3 ? 3 : 2}
             compact
-            onChange={(value) => value && setSort(value)}
+            onChange={(value) => value && changeSort(value)}
           />
         </div>
       </div>
@@ -307,11 +330,7 @@ export default function PatientsClient({
             {(hasQuery || department !== "All" || status !== "All") ? (
               <button
                 type="button"
-                onClick={() => {
-                  setQuery("");
-                  setDepartment("All");
-                  setStatus("All");
-                }}
+                onClick={resetSearch}
                 className="mt-3 min-h-10 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600"
               >
                 Reset search
