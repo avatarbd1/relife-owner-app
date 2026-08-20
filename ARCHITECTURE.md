@@ -15,8 +15,8 @@ No screen, API route, or compatibility page may re-implement business rules that
 | Domain | Owns | Must not own |
 |---|---|---|
 | Patients | patient identity, department visibility, profile updates, reports/files references | appointment allocation, payment arithmetic |
-| Appointments | date/time scheduling intent, clinician assignment, appointment lifecycle | bed/machine runtime logic |
-| Chamber | Physio bed allocation, gender-room safety, machine reservations, treatment timeline, runtime session | finance, patient master truth |
+| Appointments | date/time booking intent, optional clinician assignment, booking-time gender/capacity safety, appointment lifecycle | live bed allocation, machine exclusivity, treatment runtime |
+| Chamber | live Physio bed/room allocation, runtime gender safety, machine runtime, treatment flow and session state | booking-time machine reservation, finance, patient master truth |
 | Finance | payments, expenses, cash custody movement, salary, approvals, finance calculations | clinical/chamber rules |
 | Clinical | assessment, treatment plan, treatment notes, clinical reports | payment/cash decisions |
 | Staff | staff master, roles, department mapping, attendance identity | domain-specific permissions logic |
@@ -45,11 +45,11 @@ audit event
 - Domain code must not depend on React/components.
 - Business rules must not be copied into page components.
 - Persistence adapters must not decide business policy.
-- Compatibility routes may redirect, but must not own a second implementation.
+- Compatibility routes may redirect/delegate, but must not own a second implementation.
 
 ## Current migration state
 
-The repository predates this contract. During consolidation, old modules remain operational until their replacement is tested. New feature work should not introduce another parallel implementation.
+The repository predates this contract. During consolidation, old modules remain operational only where required for backward compatibility until their replacement is tested. New feature work must not introduce another parallel implementation.
 
 ### Finance
 
@@ -68,38 +68,50 @@ lib/domain/finance/
 
 Legacy modules such as `lib/controls.ts`, `lib/webos/financeOps.ts`, and `lib/webos/expenseRequests.ts` will be consolidated behind one Finance repository/command layer before removal.
 
-### Chamber
+### Appointments / Chamber split
 
-Target module:
+Physio booking and live Chamber operation are deliberately separate workflows.
+
+Canonical booking authority:
 
 ```text
-lib/domain/chamber/
-  rules.ts
-  scheduler.ts
-  runtime.ts
-  commands.ts
-  repository.ts
-  types.ts
+lib/domain/appointments/capacityBooking.ts
 ```
 
-The final Chamber scheduler must be the only implementation of:
+Booking rules:
 
-- one-hour bed occupancy
-- dynamic room gender lock
-- patient duplicate prevention
-- therapist overlap
-- machine overlap
-- treatment-plan requirements
-- fixed modality durations
-- booking conflict alternatives
+- Physio planning window is 60 minutes with an operational tolerance of ±5 minutes.
+- Booking hard-blocks only automatic unsafe gender/room-capacity conflicts and overlapping duplicate-patient bookings.
+- General beds are not pre-assigned at booking time.
+- Therapist assignment is optional; therapist overlap may be advisory but must not block booking.
+- Machine modalities are expected demand only; booking must not create machine reservations or exact machine timelines.
+- Traction is machine demand with a 20-minute expected-use reminder, not a pre-assigned patient bed.
+- Reception must not have to resolve therapist workload, machine availability, treatment sequencing, or runtime duration to save an appointment.
 
-`appointmentScheduling.ts`, `chamberHourlyBooking.ts`, and `chamberFixedHour.ts` are migration-era implementations and must converge rather than continue to grow independently.
+Canonical live-operation authority:
+
+```text
+lib/domain/chamber/runtime.ts
+```
+
+Live-operation rules:
+
+- Reception marks the patient Arrived/received.
+- General bed allocation happens only when treatment actually starts.
+- Live gender-compatible room capacity is enforced at treatment start.
+- Therapist/Owner/Manager starts and completes general treatment under access policy.
+- Authorized Physio operating staff start/finish actual machine use.
+- Actual machine use is exclusive and server-derived.
+- Machine timers are reminders; Finish remains explicit and auditable.
+- Treatment cannot complete while a machine is still running.
+
+Migration-era booking modules such as `lib/webos/chamberFixedHour.ts`, `lib/webos/appointmentScheduling.ts`, and the old fixed-bed/Supabase booking scheduler must not be active booking writers. Compatibility APIs must delegate to `capacityBooking.ts` and ignore legacy requested-bed/machine-timeline inputs. They may remain temporarily for cached/old clients, but must not define booking policy.
 
 ## Data ownership
 
 ### Primary operational database
 
-Supabase Postgres is the target source of truth for high-frequency transactional domains, beginning with Chamber and then Finance.
+Supabase Postgres is the target source of truth for high-frequency transactional domains, beginning with Chamber runtime and then Finance.
 
 ### Google Sheets
 
@@ -131,20 +143,35 @@ These rules require automated regression tests:
 7. Owner is excluded from salary commitment.
 8. Salary paid/advance is derived from salary ledger, not inferred from cash movement.
 
-## Chamber invariants
+## Physio booking invariants
 
-The consolidated Chamber engine must regression-test:
+The booking engine must regression-test:
 
-1. Requested bed is authoritative; never silently move a booking.
-2. Bed occupancy overlap is rejected.
-3. Same-room opposite-gender overlap is rejected.
+1. Missing patient gender blocks Physio booking.
+2. Unsafe opposite-gender room/capacity combinations block booking automatically.
+3. More than available general-treatment capacity for an hour blocks booking automatically.
 4. Same patient overlapping active appointment is rejected.
-5. Same therapist overlapping active appointment is rejected.
-6. Same machine overlapping reservation is rejected.
-7. Machine duration comes from the resource policy.
-8. A fixed 60-minute session may not truncate a selected clinical modality.
-9. Runtime state survives refresh and is server-derived, not timer-only client state.
-10. Completed/cancelled sessions release resources.
+5. Therapist overlap does not block booking.
+6. Machine demand/overlap does not block booking and creates no machine reservation.
+7. No general bed is assigned during booking.
+8. No treatment timeline is created during booking.
+9. Traction remains expected machine demand, not a fixed booking bed.
+10. Booking remains 60 minutes with ±5 minute operational tolerance.
+
+## Chamber live-operation invariants
+
+The live Chamber engine must regression-test:
+
+1. General bed is chosen only when treatment actually starts.
+2. Live same-room opposite-gender occupancy is rejected.
+3. An occupied physical bed cannot be started for a second patient.
+4. Actual physical machine use is exclusive.
+5. Traction may run while the patient is waiting.
+6. Starting traction after general treatment releases the general bed immediately.
+7. Runtime state survives refresh and is server-derived, not timer-only client state.
+8. Machine timers are reminders and require explicit Finish.
+9. Treatment cannot complete while a machine is still running.
+10. Completed/cancelled sessions release live resources.
 
 ## Navigation ownership
 
@@ -178,7 +205,7 @@ Before merge:
 
 1. Architecture foundation + regression tests.
 2. Finance consolidation.
-3. Chamber consolidation.
+3. Booking/Chamber separation + Chamber runtime consolidation.
 4. Navigation/Home simplification.
 5. Tools/legacy route cleanup.
 6. Typed system configuration.
