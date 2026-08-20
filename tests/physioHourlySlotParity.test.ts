@@ -49,7 +49,7 @@ describe("Physio Chamber schedule and four-bed capacity parity", () => {
     ok(scheduling.includes("if (!isPhysioChamberStart(input.time)) throw new Error(\"INVALID_SLOT\")"));
   });
 
-  it("books only Bed 1-4 and never treats Traction as a fifth patient bed", () => {
+  it("keeps Traction out of the four general-bed booking capacity", () => {
     ok(hours.includes('"BED-1"'));
     ok(hours.includes('"BED-4"'));
     equal(hours.includes('"TRACTION-BED"'), false);
@@ -61,10 +61,12 @@ describe("Physio Chamber schedule and four-bed capacity parity", () => {
       scheduling.includes('return { bedId: "TRACTION-BED", roomId: "Traction Room", station: "Traction" }'),
       false
     );
-    ok(chamberPage.includes("10 hourly slots · Bed 1–4 · max 40 patients/day"));
+    ok(chamberPage.includes("Booking capacity"));
+    ok(chamberPage.includes("10 hourly windows · 4 general beds · 60 ± 5 min"));
+    ok(chamberPage.includes("Booking plans capacity. Live operation records what actually happens."));
   });
 
-  it("holds every patient bed for at least the full 60-minute booking hour", () => {
+  it("holds legacy fixed-hour scheduling records for at least the full 60-minute booking hour", () => {
     ok(scheduling.includes("startMinute + Math.max(60, durationMin)"));
     ok(scheduling.includes("existingStart + Math.max(60, item.expectedDurationMin)"));
   });

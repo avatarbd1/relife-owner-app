@@ -15,12 +15,15 @@ test("payment corrections remain append-only", () => {
   assert.doesNotMatch(corrections, /deleteDimension/);
 });
 
-test("A11 Chamber UX stays on the existing chamber API", () => {
+test("A11 Chamber UX stays on the chamber API while using the live operating workflow", () => {
   const board = source("components/LiveChamberBoard.tsx");
-  assert.match(board, /ChamberPatientFlowTimeline/);
-  assert.match(board, /ChamberStepWorkflow/);
+  assert.match(board, /MachineOperationsPanel/);
+  assert.match(board, /Arrived/);
+  assert.match(board, /Start Treatment/);
+  assert.match(board, /Complete Treatment/);
   assert.match(board, /fetch\("\/api\/chamber"/);
   assert.doesNotMatch(board, /\/api\/treatment/);
+  assert.doesNotMatch(board, /ChamberStepWorkflow/);
 });
 
 test("payments remember the last patient and use global toast feedback", () => {
