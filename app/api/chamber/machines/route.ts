@@ -14,7 +14,7 @@ function statusFor(message: string): number {
   if (
     message.startsWith("RESOURCE_BUSY:") ||
     message.startsWith("MACHINE_ALREADY_RUNNING:") ||
-    message === "MACHINE_USE_MISMATCH"
+    ["MACHINE_USE_MISMATCH", "MACHINE_REQUIRES_TREATMENT"].includes(message)
   ) return 409;
   if (message === "CHAMBER_SCHEMA_MISSING") return 503;
   return 500;
@@ -50,13 +50,21 @@ export async function POST(request: NextRequest) {
 
     if (action === "start") {
       const resourceId = String(record.resourceId || "").trim();
-      const result = await withMutationLock(`machine-runtime:${sessionId}`, () =>
-        startMachineUse(context, {
+      const result = await withMutationLock(`machine-runtime:${sessionId}`, async () => {
+        const snapshot = await getMachineOperationSnapshot(context);
+        const session = snapshot.sessions.find((item) => item.sessionId === sessionId);
+        const machine = snapshot.machines.find((item) => item.resourceId === resourceId);
+        if (!session) throw new Error("CHAMBER_SESSION_NOT_FOUND");
+        if (!machine) throw new Error("RESOURCE_NOT_FOUND");
+        if (session.status === "Waiting" && !machine.traction) {
+          throw new Error("MACHINE_REQUIRES_TREATMENT");
+        }
+        return startMachineUse(context, {
           sessionId,
           resourceId,
           durationMin: Number(record.durationMin || 0),
-        })
-      );
+        });
+      });
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "finish") {
