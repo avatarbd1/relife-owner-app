@@ -23,17 +23,9 @@ type Validation = {
   patientId: string;
   patientName: string;
   gender: "Male" | "Female" | "";
-  roomId: string;
   sessionMinutes: number;
   toleranceMinutes: number;
   conflicts: Array<{ type: string; message: string }>;
-  warnings: Array<{ type: string; message: string }>;
-  expectedDemand: Array<{
-    resourceId: string;
-    resourceName: string;
-    durationMin: number;
-    expectedThisHour: number;
-  }>;
 };
 
 type SlotValidation = {
@@ -101,6 +93,7 @@ export default function AppointmentCapacityForm({
       setChecks([]);
       return;
     }
+
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setChecking(true);
@@ -128,7 +121,11 @@ export default function AppointmentCapacityForm({
                 error: payload.detail || payload.error || "Validation failed",
               };
             }
-            return { date, validation: payload.validation as Validation, error: "" };
+            return {
+              date,
+              validation: payload.validation as Validation,
+              error: "",
+            };
           } catch {
             return { date, validation: null, error: "Network error" };
           }
@@ -139,6 +136,7 @@ export default function AppointmentCapacityForm({
         setChecking(false);
       }
     }, 180);
+
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -159,7 +157,9 @@ export default function AppointmentCapacityForm({
     haptic("tap");
   }
 
-  const allValid = checks.length === dates.length && checks.every((item) => item.validation?.isValid);
+  const allValid =
+    checks.length === dates.length &&
+    checks.every((item) => item.validation?.isValid);
 
   async function createBookings() {
     if (!allValid || creating) return;
@@ -167,6 +167,7 @@ export default function AppointmentCapacityForm({
     setError("");
     setSuccess([]);
     const created: string[] = [];
+
     try {
       for (const date of dates) {
         const response = await fetch("/api/appointments/capacity-booking", {
@@ -183,32 +184,37 @@ export default function AppointmentCapacityForm({
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok) {
-          const detail = payload.validation?.conflicts?.map((item: { message: string }) => item.message).join(" · ");
-          throw new Error(detail || payload.detail || payload.error || `Booking failed for ${date}`);
+          const detail = payload.validation?.conflicts
+            ?.map((item: { message: string }) => item.message)
+            .join(" · ");
+          throw new Error(
+            detail || payload.detail || payload.error || `Booking failed for ${date}`
+          );
         }
         created.push(String(payload.appointmentId || date));
       }
+
       setSuccess(created);
       haptic("success");
       router.refresh();
       if (dates.length === 1) router.push("/appointments");
     } catch (createError) {
       haptic("error");
-      setError(createError instanceof Error ? createError.message : "Booking failed");
+      setError(
+        createError instanceof Error ? createError.message : "Booking failed"
+      );
       router.refresh();
     } finally {
       setCreating(false);
     }
   }
 
-  const primaryValidation = checks[0]?.validation;
-
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
-        <p className="text-xs font-bold text-emerald-950">General treatment · 60 ± 5 min</p>
+        <p className="text-xs font-bold text-emerald-950">Simple Physio booking · 60 ± 5 min</p>
         <p className="mt-1 text-[11px] leading-5 text-emerald-800">
-          Booking শুধু gender/room capacity plan করে। TENS, IFT, Traction বা অন্য machine-এর exact time reserve হয় না।
+          Booking-এ শুধু gender-safe hourly capacity automatically check হবে। Bed, machine, treatment sequence বা machine time এখন ঠিক করতে হবে না—ওগুলো patient arrive করার পর Live Chamber handle করবে।
         </p>
       </div>
 
@@ -272,44 +278,51 @@ export default function AppointmentCapacityForm({
         >
           <option value="">Any available therapist</option>
           {physioClinicians.map((item) => (
-            <option key={item.staffId} value={item.fullName}>{item.fullName}</option>
+            <option key={item.staffId} value={item.fullName}>
+              {item.fullName}
+            </option>
           ))}
         </select>
-        <p className="mt-1 text-[10px] text-slate-400">Therapist overlap warning দেখাবে, booking block করবে না।</p>
+        <p className="mt-1 text-[10px] text-slate-400">
+          না দিলেও booking হবে। Therapist overlap booking block করবে না।
+        </p>
       </label>
-
-      {primaryValidation?.expectedDemand?.length ? (
-        <section className="rounded-xl border border-violet-100 bg-violet-50 p-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-violet-700">Expected machine demand</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {primaryValidation.expectedDemand.map((item) => (
-              <span key={item.resourceId} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-violet-800 ring-1 ring-violet-100">
-                {item.resourceName} · {item.durationMin}m · this hour ×{item.expectedThisHour}
-              </span>
-            ))}
-          </div>
-          <p className="mt-2 text-[10px] text-violet-600">Info only — কোনো machine lock/reservation হয় না।</p>
-        </section>
-      ) : null}
 
       <div className="space-y-2">
         {checks.map((item) => {
           const validation = item.validation;
           return (
-            <div key={item.date} className={`rounded-xl border px-3 py-2.5 ${validation?.isValid ? "border-emerald-100 bg-emerald-50" : "border-red-100 bg-red-50"}`}>
+            <div
+              key={item.date}
+              className={`rounded-xl border px-3 py-2.5 ${
+                validation?.isValid
+                  ? "border-emerald-100 bg-emerald-50"
+                  : "border-red-100 bg-red-50"
+              }`}
+            >
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-bold text-slate-900">{dateLabel(item.date)} · {timeLabel(time)}</p>
-                <span className={`text-[10px] font-bold ${validation?.isValid ? "text-emerald-700" : "text-red-700"}`}>
-                  {validation?.isValid ? `${validation.roomId} capacity OK` : "Blocked"}
+                <p className="text-xs font-bold text-slate-900">
+                  {dateLabel(item.date)} · {timeLabel(time)}
+                </p>
+                <span
+                  className={`text-[10px] font-bold ${
+                    validation?.isValid ? "text-emerald-700" : "text-red-700"
+                  }`}
+                >
+                  {validation?.isValid ? "Booking OK" : "Blocked"}
                 </span>
               </div>
               {validation?.conflicts.map((conflict) => (
-                <p key={`${conflict.type}:${conflict.message}`} className="mt-1 text-[10px] text-red-700">{conflict.message}</p>
+                <p
+                  key={`${conflict.type}:${conflict.message}`}
+                  className="mt-1 text-[10px] text-red-700"
+                >
+                  {conflict.message}
+                </p>
               ))}
-              {validation?.warnings.map((warning) => (
-                <p key={`${warning.type}:${warning.message}`} className="mt-1 text-[10px] text-amber-700">⚠ {warning.message}</p>
-              ))}
-              {!validation && item.error ? <p className="mt-1 text-[10px] text-red-700">{item.error}</p> : null}
+              {!validation && item.error ? (
+                <p className="mt-1 text-[10px] text-red-700">{item.error}</p>
+              ) : null}
             </div>
           );
         })}
@@ -326,8 +339,16 @@ export default function AppointmentCapacityForm({
         />
       </label>
 
-      {error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p> : null}
-      {success.length > 1 ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">{success.length} appointments created.</p> : null}
+      {error ? (
+        <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {success.length > 1 ? (
+        <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+          {success.length} appointments created.
+        </p>
+      ) : null}
 
       <button
         type="button"
@@ -335,7 +356,13 @@ export default function AppointmentCapacityForm({
         onClick={() => void createBookings()}
         className="min-h-12 w-full rounded-xl bg-blue-800 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
       >
-        {creating ? "Booking…" : checking ? "Checking capacity…" : dates.length > 1 ? `Book ${dates.length} appointments` : "Book appointment"}
+        {creating
+          ? "Booking…"
+          : checking
+            ? "Checking gender capacity…"
+            : dates.length > 1
+              ? `Book ${dates.length} appointments`
+              : "Book appointment"}
       </button>
     </div>
   );
