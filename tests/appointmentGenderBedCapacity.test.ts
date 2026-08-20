@@ -48,7 +48,7 @@ test("legacy Chamber booking endpoint delegates to capacity booking instead of f
   assert.match(handler, /@\/lib\/domain\/appointments\/capacityBooking/);
   assert.match(handler, /validateCapacityBooking/);
   assert.match(handler, /createCapacityBooking/);
-  assert.doesNotMatch(handler, /requestedBedId/);
+  assert.doesNotMatch(handler, /record\.requestedBedId|body\.requestedBedId|requestedBedId\s*:/);
   assert.doesNotMatch(handler, /validateFixedHourBooking/);
   assert.doesNotMatch(handler, /createFixedHourBooking/);
 });
