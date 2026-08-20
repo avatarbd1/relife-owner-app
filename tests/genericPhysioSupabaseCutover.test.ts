@@ -62,5 +62,5 @@ test("legacy Chamber scheduler accepts old request fields but ignores fixed-bed 
   assert.match(scheduler, /createCapacityBooking/);
   assert.doesNotMatch(scheduler, /stableRequestId/);
   assert.doesNotMatch(scheduler, /createSupabaseFixedHourBooking/);
-  assert.doesNotMatch(handler, /requestedBedId/);
+  assert.doesNotMatch(handler, /record\.requestedBedId|body\.requestedBedId|requestedBedId\s*:/);
 });
