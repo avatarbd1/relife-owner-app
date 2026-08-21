@@ -5,11 +5,11 @@ import type {
   Payment,
   SalaryPayment,
   Scope,
-} from "@/lib/types";
+} from "../../types.ts";
 import {
   isAcceptedCashMovementStatus,
   isPaidLedgerStatus,
-} from "@/lib/domain/finance/policy";
+} from "./policy.ts";
 
 export type CashCustodian = "Reception" | "HomeTreasury" | "Bank";
 
