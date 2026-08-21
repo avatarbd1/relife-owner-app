@@ -113,17 +113,21 @@ function requireSheetId(map: Map<string, number>, title: string): number {
   return id;
 }
 
-function hasTypeColumn(headers: string[]): boolean {
-  return headerIndex(headers, "Type", "Payment_Type") >= 0;
+function getTypeColumnName(headers: string[]): string | null {
+  const typeIdx = headerIndex(headers, "Type");
+  if (typeIdx >= 0) return "Type";
+  const paymentTypeIdx = headerIndex(headers, "Payment_Type");
+  if (paymentTypeIdx >= 0) return "Payment_Type";
+  return null;
 }
 
 function ensureTypeColumnRequest(
   sheetId: number,
   headers: string[]
 ): SpreadsheetBatchRequest | null {
-  if (hasTypeColumn(headers)) return null; // Type column already exists
+  if (getTypeColumnName(headers) !== null) return null; // Type or Payment_Type column already exists
 
-  // Add Type as new header at the end
+  // Add Type as new header at the end (neither Type nor Payment_Type exists)
   const typeColumnIndex = headers.length;
   return {
     updateCells: {
@@ -281,17 +285,18 @@ export async function paySalary(
   const month = now.date.slice(0, 7);
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
 
-  // Ensure Type column exists; if not, we'll add it and append Type value to row
-  const hasType = hasTypeColumn(headers);
+  // Detect which type column exists and use its name in values
+  const typeColumnName = getTypeColumnName(headers);
   const ensureTypeReq = ensureTypeColumnRequest(salarySheetIdVal, headers);
+  const needsTypeAppended = typeColumnName === null && ensureTypeReq !== null;
 
-  const row = rowForHeaders(headers, {
+  // Build values dict with correct type column name
+  const rowValues: Record<string, SheetValue> = {
     Payment_ID: paymentId,
     Date: now.date,
     Month: month,
     Staff_ID: staff.staffId,
     Amount: amount,
-    Type: input.type,
     Paid_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
@@ -310,10 +315,20 @@ export async function paySalary(
     Paid_From: input.paidFrom,
     Status: "Paid",
     Paid_At: now.timestamp,
-  });
+  };
+
+  // Use the actual type column name if it exists
+  if (typeColumnName) {
+    rowValues[typeColumnName] = input.type;
+  } else {
+    // If no type column exists yet, use "Type" (will be added by ensureTypeReq)
+    rowValues.Type = input.type;
+  }
+
+  const row = rowForHeaders(headers, rowValues);
 
   // If Type column was missing and we added it, append Type value to the row
-  const finalRow = !hasType && ensureTypeReq ? [...row, input.type] : row;
+  const finalRow = needsTypeAppended ? [...row, input.type] : row;
 
   const auditRow = buildSalaryAuditRow(auditHeaders, {
     now,

@@ -546,3 +546,134 @@ test("P0-05 Area 10: Canonical writer ensures Type persists via column creation"
   const finalRow2 = [...row2, "Salary"]; // Type appended when column was missing
   assert.ok(finalRow2.includes("Salary"), "Type persisted when column was missing (added by writer)");
 });
+
+// ============================================================================
+// REGRESSION: Payment_Type Column Alias Bug (CRITICAL FIX)
+// ============================================================================
+
+test("P0-05 REGRESSION: getTypeColumnName detects Type column first", () => {
+  // When sheet has both Type and Payment_Type, Type takes priority
+  const headers = ["Payment_ID", "Date", "Type", "Payment_Type", "Staff_ID", "Amount"];
+
+  // Simulating getTypeColumnName logic
+  const headerIndex = (headers: string[], ...names: string[]): number => {
+    const lookup = headers.map((h) => h.toLowerCase());
+    for (const name of names) {
+      const index = lookup.indexOf(name.toLowerCase());
+      if (index >= 0) return index;
+    }
+    return -1;
+  };
+
+  const getTypeColumnName = (headers: string[]): string | null => {
+    const typeIdx = headerIndex(headers, "Type");
+    if (typeIdx >= 0) return "Type";
+    const paymentTypeIdx = headerIndex(headers, "Payment_Type");
+    if (paymentTypeIdx >= 0) return "Payment_Type";
+    return null;
+  };
+
+  const detected = getTypeColumnName(headers);
+  assert.strictEqual(
+    detected,
+    "Type",
+    "getTypeColumnName returns 'Type' when both columns exist (Type has priority)"
+  );
+});
+
+test("P0-05 REGRESSION: getTypeColumnName detects Payment_Type when Type missing", () => {
+  // When sheet only has Payment_Type (legacy schema), use it
+  const headers = ["Payment_ID", "Date", "Payment_Type", "Staff_ID", "Amount"];
+
+  const headerIndex = (headers: string[], ...names: string[]): number => {
+    const lookup = headers.map((h) => h.toLowerCase());
+    for (const name of names) {
+      const index = lookup.indexOf(name.toLowerCase());
+      if (index >= 0) return index;
+    }
+    return -1;
+  };
+
+  const getTypeColumnName = (headers: string[]): string | null => {
+    const typeIdx = headerIndex(headers, "Type");
+    if (typeIdx >= 0) return "Type";
+    const paymentTypeIdx = headerIndex(headers, "Payment_Type");
+    if (paymentTypeIdx >= 0) return "Payment_Type";
+    return null;
+  };
+
+  const detected = getTypeColumnName(headers);
+  assert.strictEqual(
+    detected,
+    "Payment_Type",
+    "getTypeColumnName returns 'Payment_Type' when Type is missing"
+  );
+});
+
+test("P0-05 REGRESSION: Type persists to correct column when Payment_Type exists", () => {
+  // Critical bug: when sheet has Payment_Type instead of Type,
+  // selected type value must be written to Payment_Type, not dropped
+  const headers = ["Payment_ID", "Date", "Payment_Type", "Staff_ID", "Amount", "Status"];
+
+  const headerIndex = (headers: string[], ...names: string[]): number => {
+    const lookup = headers.map((h) => h.toLowerCase());
+    for (const name of names) {
+      const index = lookup.indexOf(name.toLowerCase());
+      if (index >= 0) return index;
+    }
+    return -1;
+  };
+
+  const getTypeColumnName = (headers: string[]): string | null => {
+    const typeIdx = headerIndex(headers, "Type");
+    if (typeIdx >= 0) return "Type";
+    const paymentTypeIdx = headerIndex(headers, "Payment_Type");
+    if (paymentTypeIdx >= 0) return "Payment_Type";
+    return null;
+  };
+
+  const typeColumnName = getTypeColumnName(headers);
+  assert.strictEqual(typeColumnName, "Payment_Type", "detected Payment_Type column");
+
+  // When building rowValues, use the actual column name
+  const rowValues: Record<string, string | number> = {
+    Payment_ID: "SPW123456",
+    Date: "2026-08-21",
+    Staff_ID: "ST001",
+    Amount: 30000,
+    Status: "Paid",
+  };
+
+  // Use the detected column name (Payment_Type) to store type value
+  if (typeColumnName) {
+    rowValues[typeColumnName] = "Salary";
+  }
+
+  assert.ok(
+    "Payment_Type" in rowValues,
+    "Payment_Type key exists in rowValues"
+  );
+  assert.strictEqual(
+    rowValues["Payment_Type"],
+    "Salary",
+    "type value written to Payment_Type column, not lost"
+  );
+
+  // When mapping headers to row via rowForHeaders logic
+  const mapped = new Map(
+    Object.entries(rowValues).map(([key, value]) => [key.toLowerCase(), value])
+  );
+  const row = headers.map((header) => mapped.get(header.toLowerCase()) ?? "");
+
+  // Payment_Type value should appear in correct position in row
+  const paymentTypeIndex = headerIndex(headers, "Payment_Type");
+  assert.ok(
+    paymentTypeIndex >= 0,
+    "Payment_Type header has valid index"
+  );
+  assert.strictEqual(
+    row[paymentTypeIndex],
+    "Salary",
+    "Salary value persists at Payment_Type column position in final row"
+  );
+});

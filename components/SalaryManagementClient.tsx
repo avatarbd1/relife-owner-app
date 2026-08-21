@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { InlineNotice, ProgressBar, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
 
