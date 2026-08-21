@@ -261,6 +261,9 @@ function parseCashMovements(
   const toIdx = getHeaderIndex(headers, "To_Custodian");
   const amountIdx = getHeaderIndex(headers, "Amount");
   const receivedIdx = getHeaderIndex(headers, "Received_Amount");
+  const acceptedAtIdx = getHeaderIndex(headers, "Accepted_At");
+  const confirmedAtIdx = getHeaderIndex(headers, "Confirmed_At");
+  const completedAtIdx = getHeaderIndex(headers, "Completed_At");
   const statusIdx = getHeaderIndex(headers, "Status");
   const departmentIdx = getHeaderIndex(headers, "Department");
   const noteIdx = getHeaderIndex(headers, "Note", "Remarks");
@@ -269,6 +272,13 @@ function parseCashMovements(
     const id = valueAt(row, idIdx);
     if (!id) return [];
     const receivedText = valueAt(row, receivedIdx);
+    const status = valueAt(row, statusIdx);
+    const acceptedAt =
+      status.trim().toLowerCase() === "accepted"
+        ? valueAt(row, acceptedAtIdx) ||
+          valueAt(row, confirmedAtIdx) ||
+          valueAt(row, completedAtIdx)
+        : "";
     return [
       {
         id,
@@ -277,7 +287,8 @@ function parseCashMovements(
         toCustodian: valueAt(row, toIdx),
         amount: money(valueAt(row, amountIdx)),
         ...(receivedText ? { receivedAmount: money(receivedText) } : {}),
-        status: valueAt(row, statusIdx),
+        ...(acceptedAt ? { acceptedAt } : {}),
+        status,
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
         ...(valueAt(row, noteIdx) ? { remarks: valueAt(row, noteIdx) } : {}),
       },
