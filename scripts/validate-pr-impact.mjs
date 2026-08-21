@@ -25,7 +25,10 @@ const docsOnly = files.every(
     file.startsWith("docs/") ||
     file.startsWith(".github/") ||
     file.startsWith("tests/") ||
-    file === "scripts/validate-pr-impact.mjs"
+    file === "scripts/validate-pr-impact.mjs" ||
+    file === "AGENTS.md" ||
+    file === "CLAUDE.md" ||
+    file === "MIGRATION_AUDIT.md"
 );
 
 const areas = [
