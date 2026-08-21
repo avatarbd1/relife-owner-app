@@ -105,3 +105,12 @@ test("Dental retry reuses one request ID and cannot double-charge", () => {
   assert.match(client, /requestId: requestIdRef\.current/);
   assert.match(client, /duplicate charge blocked/);
 });
+
+test("Dental charge UI stays on the clinical endpoint and explains collection separation", () => {
+  const client = source("components/DentalClinicalWorkspaceClient.tsx");
+
+  assert.match(client, /fetch\("\/api\/clinical\/dental"/);
+  assert.match(client, /Treatment save cash collection তৈরি করে না/);
+  assert.doesNotMatch(client, /fetch\("\/api\/finance\/payment/);
+  assert.doesNotMatch(client, /fetch\("\/api\/payments/);
+});
