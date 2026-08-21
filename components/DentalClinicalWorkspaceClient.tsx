@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
@@ -14,6 +14,7 @@ type Treatment = {
   procedure: string;
   toothArea: string;
   clinicalNote: string;
+  charge: number;
   status: string;
   clinician: string;
   remarks: string;
@@ -26,6 +27,7 @@ type Workspace = {
     department: "Dental";
     diagnosis: string;
     therapist: string;
+    due: number;
   };
   canWrite: boolean;
   treatments: Treatment[];
@@ -58,6 +60,17 @@ const FDI_TEETH = [
   "31", "32", "33", "34", "35", "36", "37", "38",
 ];
 
+function formatBDT(value: number): string {
+  return `৳${Math.max(0, Number(value || 0)).toLocaleString("en-BD")}`;
+}
+
+function nextRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `DENTAL_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function statusTone(status: string): "success" | "warning" | "error" | "info" | "neutral" {
   const value = status.trim().toLowerCase();
   if (value === "completed") return "success";
@@ -85,10 +98,12 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
   const [customProcedure, setCustomProcedure] = useState("");
   const [toothArea, setToothArea] = useState("");
   const [clinicalNote, setClinicalNote] = useState("");
+  const [charge, setCharge] = useState("");
   const [status, setStatus] = useState("Completed");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
+  const requestIdRef = useRef("");
   const canExecute = workspace.canWrite && !oversight;
 
   useEffect(() => {
@@ -104,6 +119,7 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
 
   const completed = useMemo(() => workspace.treatments.filter((item) => item.status.toLowerCase() === "completed").length, [workspace.treatments]);
   const ongoing = useMemo(() => workspace.treatments.filter((item) => ["ongoing", "follow-up", "planned"].includes(item.status.toLowerCase())).length, [workspace.treatments]);
+  const totalCharged = useMemo(() => workspace.treatments.reduce((sum, item) => sum + Math.max(0, Number(item.charge || 0)), 0), [workspace.treatments]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -112,6 +128,14 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
       haptic("error");
       return;
     }
+    const numericCharge = Number(charge);
+    if (!Number.isFinite(numericCharge) || !Number.isInteger(numericCharge) || numericCharge < 0) {
+      setMessage("✕ Valid whole-Taka treatment charge দিন। Free হলে 0 লিখুন।");
+      haptic("error");
+      return;
+    }
+    if (!requestIdRef.current) requestIdRef.current = nextRequestId();
+
     setBusy(true);
     setMessage(null);
     try {
@@ -119,15 +143,25 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
       const response = await fetch("/api/clinical/dental", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ patientId: workspace.patient.patientId, procedure, toothArea, clinicalNote, status }),
+        body: JSON.stringify({
+          patientId: workspace.patient.patientId,
+          procedure,
+          toothArea,
+          clinicalNote,
+          charge: numericCharge,
+          status,
+          requestId: requestIdRef.current,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "DENTAL_CLINICAL_FAILED");
-      setMessage(`✓ Saved ${String(payload.treatmentId || "Dental record")}`);
+      setMessage(`${payload.duplicate ? "✓ Already saved — duplicate charge blocked" : "✓ Saved"} ${String(payload.treatmentId || "Dental record")} · Charge ${formatBDT(Number(payload.charge ?? numericCharge))} · Due ${formatBDT(Number(payload.due || 0))}`);
       setToothArea("");
       setClinicalNote("");
       setCustomProcedure("");
+      setCharge("");
       setStatus("Completed");
+      requestIdRef.current = "";
       haptic("success");
       router.refresh();
     } catch (error) {
@@ -161,6 +195,7 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
           <div className="flex flex-wrap gap-2">
             <StatusBadge tone="success">{completed} completed</StatusBadge>
             {ongoing > 0 && <StatusBadge tone="warning">{ongoing} active</StatusBadge>}
+            {workspace.patient.due > 0 && <StatusBadge tone="error">Due {formatBDT(workspace.patient.due)}</StatusBadge>}
           </div>
         </div>
       </section>
@@ -182,9 +217,9 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-slate-950">Today&apos;s procedure</h2>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-500">Tap procedure → tooth → status; type only clinical note</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-500">Tap procedure → tooth → charge → status; treatment save updates patient bill/due.</p>
                 </div>
-                <StatusBadge tone="success">Execution</StatusBadge>
+                <StatusBadge tone="success">Execution + billing</StatusBadge>
               </div>
 
               <form onSubmit={submit} className="mt-4 space-y-4">
@@ -227,6 +262,22 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
                   <textarea className={`${inputClass} min-h-28 resize-y py-3`} value={clinicalNote} onChange={(event) => setClinicalNote(event.target.value)} required placeholder="Complaint, finding, treatment details, material, follow-up…" />
                 </div>
 
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Treatment charge (৳) *</label>
+                  <input
+                    className={inputClass}
+                    value={charge}
+                    onChange={(event) => setCharge(event.target.value)}
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1"
+                    required
+                    placeholder="0 if free"
+                  />
+                  <p className="mt-1 text-[10px] leading-4 text-slate-400">Charge patient Total Bill/Due-তে যোগ হবে; existing advance থাকলে আগে সেটি apply হবে। Treatment save cash collection তৈরি করে না।</p>
+                </div>
+
                 <TapChoice
                   label="Status *"
                   value={status}
@@ -240,11 +291,11 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
                   onChange={(value) => value && setStatus(value)}
                 />
 
-                <button type="submit" disabled={busy || !online || !clinicalNote.trim() || (procedureChoice === "Other" && !customProcedure.trim())} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white shadow-md hover:bg-emerald-800 disabled:shadow-none">
+                <button type="submit" disabled={busy || !online || charge === "" || !clinicalNote.trim() || (procedureChoice === "Other" && !customProcedure.trim())} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white shadow-md hover:bg-emerald-800 disabled:shadow-none">
                   {busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving Dental record" />}
-                  {busy ? "Saving…" : "Save Dental record"}
+                  {busy ? "Saving…" : "Save treatment + charge"}
                 </button>
-                <p className="text-center text-[10px] text-slate-400">Immediate audited write · no local draft advertised.</p>
+                <p className="text-center text-[10px] text-slate-400">Treatment + patient billing update + audit are one locked server mutation. Retry uses the same request ID.</p>
               </form>
             </section>
           ) : <InlineNotice tone="neutral">Execution controls unavailable in this view. Open History or Overview.</InlineNotice>}
@@ -263,7 +314,7 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
                 <summary className="cursor-pointer list-none">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2"><ProcedureBadge value={item.procedure} />{item.toothArea && <StatusBadge tone="info">FDI {item.toothArea}</StatusBadge>}</div>
+                      <div className="flex flex-wrap items-center gap-2"><ProcedureBadge value={item.procedure} />{item.toothArea && <StatusBadge tone="info">FDI {item.toothArea}</StatusBadge>}{item.charge > 0 && <StatusBadge tone="warning">{formatBDT(item.charge)}</StatusBadge>}</div>
                       <p className="mt-2 text-[11px] text-slate-500">{item.date || "—"}{item.clinician ? ` · ${item.clinician}` : ""}</p>
                     </div>
                     <StatusBadge tone={statusTone(item.status)}>{item.status || "Recorded"}</StatusBadge>
@@ -285,10 +336,11 @@ export default function DentalClinicalWorkspaceClient({ workspace, oversight = f
         <div className="relife-fade-in space-y-4">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-base font-semibold text-slate-950">Clinical overview</h2>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+            <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
               <div className="rounded-lg bg-slate-50 p-3"><p className="text-[10px] text-slate-500">Records</p><p className="mt-1 text-lg font-bold text-slate-950">{workspace.treatments.length}</p></div>
               <div className="rounded-lg bg-emerald-50 p-3"><p className="text-[10px] text-emerald-700">Completed</p><p className="mt-1 text-lg font-bold text-emerald-950">{completed}</p></div>
-              <div className="rounded-lg bg-amber-50 p-3"><p className="text-[10px] text-amber-700">Active</p><p className="mt-1 text-lg font-bold text-amber-950">{ongoing}</p></div>
+              <div className="rounded-lg bg-amber-50 p-3"><p className="text-[10px] text-amber-700">Charged</p><p className="mt-1 text-lg font-bold text-amber-950">{formatBDT(totalCharged)}</p></div>
+              <div className="rounded-lg bg-red-50 p-3"><p className="text-[10px] text-red-700">Current due</p><p className="mt-1 text-lg font-bold text-red-950">{formatBDT(workspace.patient.due)}</p></div>
             </div>
             {workspace.patient.diagnosis && <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3"><p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Complaint / diagnosis</p><p className="mt-1 text-sm leading-6 text-slate-800">{workspace.patient.diagnosis}</p></div>}
           </section>
