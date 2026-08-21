@@ -27,6 +27,7 @@ import {
   financeScopeAllowsDepartment,
   reconcileSalaryTotals,
 } from "@/lib/domain/finance/reconciliation";
+import { cashBusinessDate } from "@/lib/domain/finance/cashBusinessDay";
 import {
   dateRangeMonthSegments,
   prorateMonthlyAmount,
@@ -158,7 +159,7 @@ export async function getMonthCashHandover(
   now: Date = new Date()
 ): Promise<number> {
   const cashMovements = await getCashMovements();
-  const today = bdDateKey(now);
+  const today = cashBusinessDate(now);
   const month = today.slice(0, 7);
   return acceptedCashHandoverTotal({
     scope,
