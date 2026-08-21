@@ -92,7 +92,7 @@ test("payment projects workflow count without copying the payment amount into Ga
 test("appointment creation projects a deterministic verified booking event", () => {
   const route = source("app/api/appointments/route.ts");
 
-  assert.match(route, /createUnifiedPhysioBooking/);
+  assert.match(route, /createCapacityBooking/);
   assert.match(route, /createAppointment/);
   assert.match(route, /eventType: "appointment_booked"/);
   assert.match(route, /eventKey: `appointment:\$\{patient\.department\}:\$\{result\.appointmentId\}:booked:v2`/);
