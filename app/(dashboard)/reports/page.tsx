@@ -67,7 +67,7 @@ export default async function ReportsPage() {
     ? scope === "physio" ? todays.physio : scope === "dental" ? todays.dental : todays.combined
     : 0;
   const recovery = month && month.totalBusinessLiability > 0 ? pct((month.monthCollection / month.totalBusinessLiability) * 100) : 0;
-  const salaryPaid = salary && salary.fixedCommitment > 0 ? pct((salary.paidOrAdvance / salary.fixedCommitment) * 100) : 0;
+  const salaryPaid = salary && salary.fixedCommitment > 0 ? Math.min(100, pct((salary.ledgerPaid / salary.fixedCommitment) * 100)) : 0;
 
   const financialPayments = payments.filter(
     (payment) =>
@@ -99,7 +99,7 @@ export default async function ReportsPage() {
             <div className="rounded-lg bg-emerald-50 p-3"><p className="text-[10px] text-emerald-700">Active</p><p className="mt-1 text-lg font-bold text-emerald-950">{activePatients}</p></div>
             <div className="rounded-lg bg-slate-50 p-3"><p className="text-[10px] text-slate-500">New</p><p className="mt-1 text-lg font-bold text-slate-950">{newPatients}</p></div>
           </div>
-          {canReadFinancial && patientDue > 0 && <div className="mt-3 flex items-center justify-between rounded-lg bg-red-50 px-3 py-2.5"><span className="text-xs text-red-700">Patient master due</span><strong className="text-sm tabular-nums text-red-900">{formatBDT(patientDue)}</strong></div>}
+          {canReadFinancial && <div className="mt-3 flex items-center justify-between rounded-lg bg-red-50 px-3 py-2.5"><span className="text-xs text-red-700">Outstanding · patient Due</span><strong className="text-sm tabular-nums text-red-900">{formatBDT(patientDue)}</strong></div>}
         </section>
       )}
 
@@ -108,18 +108,18 @@ export default async function ReportsPage() {
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Business performance</h2><p className="mt-0.5 text-xs text-slate-500">Current month commitments and recovery</p></div><StatusBadge tone={month.surplusOrUncovered >= 0 ? "success" : "warning"}>{month.surplusOrUncovered >= 0 ? "Recovered" : "Uncovered"}</StatusBadge></div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-lg bg-blue-50 p-3"><p className="text-[10px] text-blue-700">Today collection</p><p className="mt-1 text-base font-bold tabular-nums text-blue-950">{formatBDT(todayCollection)}</p></div>
-              <div className="rounded-lg bg-blue-50 p-3"><p className="text-[10px] text-blue-700">Month collection</p><p className="mt-1 text-base font-bold tabular-nums text-blue-950">{formatBDT(month.monthCollection)}</p></div>
-              <div className="rounded-lg bg-amber-50 p-3"><p className="text-[10px] text-amber-700">Variable expense</p><p className="mt-1 text-base font-bold tabular-nums text-amber-950">{formatBDT(month.variableClinicExpense)}</p></div>
+              <div className="rounded-lg bg-blue-50 p-3"><p className="text-[10px] text-blue-700">Collections today</p><p className="mt-1 text-base font-bold tabular-nums text-blue-950">{formatBDT(todayCollection)}</p></div>
+              <div className="rounded-lg bg-blue-50 p-3"><p className="text-[10px] text-blue-700">Collections · month</p><p className="mt-1 text-base font-bold tabular-nums text-blue-950">{formatBDT(month.monthCollection)}</p></div>
+              <div className="rounded-lg bg-amber-50 p-3"><p className="text-[10px] text-amber-700">Clinic Expense · variable</p><p className="mt-1 text-base font-bold tabular-nums text-amber-950">{formatBDT(month.variableClinicExpense)}</p></div>
               <div className="rounded-lg bg-slate-50 p-3"><p className="text-[10px] text-slate-500">Fixed overhead</p><p className="mt-1 text-base font-bold tabular-nums text-slate-950">{formatBDT(month.fixedOverhead)}</p></div>
             </div>
             <ProgressBar value={recovery} label="Cost recovery" className="mt-4" />
             <div className={`mt-3 flex items-center justify-between rounded-lg px-3 py-2.5 ${month.surplusOrUncovered >= 0 ? "bg-emerald-50" : "bg-red-50"}`}><span className={`text-xs ${month.surplusOrUncovered >= 0 ? "text-emerald-700" : "text-red-700"}`}>{month.surplusOrUncovered >= 0 ? "Surplus" : "Still uncovered"}</span><strong className={`text-sm tabular-nums ${month.surplusOrUncovered >= 0 ? "text-emerald-900" : "text-red-900"}`}>{formatBDT(Math.abs(month.surplusOrUncovered))}</strong></div>
-            <p className="mt-2 text-[11px] leading-4 text-slate-400">Internal cash transfers are excluded from business expense.</p>
+            <p className="mt-2 text-[11px] leading-4 text-slate-400">Internal Cash Handover is excluded from revenue and business expense.</p>
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div><h2 className="text-base font-semibold text-slate-900">Collection trend</h2><p className="mt-0.5 text-xs text-slate-500">Latest payment days in the current month</p></div>
+            <div><h2 className="text-base font-semibold text-slate-900">Collection trend</h2><p className="mt-0.5 text-xs text-slate-500">Latest 06_Payments days in the current month</p></div>
             <div className="mt-4 space-y-2.5">
               {dailyTrend.map(([date, value]) => (
                 <div key={date} className="grid grid-cols-[76px_1fr_auto] items-center gap-2"><span className="text-[11px] text-slate-500">{date.slice(5)}</span><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full origin-left rounded-full bg-blue-700" style={{ transform: `scaleX(${Math.max(0, value / maxDaily)})` }} /></div><span className="text-[11px] font-semibold tabular-nums text-slate-700">{formatBDT(value)}</span></div>
@@ -129,9 +129,10 @@ export default async function ReportsPage() {
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Salary position</h2><p className="mt-0.5 text-xs text-slate-500">Fixed commitment and paid / advance</p></div><StatusBadge tone={salary.remainingDue > 0 ? "warning" : "success"}>{Math.round(salaryPaid)}% paid</StatusBadge></div>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><p className="text-[10px] text-slate-500">Commitment</p><p className="mt-1 text-xs font-bold">{formatBDT(salary.fixedCommitment)}</p></div><div className="rounded-lg bg-emerald-50 p-2"><p className="text-[10px] text-emerald-700">Paid</p><p className="mt-1 text-xs font-bold text-emerald-900">{formatBDT(salary.paidOrAdvance)}</p></div><div className="rounded-lg bg-red-50 p-2"><p className="text-[10px] text-red-700">Remaining</p><p className="mt-1 text-xs font-bold text-red-900">{formatBDT(salary.remainingDue)}</p></div></div>
-            <ProgressBar value={salaryPaid} label="Payroll paid" className="mt-4" />
+            <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Salary position</h2><p className="mt-0.5 text-xs text-slate-500">Salary Commitment and actual 13_Salary ledger payments</p></div><StatusBadge tone={salary.remainingDue > 0 ? "warning" : salary.excessPaid > 0 ? "info" : "success"}>{Math.round(salaryPaid)}% covered</StatusBadge></div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><p className="text-[10px] text-slate-500">Commitment</p><p className="mt-1 text-xs font-bold">{formatBDT(salary.fixedCommitment)}</p></div><div className="rounded-lg bg-emerald-50 p-2"><p className="text-[10px] text-emerald-700">Ledger paid</p><p className="mt-1 text-xs font-bold text-emerald-900">{formatBDT(salary.ledgerPaid)}</p></div><div className="rounded-lg bg-red-50 p-2"><p className="text-[10px] text-red-700">Remaining</p><p className="mt-1 text-xs font-bold text-red-900">{formatBDT(salary.remainingDue)}</p></div></div>
+            <ProgressBar value={salaryPaid} label="Payroll coverage" className="mt-4" />
+            {salary.excessPaid > 0 && <p className="mt-2 text-[11px] leading-4 text-amber-700">Paid exceeds current commitment by {formatBDT(salary.excessPaid)}; source type is unavailable, so it is not auto-labelled Advance.</p>}
           </section>
         </>
       )}
