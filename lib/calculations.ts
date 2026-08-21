@@ -16,16 +16,20 @@ import {
   getCashMovements,
 } from "@/lib/data";
 import {
-  FIXED_MONTHLY_OVERHEAD,
   isPaidLedgerStatus,
   isSalaryCommitmentStaff,
   isVariableClinicExpense,
-  type FinanceDepartment,
 } from "@/lib/domain/finance/policy";
 import {
   acceptedCashHandoverTotal,
   financeScopeAllowsDepartment,
 } from "@/lib/domain/finance/reconciliation";
+import {
+  expensePaidInMonth,
+  expensePaidInRange,
+  fixedOverheadForDepartment,
+  salaryPaidInMonth,
+} from "@/lib/domain/finance/reportingDates";
 import { cashBusinessDate } from "@/lib/domain/finance/cashBusinessDay";
 import {
   dateRangeMonthSegments,
@@ -62,37 +66,6 @@ function isSameMonth(dateStr: string, ref: Date): boolean {
 
 function isSameDay(dateStr: string, ref: Date): boolean {
   return normalizedDate(dateStr) === bdDateKey(ref);
-}
-
-function effectivePaidDate(row: { date: string; paidAt?: string }): string {
-  return normalizedDate(row.paidAt || row.date);
-}
-
-function fixedOverheadForDepartment(
-  department: FinanceDepartment,
-  expenses: Expense[],
-  now: Date
-): number {
-  const commitments = FIXED_MONTHLY_OVERHEAD[department];
-  let total = 0;
-
-  for (const [category, commitment] of Object.entries(commitments)) {
-    const actual = expenses
-      .filter(
-        (expense) =>
-          expense.department === department &&
-          expense.category.trim() === category &&
-          isSameMonth(expense.date, now) &&
-          isPaidLedgerStatus(expense.status) &&
-          !expense.isHouseholdWithdrawal &&
-          String(expense.expenseType || "Clinic Expense").trim() ===
-            "Clinic Expense"
-      )
-      .reduce((sum, expense) => sum + expense.amount, 0);
-    total += Math.max(commitment, actual);
-  }
-
-  return total;
 }
 
 export interface CashPosition {
@@ -211,7 +184,7 @@ export async function getMonthBusinessPosition(
     .reduce((sum, p) => sum + p.amount, 0);
 
   const variableClinicExpense = inScope(expenses, scope)
-    .filter((e) => isSameMonth(e.date, now) && isVariableClinicExpense(e))
+    .filter((e) => expensePaidInMonth(e, now) && isVariableClinicExpense(e))
     .reduce((sum, e) => sum + e.amount, 0);
 
   const fixedSalaryCommitment = inScope(staff, scope)
@@ -252,7 +225,9 @@ export async function getDateRangeBusinessPosition(
     .reduce((sum, p) => sum + p.amount, 0);
 
   const variableClinicExpense = inScope(expenses, scope)
-    .filter((e) => rangeFilter(e.date) && isVariableClinicExpense(e))
+    .filter(
+      (e) => expensePaidInRange(e, startDate, endDate) && isVariableClinicExpense(e)
+    )
     .reduce((sum, e) => sum + e.amount, 0);
 
   const monthlySalaryCommitment = inScope(staff, scope)
@@ -320,7 +295,7 @@ export async function getSalaryStatus(
 
   const paidThisMonth = inScope(salaryPayments, scope).filter(
     (sp) =>
-      isSameMonth(effectivePaidDate(sp), now) &&
+      salaryPaidInMonth(sp, now) &&
       isPaidLedgerStatus(sp.status)
   );
 
