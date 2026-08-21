@@ -1,149 +1,81 @@
-/**
- * Cash Movement RBAC Hardening (Issue #132)
- *
- * Verifies that the cash-movement approval endpoint:
- * - Resolves current access context (authenticated actor)
- * - Explicitly requires Owner role before PIN check
- * - Uses PIN as secondary confirmation, not primary authorization
- * - Rejects non-Owner staff even with correct PIN
- * - Uses authenticated Owner's staff ID for audit provenance
- * - Preserves canonical decideCashMovement semantics
- */
-
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { AccessContext } from "@/lib/webos/access";
+import { readFileSync } from "node:fs";
 
-test("Cash Movement RBAC Hardening (Issue #132)", async (t) => {
-  // Mock access contexts for different roles
-  const ownerContext: AccessContext = {
-    staffId: "owner-001",
-    roles: ["Owner"],
-    primaryDepartment: "Physio",
-    departmentAccess: ["Physio", "Dental"],
-  };
+function source(path: string): string {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
 
-  const managerContext: AccessContext = {
-    staffId: "manager-001",
-    roles: ["Manager"],
-    primaryDepartment: "Physio",
-    departmentAccess: ["Physio"],
-  };
+const route = source("app/api/control/cash-movement/route.ts");
 
-  const receptionistContext: AccessContext = {
-    staffId: "receptionist-001",
-    roles: ["Receptionist"],
-    primaryDepartment: "Physio",
-    departmentAccess: ["Physio"],
-  };
+test("cash approval resolves the authenticated access context and requires Owner before PIN", () => {
+  const originCheck = route.indexOf("isAllowedRequestOrigin(request)");
+  const sessionCheck = route.indexOf("verifySessionToken(session)");
+  const contextResolution = route.indexOf("requireCurrentAccessContext()");
+  const ownerGuard = route.indexOf('context.roles.includes("Owner")');
+  const pinCheck = route.indexOf("checkOwnerPin(pin)");
+  const writerCall = route.indexOf("await decideCashMovement({");
 
-  const auditorContext: AccessContext = {
-    staffId: "auditor-001",
-    roles: ["Auditor"],
-    primaryDepartment: "Physio",
-    departmentAccess: ["Physio", "Dental"],
-  };
+  for (const index of [originCheck, sessionCheck, contextResolution, ownerGuard, pinCheck, writerCall]) {
+    assert.notEqual(index, -1);
+  }
 
-  await t.test("Owner authorization check (explicit, before PIN)", async (t) => {
-    await t.test("should reject Manager role with 403 even if PIN is correct", () => {
-      assert.equal(managerContext.roles.includes("Owner"), false);
-      assert(managerContext.roles.includes("Manager"));
-    });
+  assert(originCheck < sessionCheck);
+  assert(sessionCheck < contextResolution);
+  assert(contextResolution < ownerGuard);
+  assert(ownerGuard < pinCheck);
+  assert(pinCheck < writerCall);
+});
 
-    await t.test("should reject Receptionist role with 403 even if PIN is correct", () => {
-      assert.equal(receptionistContext.roles.includes("Owner"), false);
-      assert(receptionistContext.roles.includes("Receptionist"));
-    });
+test("non-Owner approval fails closed with 403 before Owner PIN can authorize", () => {
+  assert.match(
+    route,
+    /if \(!context\.roles\.includes\("Owner"\)\) \{[\s\S]*?error: "ACCESS_DENIED"[\s\S]*?status: 403[\s\S]*?\}/
+  );
 
-    await t.test("should reject Auditor role with 403 even if PIN is correct", () => {
-      assert.equal(auditorContext.roles.includes("Owner"), false);
-      assert(auditorContext.roles.includes("Auditor"));
-    });
+  const ownerGuard = route.indexOf('if (!context.roles.includes("Owner"))');
+  const pinGuard = route.indexOf("if (!pin || !checkOwnerPin(pin))");
+  assert(ownerGuard >= 0 && pinGuard > ownerGuard);
+});
 
-    await t.test("should allow Owner role to proceed to PIN check", () => {
-      assert(ownerContext.roles.includes("Owner"));
-    });
-  });
+test("missing access context also fails closed with 403", () => {
+  assert.match(
+    route,
+    /try \{[\s\S]*?requireCurrentAccessContext\(\)[\s\S]*?\} catch \{[\s\S]*?error: "ACCESS_DENIED"[\s\S]*?status: 403/
+  );
+});
 
-  await t.test("Audit provenance uses authenticated Owner identity", async (t) => {
-    await t.test("should use context.staffId as actorId, not hardcoded env value", () => {
-      const expectedActorId = ownerContext.staffId;
-      assert.equal(expectedActorId, "owner-001");
-    });
+test("Owner PIN remains a secondary confirmation and wrong PIN returns 401", () => {
+  assert.match(
+    route,
+    /if \(!pin \|\| !checkOwnerPin\(pin\)\) \{[\s\S]*?error: "Incorrect PIN"[\s\S]*?status: 401[\s\S]*?\}/
+  );
+});
 
-    await t.test("should preserve audit row for non-Owner rejection", () => {
-      assert.equal(managerContext.roles.includes("Owner"), false);
-    });
-  });
+test("authenticated Owner staff ID is the canonical audit actor", () => {
+  assert.match(route, /actorId: context\.staffId/);
+  assert.doesNotMatch(route, /OWNER_DISPLAY_NAME/);
+  assert.doesNotMatch(route, /actorId:\s*"Owner"/);
+});
 
-  await t.test("Canonical semantics preserved", async (t) => {
-    await t.test("should call decideCashMovement exactly once with valid params", () => {
-      assert(ownerContext.roles.includes("Owner"));
-    });
+test("decideCashMovement remains the sole cash-decision writer in the route", () => {
+  const calls = route.match(/decideCashMovement\s*\(/g) ?? [];
+  assert.equal(calls.length, 1);
+  assert.match(route, /import \{ decideCashMovement \} from "@\/lib\/domain\/finance\/production"/);
+});
 
-    await t.test("should preserve workbook, id, decision, receivedAmount validation", () => {
-      // Validation rules:
-      // - workbook in ["physio", "dental"]
-      // - id is non-empty string
-      // - decision in ["accept", "reject"]
-      // - receivedAmount is number >= 0 if provided
-      assert.equal(["physio", "dental"].includes("physio"), true);
-    });
+test("existing workbook, decision and received-amount guards remain intact", () => {
+  assert.match(route, /\["physio", "dental"\]/);
+  assert.match(route, /\["accept", "reject"\]/);
+  assert.match(route, /!Number\.isFinite\(receivedAmount\) \|\| receivedAmount < 0/);
+  assert.match(route, /CONTROL_NOT_FOUND/);
+  assert.match(route, /CONTROL_ALREADY_DECIDED/);
+  assert.match(route, /FINANCE_DB_UNAVAILABLE/);
+});
 
-    await t.test("should preserve same-origin validation (isAllowedRequestOrigin)", () => {
-      // Origin check happens first, before any auth check
-      assert(true);
-    });
-
-    await t.test("should preserve session token verification", () => {
-      // verifySessionToken() remains the first check
-      assert(true);
-    });
-
-    await t.test("should preserve error status codes from decideCashMovement", () => {
-      // statusForError() mapping unchanged:
-      // CONTROL_NOT_FOUND -> 404
-      // CONTROL_ALREADY_DECIDED -> 409
-      // SCHEMA_MISMATCH / FINANCE_DB_UNAVAILABLE -> 503
-      // INVALID_* -> 400
-      assert.equal(404, 404);
-    });
-  });
-
-  await t.test("Fail-closed expectations", async (t) => {
-    await t.test("non-Owner + correct PIN = 403 (access denied, not 401)", () => {
-      const roles = managerContext.roles;
-      const isOwner = roles.includes("Owner");
-      const expectedStatus = isOwner ? 401 : 403;
-      assert.equal(expectedStatus, 403);
-    });
-
-    await t.test("Owner + wrong PIN = 401 (authentication failed)", () => {
-      const roles = ownerContext.roles;
-      const isOwner = roles.includes("Owner");
-      assert.equal(isOwner, true);
-    });
-
-    await t.test("Owner + correct PIN + valid decision = 200 (decideCashMovement runs)", () => {
-      assert(ownerContext.roles.includes("Owner"));
-    });
-  });
-
-  await t.test("No changes to booking/dental/payment/salary", async (t) => {
-    await t.test("should not modify Physio booking logic", () => {
-      assert(true);
-    });
-
-    await t.test("should not modify Dental billing", () => {
-      assert(true);
-    });
-
-    await t.test("should not modify payment collection rules", () => {
-      assert(true);
-    });
-
-    await t.test("should not modify salary payment logic", () => {
-      assert(true);
-    });
-  });
+test("successful path passes only validated decision data plus authenticated actor to canonical writer", () => {
+  assert.match(
+    route,
+    /await decideCashMovement\(\{[\s\S]*?workbook: workbook as Workbook,[\s\S]*?movementId: id,[\s\S]*?decision,[\s\S]*?receivedAmount,[\s\S]*?actorId: context\.staffId[\s\S]*?\}\)/
+  );
 });
