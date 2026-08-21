@@ -9,7 +9,6 @@ import type {
   Department,
 } from "@/lib/types";
 import {
-  IS_LIVE_DATA,
   getPayments,
   getExpenses,
   getStaff,
@@ -18,29 +17,28 @@ import {
 } from "@/lib/data";
 import {
   FIXED_MONTHLY_OVERHEAD,
-  isAcceptedCashMovementStatus,
   isPaidLedgerStatus,
   isSalaryCommitmentStaff,
   isVariableClinicExpense,
   type FinanceDepartment,
 } from "@/lib/domain/finance/policy";
 import {
+  acceptedCashHandoverTotal,
+  financeScopeAllowsDepartment,
+} from "@/lib/domain/finance/reconciliation";
+import { cashBusinessDate } from "@/lib/domain/finance/cashBusinessDay";
+import {
   dateRangeMonthSegments,
   prorateMonthlyAmount,
   roundMoney,
 } from "@/lib/domain/finance/dateRange";
+import { getScopedCashPosition } from "@/lib/scopedCash";
 
 function inScope<T extends { department: Department }>(
   rows: T[],
   scope: Scope
 ): T[] {
-  if (scope === "combined") {
-    return rows.filter((r) =>
-      ["Physio", "Dental", "All"].includes(r.department)
-    );
-  }
-  const department: Department = scope === "physio" ? "Physio" : "Dental";
-  return rows.filter((r) => r.department === department);
+  return rows.filter((row) => financeScopeAllowsDepartment(scope, row.department));
 }
 
 function bdDateKey(ref: Date = new Date()): string {
@@ -97,22 +95,6 @@ function fixedOverheadForDepartment(
   return total;
 }
 
-type Custodian = "Reception" | "HomeTreasury" | "Bank";
-
-function normalizeCustodian(value: string | undefined): Custodian | null {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (
-    ["reception", "physio reception cash", "dental reception cash"].includes(
-      normalized
-    )
-  ) {
-    return "Reception";
-  }
-  if (normalized === "home treasury") return "HomeTreasury";
-  if (["bank", "digital/bank", "digital"].includes(normalized)) return "Bank";
-  return null;
-}
-
 export interface CashPosition {
   reception: number;
   homeTreasury: number;
@@ -120,97 +102,15 @@ export interface CashPosition {
   total: number;
 }
 
+/**
+ * Compatibility reader for the combined Owner view. The canonical custody
+ * calculation lives in getScopedCashPosition(), so month boundaries cannot
+ * silently reset Reception/Home Treasury/Bank here.
+ */
 export async function getCashPosition(
   now: Date = new Date()
 ): Promise<CashPosition> {
-  const position: CashPosition = {
-    reception: 0,
-    homeTreasury: 0,
-    bank: 0,
-    total: 0,
-  };
-
-  const movements = await getCashMovements();
-
-  if (!IS_LIVE_DATA) {
-    for (const movement of movements as unknown as Array<{
-      bucket?: string;
-      amount: number;
-    }>) {
-      if (movement.bucket === "Reception") position.reception += movement.amount;
-      else if (movement.bucket === "HomeTreasury")
-        position.homeTreasury += movement.amount;
-      else if (movement.bucket === "Bank") position.bank += movement.amount;
-    }
-    position.total = position.reception + position.homeTreasury + position.bank;
-    return position;
-  }
-
-  const [payments, expenses, salaryPayments] = await Promise.all([
-    getPayments(),
-    getExpenses(),
-    getSalaryPayments(),
-  ]);
-  const today = bdDateKey(now);
-  const month = today.slice(0, 7);
-  const inCurrentMonthToDate = (date: string) => {
-    const key = normalizedDate(date);
-    return key.startsWith(month) && key <= today;
-  };
-
-  for (const payment of payments) {
-    if (!inCurrentMonthToDate(payment.date)) continue;
-    if (payment.department === "All") continue;
-    if (payment.paymentMethod === "Cash") position.reception += payment.amount;
-    else position.bank += payment.amount;
-  }
-
-  for (const expense of expenses) {
-    if (!inCurrentMonthToDate(expense.date) || !isPaidLedgerStatus(expense.status))
-      continue;
-    if (expense.department === "All") continue;
-    const source = normalizeCustodian(expense.paidFrom || expense.paymentMethod);
-    if (source === "Reception") position.reception -= expense.amount;
-    else if (source === "HomeTreasury") position.homeTreasury -= expense.amount;
-    else if (source === "Bank") position.bank -= expense.amount;
-  }
-
-  for (const salary of salaryPayments) {
-    if (
-      !inCurrentMonthToDate(effectivePaidDate(salary)) ||
-      !isPaidLedgerStatus(salary.status)
-    )
-      continue;
-    if (salary.department === "All") continue;
-    const source = normalizeCustodian(salary.paidFrom);
-    if (source === "Reception") position.reception -= salary.amount;
-    else if (source === "HomeTreasury") position.homeTreasury -= salary.amount;
-    else if (source === "Bank") position.bank -= salary.amount;
-  }
-
-  for (const movement of movements) {
-    if (!inCurrentMonthToDate(movement.date)) continue;
-    if (movement.department === "All") continue;
-    if (!isAcceptedCashMovementStatus(movement.status)) continue;
-    const amount = movement.receivedAmount ?? movement.amount;
-    const source = normalizeCustodian(movement.fromCustodian);
-    const target = normalizeCustodian(movement.toCustodian);
-    if (source === "Reception") position.reception -= amount;
-    else if (source === "HomeTreasury") position.homeTreasury -= amount;
-    else if (source === "Bank") position.bank -= amount;
-    if (target === "Reception") position.reception += amount;
-    else if (target === "HomeTreasury") position.homeTreasury += amount;
-    else if (target === "Bank") position.bank += amount;
-  }
-
-  position.reception = Math.round(position.reception * 100) / 100;
-  position.homeTreasury = Math.round(position.homeTreasury * 100) / 100;
-  position.bank = Math.round(position.bank * 100) / 100;
-  position.total =
-    Math.round(
-      (position.reception + position.homeTreasury + position.bank) * 100
-    ) / 100;
-  return position;
+  return getScopedCashPosition("combined", now);
 }
 
 export interface TodaysCollection {
@@ -251,6 +151,23 @@ export async function getDateRangeCollection(
     .filter((p) => p.department === "Dental")
     .reduce((sum, p) => sum + p.amount, 0);
   return { physio, dental, combined: physio + dental };
+}
+
+export async function getMonthCashHandover(
+  scope: Scope,
+  now: Date = new Date()
+): Promise<number> {
+  const cashMovements = await getCashMovements();
+  const today = cashBusinessDate(now);
+  const month = today.slice(0, 7);
+  return acceptedCashHandoverTotal({
+    scope,
+    cashMovements,
+    dateIncluded: (date) => {
+      const key = normalizedDate(date);
+      return key.startsWith(month) && key <= today;
+    },
+  });
 }
 
 export interface MonthBusinessPosition {
@@ -375,8 +292,17 @@ export async function getDateRangeBusinessPosition(
 
 export interface SalaryStatus {
   fixedCommitment: number;
+  salaryPaid: number;
+  salaryAdvance: number;
+  legacyUnclassified: number;
+  /** Total of (salaryPaid + salaryAdvance), excludes legacy */
+  settlementTotal: number;
+  /** @deprecated Use settlementTotal for calculations. Kept for temporary compat. */
+  ledgerPaid: number;
+  /** @deprecated Source rows do not reliably classify Salary vs Advance. */
   paidOrAdvance: number;
   remainingDue: number;
+  excessAmount: number;
 }
 
 export async function getSalaryStatus(
@@ -392,18 +318,41 @@ export async function getSalaryStatus(
     .filter(isSalaryCommitmentStaff)
     .reduce((sum, s) => sum + s.salary, 0);
 
-  const paidOrAdvance = inScope(salaryPayments, scope)
-    .filter(
-      (sp) =>
-        isSameMonth(effectivePaidDate(sp), now) &&
-        isPaidLedgerStatus(sp.status)
-    )
-    .reduce((sum, sp) => sum + sp.amount, 0);
+  const paidThisMonth = inScope(salaryPayments, scope).filter(
+    (sp) =>
+      isSameMonth(effectivePaidDate(sp), now) &&
+      isPaidLedgerStatus(sp.status)
+  );
+
+  let salaryPaid = 0;
+  let salaryAdvance = 0;
+  let legacyUnclassified = 0;
+
+  for (const payment of paidThisMonth) {
+    if (payment.type === "Salary") {
+      salaryPaid += payment.amount;
+    } else if (payment.type === "Advance") {
+      salaryAdvance += payment.amount;
+    } else {
+      legacyUnclassified += payment.amount;
+    }
+  }
+
+  const settlementTotal = salaryPaid + salaryAdvance;
+  const ledgerPaid = settlementTotal + legacyUnclassified;
+  const remainingDue = Math.max(0, fixedCommitment - ledgerPaid);
+  const excessAmount = Math.max(0, ledgerPaid - fixedCommitment);
 
   return {
     fixedCommitment,
-    paidOrAdvance,
-    remainingDue: fixedCommitment - paidOrAdvance,
+    salaryPaid,
+    salaryAdvance,
+    legacyUnclassified,
+    settlementTotal,
+    ledgerPaid,
+    paidOrAdvance: ledgerPaid,
+    remainingDue,
+    excessAmount,
   };
 }
 

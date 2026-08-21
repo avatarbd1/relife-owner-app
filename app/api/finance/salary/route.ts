@@ -18,6 +18,7 @@ function errorResponse(error: unknown): NextResponse {
   if ([
     "INVALID_AMOUNT",
     "INVALID_CUSTODIAN",
+    "INVALID_PAYMENT_TYPE",
     "INVALID_REQUEST_ID",
     "OWNER_SALARY_FORBIDDEN",
     "STAFF_DEPARTMENT_UNSUPPORTED",
@@ -42,9 +43,13 @@ export async function POST(request: NextRequest) {
     if (!pin || !checkOwnerPin(pin)) {
       return NextResponse.json({ ok: false, error: "Incorrect PIN" }, { status: 401 });
     }
+    if (!["Salary", "Advance"].includes(body.type)) {
+      return NextResponse.json({ ok: false, error: "INVALID_PAYMENT_TYPE" }, { status: 400 });
+    }
     const result = await paySalary(context, {
       staffId: body.staffId,
       amount: Number(body.amount),
+      type: body.type,
       paidFrom: body.paidFrom,
       note: body.note,
       requestId: body.requestId,

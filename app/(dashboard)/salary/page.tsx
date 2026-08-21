@@ -91,7 +91,7 @@ export default async function SalaryPage() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Payroll</p>
             <h1 className="mt-1 text-2xl font-bold">Salary management</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">Fixed salary commitment, paid/advance history and remaining due.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-300">Fixed salary commitment, actual 13_Salary ledger history and remaining due.</p>
           </div>
           <StatusBadge tone={canPay ? "info" : "neutral"} className="border-white/10">{canPay ? "Owner pay" : "Read only"}</StatusBadge>
         </div>

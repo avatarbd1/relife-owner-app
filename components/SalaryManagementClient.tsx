@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { InlineNotice, ProgressBar, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
 
@@ -23,7 +23,7 @@ type PaymentItem = {
   staffName: string;
   department: Department;
   amount: number;
-  type: string;
+  type?: string;
   paidFrom?: string;
   status?: string;
 };
@@ -59,6 +59,7 @@ export default function SalaryManagementClient({
   const [tab, setTab] = useState<Tab>("active");
   const [selected, setSelected] = useState<StaffItem | null>(null);
   const [amount, setAmount] = useState("");
+  const [selectedType, setSelectedType] = useState<"Salary" | "Advance" | null>(null);
   const [paidFrom, setPaidFrom] = useState<"Reception" | "Home Treasury" | "Bank">("Home Treasury");
   const [note, setNote] = useState("");
   const [pin, setPin] = useState("");
@@ -83,17 +84,14 @@ export default function SalaryManagementClient({
   const commitment = active.reduce((sum, item) => sum + item.salary, 0);
   const paid = active.reduce((sum, item) => sum + item.paidThisMonth, 0);
   const due = active.reduce((sum, item) => sum + item.remainingDue, 0);
-  const paidPct = commitment > 0 ? (paid / commitment) * 100 : 0;
+  const excessPaid = Math.max(0, paid - commitment);
+  const paidPct = commitment > 0 ? Math.min(100, (paid / commitment) * 100) : 0;
   const urgent = active.filter((item) => item.salary > 0 && item.paidThisMonth / item.salary < 0.34);
-
-  const selectedHistory = useMemo(
-    () => selected ? payments.filter((item) => item.staffId === selected.staffId).slice(0, 8) : [],
-    [payments, selected]
-  );
 
   function openPay(item: StaffItem) {
     setSelected(item);
     setAmount(String(item.remainingDue || item.salary || 0));
+    setSelectedType(null);
     setPaidFrom("Home Treasury");
     setNote("");
     setPin("");
@@ -109,6 +107,11 @@ export default function SalaryManagementClient({
       haptic("error");
       return;
     }
+    if (!selectedType) {
+      setMessage("✕ Please select Salary or Advance");
+      haptic("error");
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
@@ -118,6 +121,7 @@ export default function SalaryManagementClient({
         body: JSON.stringify({
           staffId: selected.staffId,
           amount: Number(amount || 0),
+          type: selectedType,
           paidFrom,
           note,
           pin,
@@ -126,7 +130,7 @@ export default function SalaryManagementClient({
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || "SALARY_PAY_FAILED");
-      setMessage(`✓ Salary payment saved · ${String(payload.paymentId || "")}`);
+      setMessage(`✓ ${selectedType} payment saved · ${String(payload.paymentId || "")}`);
       setSelected(null);
       setWebRequestId(requestId());
       haptic("success");
@@ -169,11 +173,11 @@ export default function SalaryManagementClient({
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-lg bg-white/70 p-2"><p className="text-[10px] text-slate-500">Monthly</p><p className="mt-1 text-xs font-bold tabular-nums text-slate-950">{bdt(item.salary)}</p></div>
-                  <div className="rounded-lg bg-white/70 p-2"><p className="text-[10px] text-emerald-700">Paid</p><p className="mt-1 text-xs font-bold tabular-nums text-emerald-900">{bdt(item.paidThisMonth)}</p></div>
+                  <div className="rounded-lg bg-white/70 p-2"><p className="text-[10px] text-emerald-700">Ledger paid</p><p className="mt-1 text-xs font-bold tabular-nums text-emerald-900">{bdt(item.paidThisMonth)}</p></div>
                   <div className="rounded-lg bg-white/70 p-2"><p className="text-[10px] text-red-700">Remaining</p><p className="mt-1 text-xs font-bold tabular-nums text-red-900">{bdt(item.remainingDue)}</p></div>
                 </div>
                 <ProgressBar value={pct} label="This month paid" className="mt-4" />
-                {staffHistory.length > 0 && <div className="mt-3 rounded-lg bg-white/60 p-3"><p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Recent payroll history</p><div className="mt-2 space-y-1">{staffHistory.map((row) => <p key={row.id} className="text-[11px] text-slate-600">• {row.date}: {bdt(row.amount)}{row.type ? ` · ${row.type}` : ""}{row.paidFrom ? ` · ${row.paidFrom}` : ""}</p>)}</div></div>}
+                {staffHistory.length > 0 && <div className="mt-3 rounded-lg bg-white/60 p-3"><p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Recent payroll history</p><div className="mt-2 space-y-1">{staffHistory.map((row) => <p key={row.id} className="text-[11px] text-slate-600">• {row.date}: {bdt(row.amount)} · {row.type ? (row.type === "Salary" ? "Salary" : row.type === "Advance" ? "Advance" : "Legacy") : "Legacy"}{row.paidFrom ? ` · ${row.paidFrom}` : ""}</p>)}</div></div>}
                 {canPay && item.remainingDue > 0 && <button type="button" onClick={() => openPay(item)} className="mt-3 min-h-11 w-full rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow-md hover:bg-blue-900">Pay {item.remainingDue >= item.salary ? "full salary" : `remaining ${bdt(item.remainingDue)}`}</button>}
               </article>
             );
@@ -193,8 +197,9 @@ export default function SalaryManagementClient({
         <div className="relife-fade-in space-y-4">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-950">Payroll overview</h2><p className="mt-0.5 text-xs text-slate-500">Current month · active staff only</p></div><StatusBadge tone={due > 0 ? "warning" : "success"}>{Math.round(paidPct)}% paid</StatusBadge></div>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-3"><p className="text-[10px] text-slate-500">Commitment</p><p className="mt-1 text-sm font-bold tabular-nums">{bdt(commitment)}</p></div><div className="rounded-lg bg-emerald-50 p-3"><p className="text-[10px] text-emerald-700">Paid</p><p className="mt-1 text-sm font-bold tabular-nums text-emerald-900">{bdt(paid)}</p></div><div className="rounded-lg bg-red-50 p-3"><p className="text-[10px] text-red-700">Due</p><p className="mt-1 text-sm font-bold tabular-nums text-red-900">{bdt(due)}</p></div></div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-3"><p className="text-[10px] text-slate-500">Commitment</p><p className="mt-1 text-sm font-bold tabular-nums">{bdt(commitment)}</p></div><div className="rounded-lg bg-emerald-50 p-3"><p className="text-[10px] text-emerald-700">Ledger paid</p><p className="mt-1 text-sm font-bold tabular-nums text-emerald-900">{bdt(paid)}</p></div><div className="rounded-lg bg-red-50 p-3"><p className="text-[10px] text-red-700">Due</p><p className="mt-1 text-sm font-bold tabular-nums text-red-900">{bdt(due)}</p></div></div>
             <ProgressBar value={paidPct} label="Total payroll paid" className="mt-4" />
+            {excessPaid > 0 && <div className="mt-3"><InlineNotice tone="warning">Staff overpaid by {bdt(excessPaid)} this month. Tracked separately; does not reduce commitment next month.</InlineNotice></div>}
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-950">Needs attention</h2><p className="mt-0.5 text-xs text-slate-500">Staff below 34% paid</p></div>{urgent.length > 0 && <StatusBadge tone="error">{urgent.length} urgent</StatusBadge>}</div>
@@ -210,11 +215,12 @@ export default function SalaryManagementClient({
             <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-950">Pay {selected.fullName}</h2><p className="mt-0.5 text-xs text-slate-500">Remaining {bdt(selected.remainingDue)} · {selected.department}</p></div><StatusBadge tone="info">PIN protected</StatusBadge></div>
             <div className="mt-4 space-y-3">
               <div><label className="mb-1.5 block text-xs font-semibold text-slate-700">Amount</label><input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} className="min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-slate-700">Payment type</label><div className="grid grid-cols-2 gap-2">{(["Salary", "Advance"] as const).map((item) => <button key={item} type="button" onClick={() => setSelectedType(item)} className={`min-h-11 rounded-lg border px-3 text-xs font-semibold transition-colors ${selectedType === item ? "border-blue-800 bg-blue-800 text-white" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>{item}</button>)}</div></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-slate-700">Pay from</label><div className="grid grid-cols-3 gap-2">{(["Reception", "Home Treasury", "Bank"] as const).map((item) => <button key={item} type="button" onClick={() => setPaidFrom(item)} className={`min-h-11 rounded-lg border px-2 text-[11px] font-semibold ${paidFrom === item ? "border-blue-800 bg-blue-800 text-white" : "border-slate-200 text-slate-600"}`}>{item}</button>)}</div></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-slate-700">Note</label><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Salary / advance note" className="min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-slate-700">Note (optional)</label><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Payment reference or memo" className="min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-slate-700">Owner PIN</label><input type="password" inputMode="numeric" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))} className="min-h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" /></div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" disabled={busy} onClick={() => setSelected(null)} className="min-h-11 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="button" disabled={busy || !online || !pin || Number(amount || 0) <= 0} onClick={paySalary} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-800 text-sm font-semibold text-white shadow-md hover:bg-blue-900 disabled:shadow-none">{busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving salary" />}{busy ? "Saving…" : "Confirm payment"}</button></div>
+            <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" disabled={busy} onClick={() => setSelected(null)} className="min-h-11 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="button" disabled={busy || !online || !pin || Number(amount || 0) <= 0 || !selectedType} onClick={paySalary} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-800 text-sm font-semibold text-white shadow-md hover:bg-blue-900 disabled:shadow-none">{busy && <Spinner size="sm" className="border-white/30 border-t-white" label="Saving salary" />}{busy ? "Saving…" : "Confirm payment"}</button></div>
           </div>
         </div>
       )}

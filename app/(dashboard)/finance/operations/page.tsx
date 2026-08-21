@@ -2,7 +2,6 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import BulkExpenseApproval from "@/components/BulkExpenseApproval";
 import FinanceOperationsClient from "@/components/FinanceOperationsClient";
-import { getSalaryPayments, getStaff } from "@/lib/data";
 import { getFinanceHistorySnapshot } from "@/lib/webos/financeHistory";
 import { getFinanceOperationsSnapshot } from "@/lib/webos/financeOps";
 import { actionsForRoles } from "@/lib/webos/access";
@@ -15,20 +14,6 @@ const SCOPE_LABEL: Record<Scope, string> = {
   physio: "Physio",
   dental: "Dental",
 };
-
-function monthDhaka(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}`;
-}
-
-function normalizedDate(value: string | undefined): string {
-  return String(value || "").trim().slice(0, 10);
-}
 
 export default async function FinanceOperationsPage({
   searchParams,
@@ -48,46 +33,31 @@ export default async function FinanceOperationsPage({
   const canReadHistory =
     actions.has("expense.read") || actions.has("cash.read") || actions.has("salary.read");
   const canAcceptCash = actions.has("cash.accept");
+  const canOpenSalary = actions.has("salary.read") || actions.has("salary.pay");
 
-  let enrichedStaff: Array<{
-    staffId: string;
-    fullName: string;
-    department: "Physio" | "Dental" | "All";
-    salary: number;
-    paidThisMonth: number;
-    remainingDue: number;
-  }> = [];
+  // Payroll has a dedicated reconciled workspace at /salary. Keep the mixed
+  // operations client focused on payment, expense and cash so a second salary
+  // presentation cannot drift from the canonical salary ledger semantics.
+  const safeSnapshot = {
+    ...snapshot,
+    staff: [],
+    capabilities: {
+      ...snapshot.capabilities,
+      salaryPay: false,
+    },
+  };
 
-  if (snapshot.capabilities.salaryPay) {
-    const [staffMaster, salaryPayments] = await Promise.all([getStaff(), getSalaryPayments()]);
-    const month = monthDhaka();
-    const paymentsByStaff = new Map<string, number>();
-    for (const row of salaryPayments) {
-      if (!normalizedDate(row.paidAt || row.date).startsWith(month)) continue;
-      const status = String(row.status || "Paid").trim().toLowerCase();
-      if (status && status !== "paid") continue;
-      paymentsByStaff.set(
-        row.staffId,
-        (paymentsByStaff.get(row.staffId) || 0) + Number(row.amount || 0)
-      );
-    }
-
-    enrichedStaff = snapshot.staff.map((item) => {
-      const master = staffMaster.find((row) => row.staffId === item.staffId);
-      const salary = Number(master?.salary || 0);
-      const paidThisMonth = paymentsByStaff.get(item.staffId) || 0;
-      return {
-        ...item,
-        salary,
-        paidThisMonth,
-        remainingDue: Math.max(0, salary - paidThisMonth),
-      };
-    });
-  }
-
-  const safeSnapshot = snapshot.capabilities.salaryPay
-    ? { ...snapshot, staff: enrichedStaff }
-    : { ...snapshot, staff: [] };
+  const safeHistory = {
+    ...history,
+    salaryPayments: history.salaryPayments.map((row) => ({
+      ...row,
+      type: row.type || "Type unavailable",
+    })),
+    capabilities: {
+      ...history.capabilities,
+      salaryHistory: false,
+    },
+  };
 
   const pendingExpenses = isOwner
     ? history.expenses
@@ -105,7 +75,7 @@ export default async function FinanceOperationsPage({
         }))
     : [];
 
-  const validTabs = new Set(["payment", "expenses", "cash", "salary"]);
+  const validTabs = new Set(["payment", "expenses", "cash"]);
   const requestedTab = validTabs.has(params.tab || "") ? params.tab : undefined;
 
   return (
@@ -118,7 +88,7 @@ export default async function FinanceOperationsPage({
             </p>
             <h1 className="mt-1 text-xl font-bold">Money workflows</h1>
             <p className="mt-1 max-w-xl text-xs leading-5 text-slate-300">
-              Payment, expense, internal cash handover and salary remain separate ledger actions.
+              Collections, clinic expense and internal cash handover remain separate ledger actions. Payroll opens in its dedicated reconciled workspace.
             </p>
           </div>
           {isOwner && (
@@ -134,6 +104,11 @@ export default async function FinanceOperationsPage({
           {canReadHistory && (
             <Link href="/finance/history" className="min-h-10 rounded-lg bg-white/10 px-3 py-2.5 font-medium text-white hover:bg-white/15">
               History
+            </Link>
+          )}
+          {canOpenSalary && (
+            <Link href="/salary" className="min-h-10 rounded-lg bg-emerald-500/15 px-3 py-2.5 font-medium text-emerald-100 ring-1 ring-emerald-400/20">
+              Salary management
             </Link>
           )}
           {canAcceptCash && (
@@ -153,8 +128,8 @@ export default async function FinanceOperationsPage({
 
       <FinanceOperationsClient
         snapshot={safeSnapshot}
-        history={history}
-        initialTab={requestedTab as "payment" | "expenses" | "cash" | "salary" | undefined}
+        history={safeHistory}
+        initialTab={requestedTab as "payment" | "expenses" | "cash" | undefined}
       />
     </div>
   );

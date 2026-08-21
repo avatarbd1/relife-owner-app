@@ -24,6 +24,7 @@ type SheetValue = string | number | boolean;
 export interface SalaryPayInput {
   staffId: string;
   amount: number;
+  type: "Salary" | "Advance";
   paidFrom: ExpensePaidFrom;
   note?: string;
   requestId: string;
@@ -112,6 +113,37 @@ function requireSheetId(map: Map<string, number>, title: string): number {
   return id;
 }
 
+function getTypeColumnName(headers: string[]): string | null {
+  const typeIdx = headerIndex(headers, "Type");
+  if (typeIdx >= 0) return "Type";
+  const paymentTypeIdx = headerIndex(headers, "Payment_Type");
+  if (paymentTypeIdx >= 0) return "Payment_Type";
+  return null;
+}
+
+function ensureTypeColumnRequest(
+  sheetId: number,
+  headers: string[]
+): SpreadsheetBatchRequest | null {
+  if (getTypeColumnName(headers) !== null) return null; // Type or Payment_Type column already exists
+
+  // Add Type as new header at the end (neither Type nor Payment_Type exists)
+  const typeColumnIndex = headers.length;
+  return {
+    updateCells: {
+      range: {
+        sheetId,
+        startRowIndex: 0,
+        endRowIndex: 1,
+        startColumnIndex: typeColumnIndex,
+        endColumnIndex: typeColumnIndex + 1,
+      },
+      rows: [{ values: [cellValue("Type")] }],
+      fields: "userEnteredValue",
+    },
+  };
+}
+
 function buildSalaryAuditRow(
   headers: string[],
   input: {
@@ -121,6 +153,7 @@ function buildSalaryAuditRow(
     staffId: string;
     department: ClinicDepartment;
     amount: number;
+    type: "Salary" | "Advance";
     paidFrom: string;
   }
 ): SheetValue[] {
@@ -129,7 +162,7 @@ function buildSalaryAuditRow(
     Audit_ID: `AUD-${randomUUID()}`,
     Timestamp: input.now.timestamp,
     Actor_ID: input.actorId,
-    Action: "SALARY_PAID",
+    Action: input.type === "Salary" ? "SALARY_PAID" : "ADVANCE_PAID",
     Entity_Type: "SalaryPayment",
     Entity_ID: input.paymentId,
     Patient_ID: "",
@@ -137,6 +170,7 @@ function buildSalaryAuditRow(
     After_Value: JSON.stringify({
       staffId: input.staffId,
       amount: input.amount,
+      type: input.type,
       paidFrom: input.paidFrom,
     }),
     Reason: "Finance domain action",
@@ -163,6 +197,9 @@ export async function paySalary(
   if (!context.roles.includes("Owner")) throw new Error("ACCESS_DENIED");
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("INVALID_AMOUNT");
+  if (!["Salary", "Advance"].includes(input.type)) {
+    throw new Error("INVALID_PAYMENT_TYPE");
+  }
   if (!["Reception", "Home Treasury", "Bank"].includes(input.paidFrom)) {
     throw new Error("INVALID_CUSTODIAN");
   }
@@ -206,6 +243,10 @@ export async function paySalary(
     "Paid_At",
     "Note",
   ]);
+
+  // Type column may not exist in legacy 13_Salary sheets
+  // If present, rowForHeaders will map it; if absent, it becomes empty string in row
+  // Canonical audit always includes type for future records
   ensureHeaders(auditHeaders, [
     "Audit_ID",
     "Timestamp",
@@ -243,7 +284,14 @@ export async function paySalary(
   const now = dhakaClockParts();
   const month = now.date.slice(0, 7);
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
-  const row = rowForHeaders(headers, {
+
+  // Detect which type column exists and use its name in values
+  const typeColumnName = getTypeColumnName(headers);
+  const ensureTypeReq = ensureTypeColumnRequest(salarySheetIdVal, headers);
+  const needsTypeAppended = typeColumnName === null && ensureTypeReq !== null;
+
+  // Build values dict with correct type column name
+  const rowValues: Record<string, SheetValue> = {
     Payment_ID: paymentId,
     Date: now.date,
     Month: month,
@@ -267,7 +315,20 @@ export async function paySalary(
     Paid_From: input.paidFrom,
     Status: "Paid",
     Paid_At: now.timestamp,
-  });
+  };
+
+  // Use the actual type column name if it exists
+  if (typeColumnName) {
+    rowValues[typeColumnName] = input.type;
+  } else {
+    // If no type column exists yet, use "Type" (will be added by ensureTypeReq)
+    rowValues.Type = input.type;
+  }
+
+  const row = rowForHeaders(headers, rowValues);
+
+  // If Type column was missing and we added it, append Type value to the row
+  const finalRow = needsTypeAppended ? [...row, input.type] : row;
 
   const auditRow = buildSalaryAuditRow(auditHeaders, {
     now,
@@ -276,13 +337,14 @@ export async function paySalary(
     staffId: staff.staffId,
     department,
     amount,
+    type: input.type,
     paidFrom: input.paidFrom,
   });
 
-  const requests: SpreadsheetBatchRequest[] = [
-    appendRowRequest(salarySheetIdVal, row),
-    appendRowRequest(auditSheetIdVal, auditRow),
-  ];
+  const requests: SpreadsheetBatchRequest[] = [];
+  if (ensureTypeReq) requests.push(ensureTypeReq);
+  requests.push(appendRowRequest(salarySheetIdVal, finalRow));
+  requests.push(appendRowRequest(auditSheetIdVal, auditRow));
   await batchUpdateSpreadsheet(workbook, requests);
   return { paymentId, duplicate: false };
 }

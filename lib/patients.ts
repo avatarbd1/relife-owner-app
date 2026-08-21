@@ -22,6 +22,16 @@ export interface PatientRecord {
   lastUpdated: string;
 }
 
+export interface PatientFinancialPosition {
+  /**
+   * Phase-0 legacy rows do not have complete Total_Bill coverage, so an
+   * aggregate billed-services number must remain unavailable until a complete
+   * billing ledger/cutover is verified.
+   */
+  billedServices: number | null;
+  outstanding: number | null;
+}
+
 function headerIndex(headers: string[], ...names: string[]): number {
   const normalized = headers.map((value) => String(value || "").trim().toLowerCase());
   for (const name of names) {
@@ -113,7 +123,7 @@ async function loadPatients(): Promise<PatientRecord[]> {
   ]);
 
   const physioRows = parsePatients(physio["02_Patients"] || [], "Physio")
-    .filter((row) => row.department !== "Dental");
+    .filter((row) => row.department === "Physio");
   const dentalRows = parsePatients(dental["02_Patients"] || [], "Dental")
     .filter((row) => row.department === "Dental");
 
@@ -141,7 +151,32 @@ export async function getPatients(): Promise<PatientRecord[]> {
 }
 
 export function patientsInScope(rows: PatientRecord[], scope: Scope): PatientRecord[] {
-  if (scope === "combined") return rows;
+  if (scope === "combined") {
+    return rows.filter(
+      (row) => row.department === "Physio" || row.department === "Dental"
+    );
+  }
   const department: Department = scope === "physio" ? "Physio" : "Dental";
   return rows.filter((row) => row.department === department);
+}
+
+export async function getPatientFinancialPosition(
+  scope: Scope
+): Promise<PatientFinancialPosition> {
+  if (!hasPrivateSheetsCredentials()) {
+    return { billedServices: null, outstanding: null };
+  }
+  try {
+    const patients = patientsInScope(await loadPatients(), scope);
+    const outstanding = Math.round(
+      patients.reduce((sum, patient) => sum + patient.due, 0) * 100
+    ) / 100;
+    return {
+      billedServices: null,
+      outstanding,
+    };
+  } catch (error) {
+    console.error("Patient finance summary unavailable:", error);
+    return { billedServices: null, outstanding: null };
+  }
 }

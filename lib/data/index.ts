@@ -216,6 +216,7 @@ function parseSalaryPayments(
   const staffIdIdx = getHeaderIndex(headers, "Staff_ID", "staffId");
   const departmentIdx = getHeaderIndex(headers, "Department");
   const amountIdx = getHeaderIndex(headers, "Amount");
+  const typeIdx = getHeaderIndex(headers, "Type", "Payment_Type");
   const paidFromIdx = getHeaderIndex(headers, "Paid_From");
   const statusIdx = getHeaderIndex(headers, "Status");
   const paidAtIdx = getHeaderIndex(headers, "Paid_At");
@@ -224,6 +225,13 @@ function parseSalaryPayments(
     const id = valueAt(row, idIdx);
     if (!id) return [];
     const staffId = valueAt(row, staffIdIdx);
+    const rawType = valueAt(row, typeIdx).toLowerCase();
+    const type =
+      rawType === "salary"
+        ? ("Salary" as const)
+        : rawType === "advance"
+          ? ("Advance" as const)
+          : undefined;
     return [
       {
         id,
@@ -232,7 +240,7 @@ function parseSalaryPayments(
         staffName: staffNames.get(staffId) || "",
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
         amount: money(valueAt(row, amountIdx)),
-        type: "Advance" as const,
+        ...(type ? { type } : {}),
         paidFrom: valueAt(row, paidFromIdx),
         status: valueAt(row, statusIdx),
         paidAt: valueAt(row, paidAtIdx),
@@ -253,6 +261,9 @@ function parseCashMovements(
   const toIdx = getHeaderIndex(headers, "To_Custodian");
   const amountIdx = getHeaderIndex(headers, "Amount");
   const receivedIdx = getHeaderIndex(headers, "Received_Amount");
+  const acceptedAtIdx = getHeaderIndex(headers, "Accepted_At");
+  const confirmedAtIdx = getHeaderIndex(headers, "Confirmed_At");
+  const completedAtIdx = getHeaderIndex(headers, "Completed_At");
   const statusIdx = getHeaderIndex(headers, "Status");
   const departmentIdx = getHeaderIndex(headers, "Department");
   const noteIdx = getHeaderIndex(headers, "Note", "Remarks");
@@ -261,6 +272,13 @@ function parseCashMovements(
     const id = valueAt(row, idIdx);
     if (!id) return [];
     const receivedText = valueAt(row, receivedIdx);
+    const status = valueAt(row, statusIdx);
+    const acceptedAt =
+      status.trim().toLowerCase() === "accepted"
+        ? valueAt(row, acceptedAtIdx) ||
+          valueAt(row, confirmedAtIdx) ||
+          valueAt(row, completedAtIdx)
+        : "";
     return [
       {
         id,
@@ -269,7 +287,8 @@ function parseCashMovements(
         toCustodian: valueAt(row, toIdx),
         amount: money(valueAt(row, amountIdx)),
         ...(receivedText ? { receivedAmount: money(receivedText) } : {}),
-        status: valueAt(row, statusIdx),
+        ...(acceptedAt ? { acceptedAt } : {}),
+        status,
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
         ...(valueAt(row, noteIdx) ? { remarks: valueAt(row, noteIdx) } : {}),
       },
@@ -287,13 +306,13 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
   const staffNames = new Map(staff.map((item) => [item.staffId, item.fullName]));
 
   const physioPayments = parsePayments(physio["06_Payments"] || [], "Physio").filter(
-    (row) => row.department !== "Dental"
+    (row) => row.department === "Physio"
   );
   const dentalPayments = parsePayments(dental["06_Payments"] || [], "Dental").filter(
     (row) => row.department === "Dental"
   );
   const physioExpenses = parseExpenses(physio["07_Expenses"] || [], "Physio").filter(
-    (row) => row.department !== "Dental"
+    (row) => row.department === "Physio"
   );
   const dentalExpenses = parseExpenses(dental["07_Expenses"] || [], "Dental").filter(
     (row) => row.department === "Dental"
@@ -302,7 +321,7 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
     physio["13_Salary"] || [],
     "Physio",
     staffNames
-  ).filter((row) => row.department !== "Dental");
+  ).filter((row) => row.department === "Physio");
   const dentalSalary = parseSalaryPayments(
     dental["13_Salary"] || [],
     "Dental",
@@ -311,7 +330,7 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
   const physioCash = parseCashMovements(
     physio["21_Cash_Movement"] || [],
     "Physio"
-  ).filter((row) => row.department !== "Dental");
+  ).filter((row) => row.department === "Physio");
   const dentalCash = parseCashMovements(
     dental["21_Cash_Movement"] || [],
     "Dental"
