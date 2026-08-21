@@ -216,6 +216,7 @@ function parseSalaryPayments(
   const staffIdIdx = getHeaderIndex(headers, "Staff_ID", "staffId");
   const departmentIdx = getHeaderIndex(headers, "Department");
   const amountIdx = getHeaderIndex(headers, "Amount");
+  const typeIdx = getHeaderIndex(headers, "Type", "Payment_Type");
   const paidFromIdx = getHeaderIndex(headers, "Paid_From");
   const statusIdx = getHeaderIndex(headers, "Status");
   const paidAtIdx = getHeaderIndex(headers, "Paid_At");
@@ -224,6 +225,13 @@ function parseSalaryPayments(
     const id = valueAt(row, idIdx);
     if (!id) return [];
     const staffId = valueAt(row, staffIdIdx);
+    const rawType = valueAt(row, typeIdx).toLowerCase();
+    const type =
+      rawType === "salary"
+        ? ("Salary" as const)
+        : rawType === "advance"
+          ? ("Advance" as const)
+          : undefined;
     return [
       {
         id,
@@ -232,7 +240,7 @@ function parseSalaryPayments(
         staffName: staffNames.get(staffId) || "",
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
         amount: money(valueAt(row, amountIdx)),
-        type: "Advance" as const,
+        ...(type ? { type } : {}),
         paidFrom: valueAt(row, paidFromIdx),
         status: valueAt(row, statusIdx),
         paidAt: valueAt(row, paidAtIdx),
@@ -287,13 +295,13 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
   const staffNames = new Map(staff.map((item) => [item.staffId, item.fullName]));
 
   const physioPayments = parsePayments(physio["06_Payments"] || [], "Physio").filter(
-    (row) => row.department !== "Dental"
+    (row) => row.department === "Physio"
   );
   const dentalPayments = parsePayments(dental["06_Payments"] || [], "Dental").filter(
     (row) => row.department === "Dental"
   );
   const physioExpenses = parseExpenses(physio["07_Expenses"] || [], "Physio").filter(
-    (row) => row.department !== "Dental"
+    (row) => row.department === "Physio"
   );
   const dentalExpenses = parseExpenses(dental["07_Expenses"] || [], "Dental").filter(
     (row) => row.department === "Dental"
@@ -302,7 +310,7 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
     physio["13_Salary"] || [],
     "Physio",
     staffNames
-  ).filter((row) => row.department !== "Dental");
+  ).filter((row) => row.department === "Physio");
   const dentalSalary = parseSalaryPayments(
     dental["13_Salary"] || [],
     "Dental",
@@ -311,7 +319,7 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
   const physioCash = parseCashMovements(
     physio["21_Cash_Movement"] || [],
     "Physio"
-  ).filter((row) => row.department !== "Dental");
+  ).filter((row) => row.department === "Physio");
   const dentalCash = parseCashMovements(
     dental["21_Cash_Movement"] || [],
     "Dental"
