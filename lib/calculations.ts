@@ -25,7 +25,6 @@ import {
 import {
   acceptedCashHandoverTotal,
   financeScopeAllowsDepartment,
-  reconcileSalaryTotals,
 } from "@/lib/domain/finance/reconciliation";
 import { cashBusinessDate } from "@/lib/domain/finance/cashBusinessDay";
 import {
@@ -341,8 +340,8 @@ export async function getSalaryStatus(
 
   const settlementTotal = salaryPaid + salaryAdvance;
   const ledgerPaid = settlementTotal + legacyUnclassified;
-  const remainingDue = Math.max(0, fixedCommitment - settlementTotal);
-  const excessAmount = Math.max(0, settlementTotal - fixedCommitment);
+  const remainingDue = Math.max(0, fixedCommitment - ledgerPaid);
+  const excessAmount = Math.max(0, ledgerPaid - fixedCommitment);
 
   return {
     fixedCommitment,

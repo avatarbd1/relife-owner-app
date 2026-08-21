@@ -206,13 +206,16 @@ export async function paySalary(
     "Month",
     "Staff_ID",
     "Amount",
-    "Type",
     "Department",
     "Paid_From",
     "Status",
     "Paid_At",
     "Note",
   ]);
+
+  // Type column may not exist in legacy 13_Salary sheets
+  // If present, rowForHeaders will map it; if absent, it becomes empty string in row
+  // Canonical audit always includes type for future records
   ensureHeaders(auditHeaders, [
     "Audit_ID",
     "Timestamp",
