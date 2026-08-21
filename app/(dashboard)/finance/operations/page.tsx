@@ -89,6 +89,14 @@ export default async function FinanceOperationsPage({
     ? { ...snapshot, staff: enrichedStaff }
     : { ...snapshot, staff: [] };
 
+  const safeHistory = {
+    ...history,
+    salaryPayments: history.salaryPayments.map((row) => ({
+      ...row,
+      type: row.type || "Type unavailable",
+    })),
+  };
+
   const pendingExpenses = isOwner
     ? history.expenses
         .filter((item) => {
@@ -153,7 +161,7 @@ export default async function FinanceOperationsPage({
 
       <FinanceOperationsClient
         snapshot={safeSnapshot}
-        history={history}
+        history={safeHistory}
         initialTab={requestedTab as "payment" | "expenses" | "cash" | "salary" | undefined}
       />
     </div>
