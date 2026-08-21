@@ -25,7 +25,10 @@ const docsOnly = files.every(
     file.startsWith("docs/") ||
     file.startsWith(".github/") ||
     file.startsWith("tests/") ||
-    file === "scripts/validate-pr-impact.mjs"
+    file === "scripts/validate-pr-impact.mjs" ||
+    file === "AGENTS.md" ||
+    file === "CLAUDE.md" ||
+    file === "MIGRATION_AUDIT.md"
 );
 
 const areas = [
@@ -115,6 +118,109 @@ if (docsOnly) {
   }
   if (/Rollback procedure:\s*<|Rollback procedure:\s*$/im.test(body)) {
     errors.push("Runtime PR must include an exact rollback procedure.");
+  }
+}
+
+
+function addedFiles() {
+  try {
+    return execSync("git diff --diff-filter=A --name-only origin/" + baseRef + "...HEAD", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  } catch (error) {
+    console.error("Unable to calculate added files for architecture review.");
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+function addedSource(file) {
+  try {
+    const safeFile = file.replaceAll('"', '\\"');
+    return execSync('git diff --unified=0 origin/' + baseRef + '...HEAD -- "' + safeFile + '"', {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+      .split("\n")
+      .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+      .map((line) => line.slice(1))
+      .join("\n");
+  } catch {
+    return "";
+  }
+}
+
+function requiredYes(label) {
+  if (!new RegExp(label + ":\\s*YES\\b", "i").test(body)) {
+    errors.push("Runtime PR requires '" + label + ": YES'.");
+  }
+}
+
+function requiredEvidence(label) {
+  const match = body.match(new RegExp(label + ":\\s*(.+)", "i"));
+  const value = match?.[1]?.trim() || "";
+  if (!value || /<|>|TODO|TBD|N.A/i.test(value)) {
+    errors.push("Runtime PR requires concrete " + label + " evidence; placeholders and N/A are not accepted.");
+  }
+}
+
+if (!docsOnly) {
+  if (!body.includes("## Architecture / canonical-path review")) {
+    errors.push("Runtime PR is missing '## Architecture / canonical-path review'.");
+  }
+
+  requiredYes("Migration audit reviewed");
+  requiredYes("Canonical registry reviewed");
+  for (const label of [
+    "Existing-path search evidence",
+    "Existing canonical route/domain/writer",
+    "Canonical path reused",
+    "Durable storage used",
+    "Permission reused",
+    "Bot/App dual-writer impact",
+  ]) {
+    requiredEvidence(label);
+  }
+
+  const authorityChanged = /Authority changed:\s*YES\b/i.test(body);
+  const newWriter = /New canonical writer introduced:\s*YES\b/i.test(body);
+  const saysNoAuthority = /Authority changed:\s*NO\b/i.test(body);
+  const saysNoWriter = /New canonical writer introduced:\s*NO\b/i.test(body);
+  if (!authorityChanged && !saysNoAuthority) {
+    errors.push("Runtime PR must declare 'Authority changed: YES' or 'Authority changed: NO'.");
+  }
+  if (!newWriter && !saysNoWriter) {
+    errors.push("Runtime PR must declare 'New canonical writer introduced: YES' or 'New canonical writer introduced: NO'.");
+  }
+
+  const approvedTask = body.match(/Owner-approved task:\s*(.+)/i)?.[1]?.trim() || "";
+  const hasApprovedIssue = /#\d+/.test(approvedTask);
+  if ((authorityChanged || newWriter) && !hasApprovedIssue) {
+    errors.push("Authority changes or new canonical writers require an explicit Owner-approved GitHub issue number.");
+  }
+
+  const added = addedFiles();
+  const newApiRoutes = added.filter((file) => /^app\/api\/.+\/route\.(ts|js)$/.test(file));
+  if (newApiRoutes.length && !hasApprovedIssue) {
+    errors.push("New API route(s) require an Owner-approved issue: " + newApiRoutes.join(", "));
+  }
+
+  const newRuntimeAuthorityFiles = added.filter(
+    (file) =>
+      /^app\/api\/.+\.(ts|js)$/.test(file) ||
+      /^lib\/domain\/.+\.(ts|js)$/.test(file)
+  );
+  for (const file of newRuntimeAuthorityFiles) {
+    const source = addedSource(file);
+    if (/\bnew\s+(Map|Set)\s*[<(]/.test(source)) {
+      errors.push(
+        "New runtime authority file '" + file + "' adds process-local Map/Set state. Durable production writers/idempotency may not use process-local storage."
+      );
+    }
   }
 }
 

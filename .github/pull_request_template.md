@@ -25,6 +25,21 @@ Check every area that can be affected directly or indirectly.
 - [ ] I checked patient-file/report visibility when patient data can change.
 - [ ] I checked PWA/navigation/notification behavior when user flow can change.
 
+## Architecture / canonical-path review
+Required for every runtime change.
+
+Migration audit reviewed: NO
+Canonical registry reviewed: NO
+Existing-path search evidence: `<exact rg/search commands and relevant results>`
+Existing canonical route/domain/writer: `<path + function>`
+Canonical path reused: `<path + explanation>`
+New canonical writer introduced: NO
+Authority changed: NO
+Owner-approved task: `<issue number, or N/A when both answers above are NO>`
+Durable storage used: `<existing Sheets/Supabase/domain authority; never process-local Map/Set>`
+Permission reused: `<exact WebAction from lib/webos/access.ts>`
+Bot/App dual-writer impact: `<none, preserved, reduced, or approved cutover details>`
+
 ## Automated verification
 Tests run and result:
 
