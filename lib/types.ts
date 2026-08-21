@@ -54,7 +54,8 @@ export interface SalaryPayment {
   staffName: string;
   department: Department;
   amount: number;
-  type: "Salary" | "Advance";
+  /** Optional because the current 13_Salary sheet has no type discriminator. */
+  type?: "Salary" | "Advance";
   paidFrom?: string;
   status?: string;
   paidAt?: string;
