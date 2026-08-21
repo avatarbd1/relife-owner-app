@@ -63,12 +63,15 @@ export interface SalaryPayment {
 
 export interface CashMovement {
   id: string;
+  /** Request/business date. Cash effect starts only after acceptance. */
   date: string; // YYYY-MM-DD
   fromCustodian: string;
   toCustodian: string;
   amount: number;
   /** If receiving side confirms a different amount, this is the cash effect. */
   receivedAmount?: number;
+  /** Accepted/confirmed timestamp from 21_Cash_Movement when available. */
+  acceptedAt?: string;
   status: string;
   department: Department;
   remarks?: string;
