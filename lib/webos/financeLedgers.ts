@@ -257,7 +257,7 @@ export async function getFinanceLedgerSnapshot(
         staffId: row.staffId,
         staffName: row.staffName || "",
         amount: row.amount,
-        type: row.type || "",
+        type: row.type || "Type unavailable",
         paidFrom: row.paidFrom || "",
         status: row.status || "Recorded",
         paidAt: row.paidAt || "",
