@@ -1,122 +1,135 @@
-import { NextRequest, NextResponse } from "next/server";
-import {
-  createCapacityBooking,
-  type CapacityBookingValidation,
-} from "@/lib/domain/appointments/capacityBooking";
-import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
-import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { assertCanPerform } from "@/lib/webos/access";
-import { withMutationLock } from "@/lib/webos/mutationLock";
-import { createAppointment, getPatientForContext } from "@/lib/webos/reception";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import {
+  bookAppointment,
+  getTherapistAvailability,
+  rescheduleAppointment,
+  cancelAppointment,
+  getTodaysAppointments,
+  type BookAppointmentInput,
+} from "@/lib/domain/operations/appointmentBooking";
 
-function errorResponse(error: unknown): NextResponse {
-  const typed = error as Error & { validation?: CapacityBookingValidation };
-  const message = error instanceof Error ? error.message : "APPOINTMENT_CREATE_FAILED";
-  if (message === "ACCESS_DENIED") {
-    return NextResponse.json({ ok: false, error: message }, { status: 403 });
+export async function POST(request: Request) {
+  const context = await requireCurrentAccessContext();
+
+  try {
+    const body = await request.json();
+    const { action, patientId, therapistId, date, startTime, duration, department, requestId } = body;
+
+    if (!action) {
+      return Response.json({ error: "MISSING_ACTION" }, { status: 400 });
+    }
+
+    if (!requestId) {
+      return Response.json({ error: "MISSING_REQUEST_ID" }, { status: 400 });
+    }
+
+    if (action === "book") {
+      if (!patientId || !date || !startTime || !duration || !department) {
+        return Response.json({ error: "MISSING_REQUIRED_FIELDS" }, { status: 400 });
+      }
+
+      if (!["Physio", "Dental"].includes(department)) {
+        return Response.json({ error: "INVALID_DEPARTMENT" }, { status: 400 });
+      }
+
+      const input: BookAppointmentInput = {
+        patientId,
+        therapistId,
+        date,
+        startTime,
+        duration: Number(duration),
+        department,
+        requestId,
+      };
+
+      const result = await bookAppointment(context, input);
+      return Response.json(result);
+    }
+
+    if (action === "reschedule") {
+      const { appointmentId, newDate, newTime } = body;
+
+      if (!appointmentId || !newDate || !newTime) {
+        return Response.json({ error: "MISSING_REQUIRED_FIELDS" }, { status: 400 });
+      }
+
+      const result = await rescheduleAppointment(context, appointmentId, newDate, newTime);
+      return Response.json(result);
+    }
+
+    if (action === "cancel") {
+      const { appointmentId } = body;
+
+      if (!appointmentId) {
+        return Response.json({ error: "MISSING_APPOINTMENT_ID" }, { status: 400 });
+      }
+
+      const result = await cancelAppointment(context, appointmentId);
+      return Response.json(result);
+    }
+
+    return Response.json({ error: "INVALID_ACTION" }, { status: 400 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
+
+    const statusMap: Record<string, number> = {
+      ACCESS_DENIED: 403,
+      THERAPIST_NOT_FOUND: 404,
+      APPOINTMENT_NOT_FOUND: 404,
+      TIME_SLOT_CONFLICT: 409,
+      OUTSIDE_BUSINESS_HOURS: 400,
+      INVALID_DATE_FORMAT: 400,
+      INVALID_TIME_FORMAT: 400,
+      INVALID_DURATION: 400,
+      MISSING_PATIENT_ID: 400,
+      DUPLICATE_REQUEST: 409,
+    };
+
+    const status = statusMap[message] || 500;
+    return Response.json({ error: message }, { status });
   }
-  if (message === "PATIENT_NOT_FOUND") {
-    return NextResponse.json({ ok: false, error: message }, { status: 404 });
-  }
-  if (message === "APPOINTMENT_DUPLICATE") {
-    return NextResponse.json({ ok: false, error: message }, { status: 409 });
-  }
-  if (message.startsWith("APPOINTMENT_CONFLICT:")) {
-    const [, type, ...detailParts] = message.split(":");
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "APPOINTMENT_CONFLICT",
-        conflictType: type || "other",
-        detail: detailParts.join(":") || "Booking conflict",
-        validation: typed.validation,
-      },
-      { status: 409 }
-    );
-  }
-  if (message.startsWith("APPOINTMENT_CAPACITY:")) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "APPOINTMENT_CAPACITY",
-        detail: message.split(":").slice(1).join(":"),
-      },
-      { status: 409 }
-    );
-  }
-  if (["INVALID_DATE", "INVALID_TIME", "INVALID_SLOT", "INVALID_THERAPIST", "INVALID_REQUEST_ID"].includes(message)) {
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
-  }
-  if (["SCHEMA_MISMATCH", "SUPABASE_EDGE_SECRET_MISSING", "TENANT_NOT_FOUND"].includes(message)) {
-    return NextResponse.json({ ok: false, error: message }, { status: 503 });
-  }
-  console.error("Appointment creation failed:", message);
-  return NextResponse.json({ ok: false, error: message }, { status: 500 });
 }
 
-export async function POST(request: NextRequest) {
-  if (!isAllowedRequestOrigin(request)) {
-    return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
-  }
+export async function GET(request: Request) {
+  const context = await requireCurrentAccessContext();
+
   try {
-    const context = await requireCurrentAccessContext();
-    const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    }
-    const patient = await getPatientForContext(context, String(body.patientId || ""));
-    if (!patient || patient.department === "All") {
-      return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
-    }
+    const url = new URL(request.url);
+    const action = url.searchParams.get("action");
+    const department = url.searchParams.get("department");
 
-    assertCanPerform(context, "appointment.create", patient.department);
-
-    const isPhysio = patient.department === "Physio";
-    const lockKey = isPhysio
-      ? `capacity-booking:${String(body.date || "")}`
-      : `appointment-create:${String(body.date || "")}`;
-
-    const result = await withMutationLock(lockKey, () => {
-      if (isPhysio) {
-        return createCapacityBooking(context, {
-          patientId: patient.patientId,
-          date: String(body.date || ""),
-          time: String(body.time || ""),
-          therapist: String(body.therapist || ""),
-          remarks: String(body.remarks || ""),
-        });
+    if (action === "today") {
+      if (!department) {
+        return Response.json({ error: "MISSING_DEPARTMENT" }, { status: 400 });
       }
-      return createAppointment(context, {
-        patientId: patient.patientId,
-        date: body.date,
-        time: body.time,
-        therapist: body.therapist,
-        remarks: body.remarks,
-      });
-    });
 
-    await recordActorWorkGamification({
-      context,
-      department: patient.department,
-      purpose: "reception",
-      eventType: "appointment_booked",
-      eventKey: `appointment:${patient.department}:${result.appointmentId}:booked:v2`,
-      sourceType: "appointment_create",
-      sourceId: result.appointmentId,
-      eventAt: new Date().toISOString(),
-      reason: "Verified appointment booking",
-      verificationMethod: "canonical_appointment_create",
-      payload: {
-        appointmentId: result.appointmentId,
-        patientId: patient.patientId,
-        appointmentDate: String(body.date || "").trim(),
-        therapistReference: String(body.therapist || "").trim(),
-      },
-    });
+      if (!["Physio", "Dental"].includes(department)) {
+        return Response.json({ error: "INVALID_DEPARTMENT" }, { status: 400 });
+      }
 
-    return NextResponse.json({ ok: true, ...result });
+      const result = await getTodaysAppointments(context, department as "Physio" | "Dental");
+      return Response.json(result);
+    }
+
+    if (action === "availability") {
+      const therapistId = url.searchParams.get("therapistId");
+      const date = url.searchParams.get("date");
+
+      if (!therapistId || !date || !department) {
+        return Response.json({ error: "MISSING_REQUIRED_PARAMS" }, { status: 400 });
+      }
+
+      if (!["Physio", "Dental"].includes(department)) {
+        return Response.json({ error: "INVALID_DEPARTMENT" }, { status: 400 });
+      }
+
+      const result = await getTherapistAvailability(context, therapistId, date, department as "Physio" | "Dental");
+      return Response.json(result);
+    }
+
+    return Response.json({ error: "MISSING_ACTION" }, { status: 400 });
   } catch (error) {
-    return errorResponse(error);
+    const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
+    return Response.json({ error: message }, { status: 500 });
   }
 }
