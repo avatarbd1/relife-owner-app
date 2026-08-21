@@ -123,10 +123,71 @@ test("accepted handover changes custody on acceptance date, never request date",
   );
 });
 
+test("pre-09:00 Dhaka cash effects remain on the previous business date", () => {
+  const earlyExpense: Expense = {
+    expenseId: "EX-BUSINESS-DAY",
+    date: "2026-09-01",
+    category: "Supplies",
+    description: "Paid before business-day rollover",
+    amount: 30,
+    paymentMethod: "Reception",
+    paidBy: "ST-OWN",
+    department: "Physio",
+    expenseType: "Clinic Expense",
+    paidFrom: "Reception",
+    status: "Paid",
+    paidAt: "2026-09-01 08:30",
+    isHouseholdWithdrawal: false,
+  };
+  const earlyHandover: CashMovement = {
+    id: "CMW-BUSINESS-DAY",
+    date: "2026-09-01",
+    fromCustodian: "Reception",
+    toCustodian: "Home Treasury",
+    amount: 40,
+    receivedAmount: 40,
+    acceptedAt: "2026-09-01 08:59 AM",
+    status: "Accepted",
+    department: "Physio",
+  };
+
+  const asOfAugustBusinessDay = calculateCustodyPosition({
+    scope: "physio",
+    payments: [payment],
+    expenses: [earlyExpense],
+    salaryPayments: [],
+    cashMovements: [earlyHandover],
+    dateIncluded: through("2026-08-31"),
+  });
+  assert.equal(asOfAugustBusinessDay.reception, 30);
+  assert.equal(asOfAugustBusinessDay.homeTreasury, 40);
+  assert.equal(asOfAugustBusinessDay.total, 70);
+
+  assert.equal(
+    acceptedCashHandoverTotal({
+      scope: "physio",
+      cashMovements: [earlyHandover],
+      dateIncluded: (date) => date.startsWith("2026-08"),
+    }),
+    40
+  );
+  assert.equal(
+    acceptedCashHandoverTotal({
+      scope: "physio",
+      cashMovements: [earlyHandover],
+      dateIncluded: (date) => date.startsWith("2026-09"),
+    }),
+    0
+  );
+});
+
 test("cash movement reader preserves acceptance timestamps from both writer contracts", () => {
   const data = source("lib/data/index.ts");
   assert.match(data, /getHeaderIndex\(headers, "Accepted_At"\)/);
   assert.match(data, /getHeaderIndex\(headers, "Confirmed_At"\)/);
   assert.match(data, /getHeaderIndex\(headers, "Completed_At"\)/);
   assert.match(data, /acceptedAt \? \{ acceptedAt \} : \{\}/);
+
+  const calculations = source("lib/calculations.ts");
+  assert.match(calculations, /const today = cashBusinessDate\(now\)/);
 });
