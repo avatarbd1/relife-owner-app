@@ -6,6 +6,7 @@ import type {
   SalaryPayment,
   Scope,
 } from "../../types.ts";
+import { cashBusinessDateFromTimestamp } from "./cashBusinessDay.ts";
 import {
   isAcceptedCashMovementStatus,
   isPaidLedgerStatus,
@@ -74,21 +75,27 @@ export function effectiveExpensePaidDate(row: {
   date: string;
   paidAt?: string;
 }): string {
-  return normalizedDate(row.paidAt || row.date);
+  return row.paidAt
+    ? cashBusinessDateFromTimestamp(row.paidAt, row.date)
+    : normalizedDate(row.date);
 }
 
 export function effectiveSalaryPaidDate(row: {
   date: string;
   paidAt?: string;
 }): string {
-  return normalizedDate(row.paidAt || row.date);
+  return row.paidAt
+    ? cashBusinessDateFromTimestamp(row.paidAt, row.date)
+    : normalizedDate(row.date);
 }
 
 export function effectiveCashMovementDate(row: {
   date: string;
   acceptedAt?: string;
 }): string {
-  return normalizedDate(row.acceptedAt || row.date);
+  return row.acceptedAt
+    ? cashBusinessDateFromTimestamp(row.acceptedAt, row.date)
+    : normalizedDate(row.date);
 }
 
 export function calculateCustodyPosition(input: {
