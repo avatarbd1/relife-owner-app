@@ -22,6 +22,16 @@ export interface PatientRecord {
   lastUpdated: string;
 }
 
+export interface PatientFinancialPosition {
+  /**
+   * Phase-0 legacy rows do not have complete Total_Bill coverage, so an
+   * aggregate billed-services number must remain unavailable until a complete
+   * billing ledger/cutover is verified.
+   */
+  billedServices: number | null;
+  outstanding: number | null;
+}
+
 function headerIndex(headers: string[], ...names: string[]): number {
   const normalized = headers.map((value) => String(value || "").trim().toLowerCase());
   for (const name of names) {
@@ -148,4 +158,25 @@ export function patientsInScope(rows: PatientRecord[], scope: Scope): PatientRec
   }
   const department: Department = scope === "physio" ? "Physio" : "Dental";
   return rows.filter((row) => row.department === department);
+}
+
+export async function getPatientFinancialPosition(
+  scope: Scope
+): Promise<PatientFinancialPosition> {
+  if (!hasPrivateSheetsCredentials()) {
+    return { billedServices: null, outstanding: null };
+  }
+  try {
+    const patients = patientsInScope(await loadPatients(), scope);
+    const outstanding = Math.round(
+      patients.reduce((sum, patient) => sum + patient.due, 0) * 100
+    ) / 100;
+    return {
+      billedServices: null,
+      outstanding,
+    };
+  } catch (error) {
+    console.error("Patient finance summary unavailable:", error);
+    return { billedServices: null, outstanding: null };
+  }
 }
