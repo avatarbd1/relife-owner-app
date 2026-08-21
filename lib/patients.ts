@@ -113,7 +113,7 @@ async function loadPatients(): Promise<PatientRecord[]> {
   ]);
 
   const physioRows = parsePatients(physio["02_Patients"] || [], "Physio")
-    .filter((row) => row.department !== "Dental");
+    .filter((row) => row.department === "Physio");
   const dentalRows = parsePatients(dental["02_Patients"] || [], "Dental")
     .filter((row) => row.department === "Dental");
 
@@ -141,7 +141,11 @@ export async function getPatients(): Promise<PatientRecord[]> {
 }
 
 export function patientsInScope(rows: PatientRecord[], scope: Scope): PatientRecord[] {
-  if (scope === "combined") return rows;
+  if (scope === "combined") {
+    return rows.filter(
+      (row) => row.department === "Physio" || row.department === "Dental"
+    );
+  }
   const department: Department = scope === "physio" ? "Physio" : "Dental";
   return rows.filter((row) => row.department === department);
 }
