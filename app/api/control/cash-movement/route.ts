@@ -7,6 +7,7 @@ import {
 import { decideCashMovement } from "@/lib/domain/finance/production";
 import type { Workbook } from "@/lib/data/googleSheets";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 
 function statusForError(message: string): number {
   if (message === "CONTROL_NOT_FOUND") return 404;
@@ -26,6 +27,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  let context;
+  try {
+    context = await requireCurrentAccessContext();
+  } catch {
+    return NextResponse.json({ ok: false, error: "ACCESS_DENIED" }, { status: 403 });
+  }
+
+  // Explicit Owner authorization check (before PIN check)
+  if (!context.roles.includes("Owner")) {
+    return NextResponse.json({ ok: false, error: "ACCESS_DENIED" }, { status: 403 });
+  }
+
   const body = await request.json().catch(() => null);
   const workbook = body?.workbook as Workbook | undefined;
   const id = typeof body?.id === "string" ? body.id.trim() : "";
@@ -34,9 +47,11 @@ export async function POST(request: NextRequest) {
   const receivedAmount =
     typeof body?.receivedAmount === "number" ? body.receivedAmount : undefined;
 
+  // PIN check (secondary confirmation, not primary authorization)
   if (!pin || !checkOwnerPin(pin)) {
     return NextResponse.json({ ok: false, error: "Incorrect PIN" }, { status: 401 });
   }
+
   if (!(["physio", "dental"] as const).includes(workbook as Workbook)) {
     return NextResponse.json({ ok: false, error: "Invalid workbook" }, { status: 400 });
   }
@@ -56,7 +71,7 @@ export async function POST(request: NextRequest) {
       movementId: id,
       decision,
       receivedAmount,
-      actorId: process.env.OWNER_DISPLAY_NAME || "Owner",
+      actorId: context.staffId, // Use authenticated Owner's staff ID
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
