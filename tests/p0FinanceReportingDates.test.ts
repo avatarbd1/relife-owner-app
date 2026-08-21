@@ -8,6 +8,7 @@ import {
 } from "../lib/domain/finance/reportingDates.ts";
 import type { Expense, SalaryPayment } from "../lib/types.ts";
 
+// Reporting consumers must share the custody ledger's 09:00 Dhaka boundary.
 const august = new Date("2026-08-15T06:00:00Z");
 const september = new Date("2026-09-15T06:00:00Z");
 
