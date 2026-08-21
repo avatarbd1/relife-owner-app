@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
     const result = await paySalary(context, {
       staffId: body.staffId,
       amount: Number(body.amount),
+      type: (["Salary", "Advance"].includes(body.type) ? body.type : "Salary") as "Salary" | "Advance",
       paidFrom: body.paidFrom,
       note: body.note,
       requestId: body.requestId,

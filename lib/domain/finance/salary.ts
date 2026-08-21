@@ -24,6 +24,7 @@ type SheetValue = string | number | boolean;
 export interface SalaryPayInput {
   staffId: string;
   amount: number;
+  type: "Salary" | "Advance";
   paidFrom: ExpensePaidFrom;
   note?: string;
   requestId: string;
@@ -121,15 +122,17 @@ function buildSalaryAuditRow(
     staffId: string;
     department: ClinicDepartment;
     amount: number;
+    type: "Salary" | "Advance";
     paidFrom: string;
   }
 ): SheetValue[] {
   const clinic = ledgerClinicId(input.department);
+  const action = input.type === "Salary" ? "SALARY_PAID" : "ADVANCE_PAID";
   return rowForHeaders(headers, {
     Audit_ID: `AUD-${randomUUID()}`,
     Timestamp: input.now.timestamp,
     Actor_ID: input.actorId,
-    Action: "SALARY_PAID",
+    Action: action,
     Entity_Type: "SalaryPayment",
     Entity_ID: input.paymentId,
     Patient_ID: "",
@@ -137,6 +140,7 @@ function buildSalaryAuditRow(
     After_Value: JSON.stringify({
       staffId: input.staffId,
       amount: input.amount,
+      type: input.type,
       paidFrom: input.paidFrom,
     }),
     Reason: "Finance domain action",
@@ -201,6 +205,7 @@ export async function paySalary(
     "Staff_ID",
     "Amount",
     "Department",
+    "Type",
     "Paid_From",
     "Status",
     "Paid_At",
@@ -249,6 +254,7 @@ export async function paySalary(
     Month: month,
     Staff_ID: staff.staffId,
     Amount: amount,
+    Type: input.type,
     Paid_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
@@ -276,6 +282,7 @@ export async function paySalary(
     staffId: staff.staffId,
     department,
     amount,
+    type: input.type,
     paidFrom: input.paidFrom,
   });
 

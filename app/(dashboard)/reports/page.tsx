@@ -67,7 +67,8 @@ export default async function ReportsPage() {
     ? scope === "physio" ? todays.physio : scope === "dental" ? todays.dental : todays.combined
     : 0;
   const recovery = month && month.totalBusinessLiability > 0 ? pct((month.monthCollection / month.totalBusinessLiability) * 100) : 0;
-  const salaryPaid = salary && salary.fixedCommitment > 0 ? pct((salary.paidOrAdvance / salary.fixedCommitment) * 100) : 0;
+  const settlementTotal = salary ? salary.salaryPaid + salary.salaryAdvance : 0;
+  const salaryPaid = salary && salary.fixedCommitment > 0 ? pct((settlementTotal / salary.fixedCommitment) * 100) : 0;
 
   const financialPayments = payments.filter(
     (payment) =>
@@ -129,9 +130,9 @@ export default async function ReportsPage() {
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Salary position</h2><p className="mt-0.5 text-xs text-slate-500">Fixed commitment and paid / advance</p></div><StatusBadge tone={salary.remainingDue > 0 ? "warning" : "success"}>{Math.round(salaryPaid)}% paid</StatusBadge></div>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><p className="text-[10px] text-slate-500">Commitment</p><p className="mt-1 text-xs font-bold">{formatBDT(salary.fixedCommitment)}</p></div><div className="rounded-lg bg-emerald-50 p-2"><p className="text-[10px] text-emerald-700">Paid</p><p className="mt-1 text-xs font-bold text-emerald-900">{formatBDT(salary.paidOrAdvance)}</p></div><div className="rounded-lg bg-red-50 p-2"><p className="text-[10px] text-red-700">Remaining</p><p className="mt-1 text-xs font-bold text-red-900">{formatBDT(salary.remainingDue)}</p></div></div>
-            <ProgressBar value={salaryPaid} label="Payroll paid" className="mt-4" />
+            <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Salary position</h2><p className="mt-0.5 text-xs text-slate-500">Fixed commitment and settlement</p></div><StatusBadge tone={salary.remainingDue > 0 ? "warning" : salary.excessAmount > 0 ? "info" : "success"}>{Math.round(salaryPaid)}% {salary.excessAmount > 0 ? "over" : ""}</StatusBadge></div>
+            <div className="mt-3 grid grid-cols-4 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><p className="text-[10px] text-slate-500">Fixed</p><p className="mt-1 text-xs font-bold">{formatBDT(salary.fixedCommitment)}</p></div><div className="rounded-lg bg-blue-50 p-2"><p className="text-[10px] text-blue-700">Salary</p><p className="mt-1 text-xs font-bold text-blue-900">{formatBDT(salary.salaryPaid)}</p></div><div className="rounded-lg bg-cyan-50 p-2"><p className="text-[10px] text-cyan-700">Advance</p><p className="mt-1 text-xs font-bold text-cyan-900">{formatBDT(salary.salaryAdvance)}</p></div><div className={`rounded-lg p-2 ${salary.remainingDue > 0 ? "bg-red-50" : "bg-emerald-50"}`}><p className={`text-[10px] ${salary.remainingDue > 0 ? "text-red-700" : "text-emerald-700"}`}>Remaining</p><p className={`mt-1 text-xs font-bold ${salary.remainingDue > 0 ? "text-red-900" : "text-emerald-900"}`}>{formatBDT(salary.remainingDue)}</p></div></div>
+            <ProgressBar value={salaryPaid} label="Settlement vs commitment" className="mt-4" />
           </section>
         </>
       )}

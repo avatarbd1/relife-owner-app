@@ -54,7 +54,7 @@ export interface SalaryPayment {
   staffName: string;
   department: Department;
   amount: number;
-  type: "Salary" | "Advance";
+  type: "Salary" | "Advance" | "Unknown";
   paidFrom?: string;
   status?: string;
   paidAt?: string;

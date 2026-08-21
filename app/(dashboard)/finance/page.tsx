@@ -38,7 +38,8 @@ export default async function FinancePage() {
 
   const scopeCollection = scope === "physio" ? todays.physio : scope === "dental" ? todays.dental : todays.combined;
   const recovery = month.totalBusinessLiability > 0 ? percent((month.monthCollection / month.totalBusinessLiability) * 100) : 0;
-  const salaryPaidPct = salary.fixedCommitment > 0 ? percent((salary.paidOrAdvance / salary.fixedCommitment) * 100) : 0;
+  const settlementTotal = salary.salaryPaid + salary.salaryAdvance;
+  const salaryPaidPct = salary.fixedCommitment > 0 ? percent((settlementTotal / salary.fixedCommitment) * 100) : 0;
   const pendingExpenses = controls.pendingExpenses.filter((item) => scope === "combined" || item.workbook === scope);
   const pendingCash = controls.pendingCashMovements.filter((item) => scope === "combined" || item.workbook === scope);
   const pendingTotal = pendingExpenses.length + pendingCash.length;
@@ -67,9 +68,10 @@ export default async function FinancePage() {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Salary position</h2><p className="mt-0.5 text-xs text-slate-500">Fixed commitment versus paid / advance</p></div><StatusBadge tone={salary.remainingDue > 0 ? "warning" : "success"}>{salary.remainingDue > 0 ? "Due remains" : "Paid"}</StatusBadge></div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><p className="text-[10px] text-slate-500">Fixed</p><p className="mt-1 text-xs font-bold tabular-nums">{formatBDT(salary.fixedCommitment)}</p></div><div className="rounded-lg bg-emerald-50 p-2"><p className="text-[10px] text-emerald-700">Paid</p><p className="mt-1 text-xs font-bold tabular-nums text-emerald-900">{formatBDT(salary.paidOrAdvance)}</p></div><div className="rounded-lg bg-red-50 p-2"><p className="text-[10px] text-red-700">Remaining</p><p className="mt-1 text-xs font-bold tabular-nums text-red-900">{formatBDT(salary.remainingDue)}</p></div></div>
-        <ProgressBar value={salaryPaidPct} label="Payroll paid this month" className="mt-4" />
+        <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Salary position</h2><p className="mt-0.5 text-xs text-slate-500">Fixed commitment versus paid / advance / remaining</p></div><StatusBadge tone={salary.remainingDue > 0 ? "warning" : salary.excessAmount > 0 ? "info" : "success"}>{salary.remainingDue > 0 ? "Due remains" : salary.excessAmount > 0 ? `Excess ৳${Math.floor(salary.excessAmount)}` : "Settled"}</StatusBadge></div>
+        <div className="mt-4 grid grid-cols-4 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><p className="text-[10px] text-slate-500">Fixed</p><p className="mt-1 text-xs font-bold tabular-nums">{formatBDT(salary.fixedCommitment)}</p></div><div className="rounded-lg bg-blue-50 p-2"><p className="text-[10px] text-blue-700">Salary Paid</p><p className="mt-1 text-xs font-bold tabular-nums text-blue-900">{formatBDT(salary.salaryPaid)}</p></div><div className="rounded-lg bg-cyan-50 p-2"><p className="text-[10px] text-cyan-700">Advance</p><p className="mt-1 text-xs font-bold tabular-nums text-cyan-900">{formatBDT(salary.salaryAdvance)}</p></div><div className={`rounded-lg p-2 ${salary.remainingDue > 0 ? "bg-red-50" : "bg-emerald-50"}`}><p className={`text-[10px] ${salary.remainingDue > 0 ? "text-red-700" : "text-emerald-700"}`}>Remaining</p><p className={`mt-1 text-xs font-bold tabular-nums ${salary.remainingDue > 0 ? "text-red-900" : "text-emerald-900"}`}>{formatBDT(salary.remainingDue)}</p></div></div>
+        {salary.legacyUnclassified > 0 && <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800"><p className="font-semibold">Legacy / Unclassified payments: {formatBDT(salary.legacyUnclassified)}</p><p className="text-[10px] opacity-75">Payment type not recorded in history. Cash effect included in settlement but not classified as Salary or Advance.</p></div>}
+        <ProgressBar value={salaryPaidPct} label="Settlement vs commitment" className="mt-4" />
         <Link href="/salary" className="mt-3 flex min-h-11 items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-800 hover:bg-blue-100"><span>Open salary management</span><span aria-hidden="true">→</span></Link>
       </section>
 

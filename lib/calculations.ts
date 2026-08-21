@@ -279,8 +279,11 @@ export async function getDateRangeBusinessPosition(
 
 export interface SalaryStatus {
   fixedCommitment: number;
-  paidOrAdvance: number;
+  salaryPaid: number;
+  salaryAdvance: number;
+  legacyUnclassified: number;
   remainingDue: number;
+  excessAmount: number;
 }
 
 export async function getSalaryStatus(
@@ -296,18 +299,33 @@ export async function getSalaryStatus(
     .filter(isSalaryCommitmentStaff)
     .reduce((sum, s) => sum + s.salary, 0);
 
-  const paidOrAdvance = inScope(salaryPayments, scope)
-    .filter(
-      (sp) =>
-        isSameMonth(effectivePaidDate(sp), now) &&
-        isPaidLedgerStatus(sp.status)
-    )
+  const inScopePayments = inScope(salaryPayments, scope).filter(
+    (sp) => isSameMonth(effectivePaidDate(sp), now) && isPaidLedgerStatus(sp.status)
+  );
+
+  const salaryPaid = inScopePayments
+    .filter((sp) => sp.type === "Salary")
     .reduce((sum, sp) => sum + sp.amount, 0);
+
+  const salaryAdvance = inScopePayments
+    .filter((sp) => sp.type === "Advance")
+    .reduce((sum, sp) => sum + sp.amount, 0);
+
+  const legacyUnclassified = inScopePayments
+    .filter((sp) => sp.type === "Unknown")
+    .reduce((sum, sp) => sum + sp.amount, 0);
+
+  const settlementTotal = salaryPaid + salaryAdvance;
+  const remainingDue = Math.max(0, fixedCommitment - settlementTotal);
+  const excessAmount = Math.max(0, settlementTotal - fixedCommitment);
 
   return {
     fixedCommitment,
-    paidOrAdvance,
-    remainingDue: fixedCommitment - paidOrAdvance,
+    salaryPaid,
+    salaryAdvance,
+    legacyUnclassified,
+    remainingDue,
+    excessAmount,
   };
 }
 

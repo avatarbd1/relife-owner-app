@@ -219,11 +219,16 @@ function parseSalaryPayments(
   const paidFromIdx = getHeaderIndex(headers, "Paid_From");
   const statusIdx = getHeaderIndex(headers, "Status");
   const paidAtIdx = getHeaderIndex(headers, "Paid_At");
+  const typeIdx = getHeaderIndex(headers, "Type");
 
   return rows.slice(1).flatMap((row) => {
     const id = valueAt(row, idIdx);
     if (!id) return [];
     const staffId = valueAt(row, staffIdIdx);
+    const rawType = valueAt(row, typeIdx).toLowerCase().trim();
+    let type: "Salary" | "Advance" | "Unknown" = "Unknown";
+    if (rawType === "salary") type = "Salary";
+    else if (rawType === "advance") type = "Advance";
     return [
       {
         id,
@@ -232,7 +237,7 @@ function parseSalaryPayments(
         staffName: staffNames.get(staffId) || "",
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
         amount: money(valueAt(row, amountIdx)),
-        type: "Advance" as const,
+        type: type as "Salary" | "Advance",
         paidFrom: valueAt(row, paidFromIdx),
         status: valueAt(row, statusIdx),
         paidAt: valueAt(row, paidAtIdx),
