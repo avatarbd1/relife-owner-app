@@ -18,6 +18,17 @@ test("salary surfaces do not claim an unavailable Salary/Advance classification"
   assert.doesNotMatch(data, /type:\s*"Advance" as const/);
 });
 
+test("mixed finance operations routes payroll to the dedicated salary workspace", () => {
+  const operations = source("app/(dashboard)/finance/operations/page.tsx");
+
+  assert.match(operations, /salaryPay:\s*false/);
+  assert.match(operations, /salaryHistory:\s*false/);
+  assert.match(operations, /href="\/salary"/);
+  assert.match(operations, /Salary management/);
+  assert.match(operations, /type: row\.type \|\| "Type unavailable"/);
+  assert.doesNotMatch(operations, /new Set\(\["payment", "expenses", "cash", "salary"\]\)/);
+});
+
 test("Owner finance explicitly separates collection, receivable and custody meanings", () => {
   const finance = source("app/(dashboard)/finance/page.tsx");
 
