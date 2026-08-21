@@ -113,6 +113,33 @@ function requireSheetId(map: Map<string, number>, title: string): number {
   return id;
 }
 
+function hasTypeColumn(headers: string[]): boolean {
+  return headerIndex(headers, "Type", "Payment_Type") >= 0;
+}
+
+function ensureTypeColumnRequest(
+  sheetId: number,
+  headers: string[]
+): SpreadsheetBatchRequest | null {
+  if (hasTypeColumn(headers)) return null; // Type column already exists
+
+  // Add Type as new header at the end
+  const typeColumnIndex = headers.length;
+  return {
+    updateCells: {
+      range: {
+        sheetId,
+        startRowIndex: 0,
+        endRowIndex: 1,
+        startColumnIndex: typeColumnIndex,
+        endColumnIndex: typeColumnIndex + 1,
+      },
+      rows: [{ values: [cellValue("Type")] }],
+      fields: "userEnteredValue",
+    },
+  };
+}
+
 function buildSalaryAuditRow(
   headers: string[],
   input: {
@@ -253,6 +280,11 @@ export async function paySalary(
   const now = dhakaClockParts();
   const month = now.date.slice(0, 7);
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
+
+  // Ensure Type column exists; if not, we'll add it and append Type value to row
+  const hasType = hasTypeColumn(headers);
+  const ensureTypeReq = ensureTypeColumnRequest(salarySheetIdVal, headers);
+
   const row = rowForHeaders(headers, {
     Payment_ID: paymentId,
     Date: now.date,
@@ -280,6 +312,9 @@ export async function paySalary(
     Paid_At: now.timestamp,
   });
 
+  // If Type column was missing and we added it, append Type value to the row
+  const finalRow = !hasType && ensureTypeReq ? [...row, input.type] : row;
+
   const auditRow = buildSalaryAuditRow(auditHeaders, {
     now,
     actorId: context.staffId,
@@ -291,10 +326,10 @@ export async function paySalary(
     paidFrom: input.paidFrom,
   });
 
-  const requests: SpreadsheetBatchRequest[] = [
-    appendRowRequest(salarySheetIdVal, row),
-    appendRowRequest(auditSheetIdVal, auditRow),
-  ];
+  const requests: SpreadsheetBatchRequest[] = [];
+  if (ensureTypeReq) requests.push(ensureTypeReq);
+  requests.push(appendRowRequest(salarySheetIdVal, finalRow));
+  requests.push(appendRowRequest(auditSheetIdVal, auditRow));
   await batchUpdateSpreadsheet(workbook, requests);
   return { paymentId, duplicate: false };
 }

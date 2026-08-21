@@ -88,11 +88,6 @@ export default function SalaryManagementClient({
   const paidPct = commitment > 0 ? Math.min(100, (paid / commitment) * 100) : 0;
   const urgent = active.filter((item) => item.salary > 0 && item.paidThisMonth / item.salary < 0.34);
 
-  const selectedHistory = useMemo(
-    () => selected ? payments.filter((item) => item.staffId === selected.staffId).slice(0, 8) : [],
-    [payments, selected]
-  );
-
   function openPay(item: StaffItem) {
     setSelected(item);
     setAmount(String(item.remainingDue || item.salary || 0));
