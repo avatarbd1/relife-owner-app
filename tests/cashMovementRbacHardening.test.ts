@@ -13,17 +13,19 @@ test("cash approval resolves the authenticated access context and requires Owner
   const sessionCheck = route.indexOf("verifySessionToken(session)");
   const contextResolution = route.indexOf("requireCurrentAccessContext()");
   const ownerGuard = route.indexOf('context.roles.includes("Owner")');
+  const bodyRead = route.indexOf("const body = await request.json()");
   const pinCheck = route.indexOf("checkOwnerPin(pin)");
   const writerCall = route.indexOf("await decideCashMovement({");
 
-  for (const index of [originCheck, sessionCheck, contextResolution, ownerGuard, pinCheck, writerCall]) {
+  for (const index of [originCheck, sessionCheck, contextResolution, ownerGuard, bodyRead, pinCheck, writerCall]) {
     assert.notEqual(index, -1);
   }
 
   assert(originCheck < sessionCheck);
   assert(sessionCheck < contextResolution);
   assert(contextResolution < ownerGuard);
-  assert(ownerGuard < pinCheck);
+  assert(ownerGuard < bodyRead);
+  assert(bodyRead < pinCheck);
   assert(pinCheck < writerCall);
 });
 
