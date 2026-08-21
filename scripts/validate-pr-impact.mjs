@@ -163,7 +163,7 @@ function requiredYes(label) {
 function requiredEvidence(label) {
   const match = body.match(new RegExp(label + ":\\s*(.+)", "i"));
   const value = match?.[1]?.trim() || "";
-  if (!value || /<|>|TODO|TBD|N\\/A/i.test(value)) {
+  if (!value || /<|>|TODO|TBD|N.A/i.test(value)) {
     errors.push("Runtime PR requires concrete " + label + " evidence; placeholders and N/A are not accepted.");
   }
 }
