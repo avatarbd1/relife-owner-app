@@ -70,11 +70,25 @@ function normalizedDate(value: string | undefined): string {
   return String(value || "").trim().slice(0, 10);
 }
 
+export function effectiveExpensePaidDate(row: {
+  date: string;
+  paidAt?: string;
+}): string {
+  return normalizedDate(row.paidAt || row.date);
+}
+
 export function effectiveSalaryPaidDate(row: {
   date: string;
   paidAt?: string;
 }): string {
   return normalizedDate(row.paidAt || row.date);
+}
+
+export function effectiveCashMovementDate(row: {
+  date: string;
+  acceptedAt?: string;
+}): string {
+  return normalizedDate(row.acceptedAt || row.date);
 }
 
 export function calculateCustodyPosition(input: {
@@ -104,8 +118,8 @@ export function calculateCustodyPosition(input: {
 
   for (const expense of input.expenses) {
     if (!financeScopeAllowsDepartment(input.scope, expense.department)) continue;
-    if (!input.dateIncluded(normalizedDate(expense.date))) continue;
     if (!isPaidLedgerStatus(expense.status)) continue;
+    if (!input.dateIncluded(effectiveExpensePaidDate(expense))) continue;
     applyDelta(
       position,
       normalizeCashCustodian(expense.paidFrom || expense.paymentMethod),
@@ -127,8 +141,8 @@ export function calculateCustodyPosition(input: {
 
   for (const movement of input.cashMovements) {
     if (!financeScopeAllowsDepartment(input.scope, movement.department)) continue;
-    if (!input.dateIncluded(normalizedDate(movement.date))) continue;
     if (!isAcceptedCashMovementStatus(movement.status)) continue;
+    if (!input.dateIncluded(effectiveCashMovementDate(movement))) continue;
     const amount = movement.receivedAmount ?? movement.amount;
     applyDelta(
       position,
@@ -161,8 +175,8 @@ export function acceptedCashHandoverTotal(input: {
       if (!financeScopeAllowsDepartment(input.scope, movement.department)) {
         return sum;
       }
-      if (!input.dateIncluded(normalizedDate(movement.date))) return sum;
       if (!isAcceptedCashMovementStatus(movement.status)) return sum;
+      if (!input.dateIncluded(effectiveCashMovementDate(movement))) return sum;
       return sum + (movement.receivedAmount ?? movement.amount);
     }, 0)
   );
