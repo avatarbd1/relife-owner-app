@@ -293,11 +293,17 @@ export async function getDateRangeBusinessPosition(
 
 export interface SalaryStatus {
   fixedCommitment: number;
+  salaryPaid: number;
+  salaryAdvance: number;
+  legacyUnclassified: number;
+  /** Total of (salaryPaid + salaryAdvance), excludes legacy */
+  settlementTotal: number;
+  /** @deprecated Use settlementTotal for calculations. Kept for temporary compat. */
   ledgerPaid: number;
   /** @deprecated Source rows do not reliably classify Salary vs Advance. */
   paidOrAdvance: number;
   remainingDue: number;
-  excessPaid: number;
+  excessAmount: number;
 }
 
 export async function getSalaryStatus(
@@ -313,18 +319,41 @@ export async function getSalaryStatus(
     .filter(isSalaryCommitmentStaff)
     .reduce((sum, s) => sum + s.salary, 0);
 
-  const ledgerPaid = inScope(salaryPayments, scope)
-    .filter(
-      (sp) =>
-        isSameMonth(effectivePaidDate(sp), now) &&
-        isPaidLedgerStatus(sp.status)
-    )
-    .reduce((sum, sp) => sum + sp.amount, 0);
+  const paidThisMonth = inScope(salaryPayments, scope).filter(
+    (sp) =>
+      isSameMonth(effectivePaidDate(sp), now) &&
+      isPaidLedgerStatus(sp.status)
+  );
 
-  const reconciled = reconcileSalaryTotals(fixedCommitment, ledgerPaid);
+  let salaryPaid = 0;
+  let salaryAdvance = 0;
+  let legacyUnclassified = 0;
+
+  for (const payment of paidThisMonth) {
+    if (payment.type === "Salary") {
+      salaryPaid += payment.amount;
+    } else if (payment.type === "Advance") {
+      salaryAdvance += payment.amount;
+    } else {
+      legacyUnclassified += payment.amount;
+    }
+  }
+
+  const settlementTotal = salaryPaid + salaryAdvance;
+  const ledgerPaid = settlementTotal + legacyUnclassified;
+  const remainingDue = Math.max(0, fixedCommitment - settlementTotal);
+  const excessAmount = Math.max(0, settlementTotal - fixedCommitment);
+
   return {
-    ...reconciled,
-    paidOrAdvance: reconciled.ledgerPaid,
+    fixedCommitment,
+    salaryPaid,
+    salaryAdvance,
+    legacyUnclassified,
+    settlementTotal,
+    ledgerPaid,
+    paidOrAdvance: ledgerPaid,
+    remainingDue,
+    excessAmount,
   };
 }
 

@@ -24,6 +24,7 @@ type SheetValue = string | number | boolean;
 export interface SalaryPayInput {
   staffId: string;
   amount: number;
+  type: "Salary" | "Advance";
   paidFrom: ExpensePaidFrom;
   note?: string;
   requestId: string;
@@ -121,6 +122,7 @@ function buildSalaryAuditRow(
     staffId: string;
     department: ClinicDepartment;
     amount: number;
+    type: "Salary" | "Advance";
     paidFrom: string;
   }
 ): SheetValue[] {
@@ -129,7 +131,7 @@ function buildSalaryAuditRow(
     Audit_ID: `AUD-${randomUUID()}`,
     Timestamp: input.now.timestamp,
     Actor_ID: input.actorId,
-    Action: "SALARY_PAID",
+    Action: input.type === "Salary" ? "SALARY_PAID" : "ADVANCE_PAID",
     Entity_Type: "SalaryPayment",
     Entity_ID: input.paymentId,
     Patient_ID: "",
@@ -137,6 +139,7 @@ function buildSalaryAuditRow(
     After_Value: JSON.stringify({
       staffId: input.staffId,
       amount: input.amount,
+      type: input.type,
       paidFrom: input.paidFrom,
     }),
     Reason: "Finance domain action",
@@ -163,6 +166,9 @@ export async function paySalary(
   if (!context.roles.includes("Owner")) throw new Error("ACCESS_DENIED");
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("INVALID_AMOUNT");
+  if (!["Salary", "Advance"].includes(input.type)) {
+    throw new Error("INVALID_PAYMENT_TYPE");
+  }
   if (!["Reception", "Home Treasury", "Bank"].includes(input.paidFrom)) {
     throw new Error("INVALID_CUSTODIAN");
   }
@@ -200,6 +206,7 @@ export async function paySalary(
     "Month",
     "Staff_ID",
     "Amount",
+    "Type",
     "Department",
     "Paid_From",
     "Status",
@@ -249,6 +256,7 @@ export async function paySalary(
     Month: month,
     Staff_ID: staff.staffId,
     Amount: amount,
+    Type: input.type,
     Paid_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
@@ -276,6 +284,7 @@ export async function paySalary(
     staffId: staff.staffId,
     department,
     amount,
+    type: input.type,
     paidFrom: input.paidFrom,
   });
 

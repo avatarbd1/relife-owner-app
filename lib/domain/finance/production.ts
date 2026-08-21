@@ -328,6 +328,7 @@ export async function paySalary(
       actorId: context.staffId,
       staffId: normalize(input.staffId),
       payload: {
+        type: input.type,
         paidFrom: input.paidFrom,
         note: normalize(input.note),
         sheetsDuplicate: result.duplicate,
