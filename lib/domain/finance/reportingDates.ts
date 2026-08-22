@@ -43,6 +43,15 @@ export function salaryPaidInMonth(
   return effectiveSalaryPaidDate(salaryPayment).startsWith(dhakaMonthKey(ref));
 }
 
+export function salaryPaidInRange(
+  salaryPayment: SalaryPayment,
+  startDate: string,
+  endDate: string
+): boolean {
+  const paidDate = normalizedDate(effectiveSalaryPaidDate(salaryPayment));
+  return paidDate >= startDate && paidDate <= endDate;
+}
+
 export function fixedOverheadForDepartment(
   department: FinanceDepartment,
   expenses: Expense[],
