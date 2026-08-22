@@ -310,7 +310,7 @@ export default async function PerformancePage() {
         <summary className="cursor-pointer list-none text-sm font-bold text-slate-950">Rules & details</summary>
         <div className="mt-3 space-y-3">
           <div>
-            <p className="font-bold text-slate-900">XP · Score · RC</p>
+            <p className="font-bold text-slate-900">XP, Score আর Reward Credit আলাদা</p>
             <p>XP = lifetime progress · Score = weekly 0–100 · RC = spendable rewards.</p>
             <p>Spendable balance immutable RC ledger থেকে আসে.</p>
           </div>
