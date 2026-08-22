@@ -11,13 +11,13 @@ export interface LegacyPayrollConflict {
 }
 
 export interface LegacyPayrollReconciliation {
-  matchedExpenseIds: ReadonlySet<string>;
+  matchedExpenseIds: readonly string[];
   settlementTotal: number;
   conflicts: LegacyPayrollConflict[];
 }
 
-const CLEANER_EXPENSE_CATEGORIES = new Set(["cleaner salary", "ক্লিনার বেতন"]);
-const CLEANER_ROLES = new Set(["cleaner", "ক্লিনার"]);
+const CLEANER_EXPENSE_CATEGORIES = ["cleaner salary", "ক্লিনার বেতন"] as const;
+const CLEANER_ROLES = ["cleaner", "ক্লিনার"] as const;
 
 function normalized(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -26,7 +26,9 @@ function normalized(value: unknown): string {
 function isCleanerPayrollExpense(expense: Expense): boolean {
   return (
     expense.department === "Physio" &&
-    CLEANER_EXPENSE_CATEGORIES.has(normalized(expense.category)) &&
+    CLEANER_EXPENSE_CATEGORIES.includes(
+      normalized(expense.category) as (typeof CLEANER_EXPENSE_CATEGORIES)[number]
+    ) &&
     normalized(expense.expenseType || "Clinic Expense") === "clinic expense" &&
     !expense.isHouseholdWithdrawal &&
     isPaidLedgerStatus(expense.status)
@@ -48,7 +50,7 @@ export function reconcileLegacyPayrollExpenses(input: {
   expenseIncluded: (expense: Expense) => boolean;
   salaryIncluded: (payment: SalaryPayment) => boolean;
 }): LegacyPayrollReconciliation {
-  const matchedExpenseIds = new Set<string>();
+  const matchedExpenseIds: string[] = [];
   const conflicts: LegacyPayrollConflict[] = [];
   let settlementTotal = 0;
 
@@ -59,7 +61,7 @@ export function reconcileLegacyPayrollExpenses(input: {
       (member) =>
         member.department === expense.department &&
         isSalaryCommitmentStaff(member) &&
-        CLEANER_ROLES.has(normalized(member.role)) &&
+        CLEANER_ROLES.includes(normalized(member.role) as (typeof CLEANER_ROLES)[number]) &&
         member.salary === expense.amount
     );
 
@@ -82,7 +84,7 @@ export function reconcileLegacyPayrollExpenses(input: {
       continue;
     }
 
-    matchedExpenseIds.add(expense.expenseId);
+    matchedExpenseIds.push(expense.expenseId);
     settlementTotal += expense.amount;
   }
 

@@ -50,7 +50,10 @@ test("uniquely matched cleaner expense settles salary without becoming variable 
   assert.equal(isVariableClinicExpense(row), true, "base policy keeps the expense visible");
   assert.equal(
     [row]
-      .filter((item) => isVariableClinicExpense(item) && !result.matchedExpenseIds.has(item.expenseId))
+      .filter(
+        (item) =>
+          isVariableClinicExpense(item) && !result.matchedExpenseIds.includes(item.expenseId)
+      )
       .reduce((sum, item) => sum + item.amount, 0),
     0,
     "business-position consumer excludes only the evidence-backed match"
@@ -67,7 +70,7 @@ test("unmatched payroll-looking expense remains a variable expense and conflict"
     salaryIncluded: included,
   });
 
-  assert.equal(result.matchedExpenseIds.size, 0);
+  assert.equal(result.matchedExpenseIds.length, 0);
   assert.equal(result.settlementTotal, 0);
   assert.deepEqual(result.conflicts, [
     { expenseId: "EX0012", reason: "no-unique-staff-match" },
@@ -83,7 +86,7 @@ test("ambiguous duplicate cleaner staff never auto-reconciles", () => {
     expenseIncluded: included,
     salaryIncluded: included,
   });
-  assert.equal(result.matchedExpenseIds.size, 0);
+  assert.equal(result.matchedExpenseIds.length, 0);
   assert.equal(result.conflicts[0]?.reason, "no-unique-staff-match");
 });
 
@@ -105,7 +108,7 @@ test("existing 13_Salary evidence blocks legacy expense auto-reconciliation", ()
     expenseIncluded: included,
     salaryIncluded: included,
   });
-  assert.equal(result.matchedExpenseIds.size, 0);
+  assert.equal(result.matchedExpenseIds.length, 0);
   assert.equal(result.conflicts[0]?.reason, "salary-ledger-already-exists");
 });
 
@@ -119,7 +122,7 @@ test("broad matching words do not hide ordinary expenses", () => {
       expenseIncluded: included,
       salaryIncluded: included,
     });
-    assert.equal(result.matchedExpenseIds.size, 0, category);
+    assert.equal(result.matchedExpenseIds.length, 0, category);
     assert.equal(result.conflicts.length, 0, category);
     assert.equal(isVariableClinicExpense(row), true, category);
   }
@@ -133,7 +136,7 @@ test("Dental cleaner overhead is not reclassified as legacy Physio payroll", () 
     expenseIncluded: included,
     salaryIncluded: included,
   });
-  assert.equal(result.matchedExpenseIds.size, 0);
+  assert.equal(result.matchedExpenseIds.length, 0);
   assert.equal(result.conflicts.length, 0);
 });
 

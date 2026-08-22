@@ -199,7 +199,7 @@ export async function getMonthBusinessPosition(
       (e) =>
         expensePaidInMonth(e, now) &&
         isVariableClinicExpense(e) &&
-        !legacyPayroll.matchedExpenseIds.has(e.expenseId)
+        !legacyPayroll.matchedExpenseIds.includes(e.expenseId)
     )
     .reduce((sum, e) => sum + e.amount, 0);
 
@@ -254,7 +254,7 @@ export async function getDateRangeBusinessPosition(
       (e) =>
         expensePaidInRange(e, startDate, endDate) &&
         isVariableClinicExpense(e) &&
-        !legacyPayroll.matchedExpenseIds.has(e.expenseId)
+        !legacyPayroll.matchedExpenseIds.includes(e.expenseId)
     )
     .reduce((sum, e) => sum + e.amount, 0);
 
