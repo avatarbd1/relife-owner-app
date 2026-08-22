@@ -105,8 +105,8 @@ export default async function PerformancePage() {
   const displayedScore = current.normalizedScore ?? current.provisionalScore;
   const scoreIsOfficial = current.normalizedScore !== null;
   const rewardBalanceValid = Boolean(ledger?.rewardCredits.valid);
-  const availableRc = rewardBalanceValid
-    ? ledger?.rewardCredits.availableBalance ?? null
+  const availableRc = rewardBalanceValid && ledger
+    ? ledger.rewardCredits.availableBalance
     : null;
   const leaderboardPreview = snapshot.leaderboard.slice(0, 3);
   const milestonePreview = current.milestones.slice(0, 3);
@@ -169,7 +169,7 @@ export default async function PerformancePage() {
       {current.scoreCoverage !== "complete" && (
         <details className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <summary className="cursor-pointer list-none text-sm font-bold text-amber-950">
-            ⚠ Official rank locked · {Math.round(current.scoreCoveredWeight * 100)}% ready
+            ⚠ Official Rank এখনো locked · {Math.round(current.scoreCoveredWeight * 100)}% ready
           </summary>
           <p className="mt-2 text-[10px] leading-4 text-amber-800">Missing verified metrics are not counted as zero.</p>
           <div className="mt-3 flex flex-wrap gap-2">
