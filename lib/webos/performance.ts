@@ -20,6 +20,7 @@ import {
   rankNormalizedScores,
   type GamificationRole,
 } from "@/lib/domain/gamification/rules";
+import { isGamificationEligibleStaffId } from "@/lib/domain/gamification/monthlyPolicy";
 import type { Department } from "@/lib/types";
 import {
   assertCanPerform,
@@ -450,7 +451,7 @@ function scoreComponentsFor(
     return Number.isFinite(value) && value > 0 ? value : null;
   };
 
-  if (role === "Therapist") {
+  if (role === "Therapist" || role === "Dentist") {
     const sessionsTarget = target("sessions_per_week");
     const attendanceTarget = target("attendance_days_per_week");
     return {
@@ -662,6 +663,7 @@ export async function getPerformanceSnapshot(
   const candidates = directory.filter(
     (identity) =>
       identity.status === "Active" &&
+      isGamificationEligibleStaffId(identity.staffId) &&
       performanceRole(identity).length > 0 &&
       identityVisibleInDepartments(identity, departments)
   );

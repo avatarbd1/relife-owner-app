@@ -64,6 +64,7 @@ export default async function WorkforcePage() {
       />
       <WorkforceClient
         currentStaffId={context.staffId}
+        canApplyMonthlyRoster={context.roles.includes("Owner")}
         canReadShifts={canReadShifts}
         canReadLeave={canReadLeave}
         canManageShifts={

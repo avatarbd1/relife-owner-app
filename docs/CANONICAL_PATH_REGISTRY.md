@@ -16,8 +16,11 @@ This registry is a discovery gate, not a replacement for source inspection. Sear
 | Cash movement | Existing finance/control APIs → canonical cash domain | cash actions from `access.ts` | `21_Cash_Movement` |
 | Salary | `/api/finance/salary` → canonical salary writer | `salary.pay` | `13_Salary` |
 | Inventory | Existing inventory API/domain on current `main` | `inventory.write` | Existing inventory + log contract |
-| Shift scheduling | `app/api/workforce/shifts/**` → `lib/domain/workforce/shifts.ts` | `shift.read` / `shift.manage` | `Staff_Shifts` (issue #153, Owner-approved; fails closed if the tab/headers are not yet provisioned) |
+| Shift scheduling + monthly roster | `app/api/workforce/shifts/**` → `lib/domain/workforce/shifts.ts` (pure plan: `monthlyRoster.ts`) | `shift.read` / `shift.manage`; monthly apply is Owner-only | `Staff_Shifts` (issues #153/#159, Owner-approved; fails closed if the tab/headers are not yet provisioned) |
 | Leave management | `app/api/workforce/leave/**` → `lib/domain/workforce/leave.ts` | `leave.read` / `leave.request` / `leave.decide` / `leave.cancel` / `leave.cancel_own` | `Leave_Requests` (issue #153, Owner-approved; fails closed if the tab/headers are not yet provisioned) |
+| Verified XP events | canonical operational writer → `lib/domain/gamification/events.ts` → `lib/data/supabaseGamification.ts` → `relife-gamification-api` | existing source action + server Edge authentication | Supabase `performance_events` + append-only `xp_ledger`; exact issue #159 Staff_ID cohort |
+| Weekly score snapshots | `app/api/v1/gamification/weekly/finalize` → `lib/data/supabaseWeeklyGamification.ts` → `relife-weekly-gamification-finalizer` | `performance.weekly.finalize` (Owner manual recovery; cron separately authenticated) | Supabase `weekly_gamification_finalizations` + `weekly_performance` |
+| Monthly Reward Credit finalization | `app/api/v1/gamification/monthly/finalize` → existing weekly-finalizer adapter/Edge authority | `performance.weekly.finalize`, plus explicit Owner role | Published Sheets `Staff_Shifts` opportunity snapshot + Supabase `monthly_gamification_finalizations` + append-only `reward_credit_ledger` (issue #159) |
 
 ## Mandatory discovery evidence
 

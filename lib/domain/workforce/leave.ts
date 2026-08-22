@@ -130,6 +130,17 @@ export async function readApprovedLeaveRangesForStaff(
     .map((row) => ({ startDate: row.startDate, endDate: row.endDate }));
 }
 
+/** Bulk-safe roster helper: one canonical Leave_Requests read, no Reason disclosure. */
+export async function readApprovedLeaveRangesForStaffIds(
+  staffIds: string[]
+): Promise<Array<{ staffId: string; startDate: string; endDate: string }>> {
+  const allowed = new Set(staffIds.map((value) => normalize(value)).filter(Boolean));
+  const { records } = await readLeaveRecords();
+  return records
+    .filter((row) => allowed.has(row.staffId) && row.status === "Approved")
+    .map((row) => ({ staffId: row.staffId, startDate: row.startDate, endDate: row.endDate }));
+}
+
 export interface RequestLeaveInput {
   department: string;
   leaveType: string;

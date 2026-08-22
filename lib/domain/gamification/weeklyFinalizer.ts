@@ -1,4 +1,4 @@
-export type WeeklyFinalizerRole = "Therapist" | "Receptionist";
+export type WeeklyFinalizerRole = "Therapist" | "Receptionist" | "Dentist";
 
 export interface WeeklyRoleScorePolicy {
   role: WeeklyFinalizerRole;
@@ -162,7 +162,7 @@ export function weeklyScoreForVerifiedCounts(
   if (policy.role !== role) throw new Error("WEEKLY_ROLE_POLICY_MISMATCH");
 
   let components: Record<string, WeeklyMetricComponent>;
-  if (role === "Therapist") {
+  if (role === "Therapist" || role === "Dentist") {
     const sessionsTarget = target(policy, "sessions_per_week");
     const productivity = percentOfTarget(counts.completedSessions, sessionsTarget);
     const attendance = ratioPercent(

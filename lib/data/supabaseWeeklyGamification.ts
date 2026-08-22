@@ -43,6 +43,31 @@ export interface WeeklyGamificationFinalizeResult {
   resultSummary: Record<string, unknown>;
 }
 
+export interface MonthlyRosterOpportunitySnapshot {
+  staffId: string;
+  publishedScheduledMinutes: number;
+  publishedShiftCount: number;
+}
+
+export interface MonthlyGamificationFinalizeResult {
+  alreadyFinalized: boolean;
+  finalizationId: string;
+  month: string;
+  resultSummary: Record<string, unknown>;
+}
+
+export interface MonthlyGamificationFinalization {
+  finalizationId: string;
+  month: string;
+  status: string;
+  requestedBy: string;
+  rosterSnapshot: unknown[];
+  configSnapshot: Record<string, unknown>;
+  resultSummary: Record<string, unknown>;
+  createdAt: string | null;
+  finalizedAt: string | null;
+}
+
 const DEFAULT_WEEKLY_FINALIZER_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-weekly-gamification-finalizer";
 
@@ -197,6 +222,48 @@ export async function finalizeWeeklyGamification(input: {
     finalizationId,
     weekStart,
     weekEnd,
+    resultSummary: objectValue(result.resultSummary),
+  };
+}
+
+export async function getMonthlyGamificationFinalization(
+  month?: string
+): Promise<MonthlyGamificationFinalization | null> {
+  const result = await callWeekly<Record<string, unknown>>(
+    "monthly_status",
+    month ? { month } : {},
+    5_000
+  );
+  const finalization = objectValue(result.finalization);
+  const finalizationId = String(finalization.finalizationId || "").trim();
+  if (!finalizationId) return null;
+  return {
+    finalizationId,
+    month: String(finalization.month || "").trim(),
+    status: String(finalization.status || "").trim(),
+    requestedBy: String(finalization.requestedBy || "").trim(),
+    rosterSnapshot: Array.isArray(finalization.rosterSnapshot) ? finalization.rosterSnapshot : [],
+    configSnapshot: objectValue(finalization.configSnapshot),
+    resultSummary: objectValue(finalization.resultSummary),
+    createdAt: nullableString(finalization.createdAt),
+    finalizedAt: nullableString(finalization.finalizedAt),
+  };
+}
+
+export async function finalizeMonthlyGamification(input: {
+  actorId: string;
+  actorRoles: string[];
+  month: string;
+  rosterSnapshot: MonthlyRosterOpportunitySnapshot[];
+}): Promise<MonthlyGamificationFinalizeResult> {
+  const result = await callWeekly<Record<string, unknown>>("finalize_month", input, 10_000);
+  const finalizationId = String(result.finalizationId || "").trim();
+  const month = String(result.month || "").trim();
+  if (!finalizationId || !month) throw new Error("MONTHLY_FINALIZATION_RESPONSE_INVALID");
+  return {
+    alreadyFinalized: result.alreadyFinalized === true,
+    finalizationId,
+    month,
     resultSummary: objectValue(result.resultSummary),
   };
 }

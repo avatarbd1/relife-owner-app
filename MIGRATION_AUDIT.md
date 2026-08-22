@@ -34,6 +34,8 @@ Python Telegram and the TypeScript App can still touch overlapping operational d
 | Corrections/reversals | payment + delete/audit evidence | TypeScript domain/API |
 | Shift scheduling | `Staff_Shifts` (new, issue #153) | TypeScript domain/API — no Python writer exists |
 | Leave management | `Leave_Requests` (new, issue #153) | TypeScript domain/API — no Python writer exists |
+| Monthly roster generation | Published `Staff_Shifts` rows (issue #159) | Existing TypeScript workforce shift writer; no new store or Python writer |
+| XP / weekly score / monthly RC | Supabase gamification event, score, finalization and append-only ledgers (issue #159) | Existing TypeScript/Edge gamification authority, now Staff_ID-scoped |
 
 Cutover rule: once a capability is authoritative in TypeScript and parity is verified, Telegram must call that API or become read/notification-only for that capability.
 
@@ -146,6 +148,42 @@ contents and fails closed on any header mismatch or stale plan. It has not
 been run against the live workbook from any sandbox;
 see `ANDROID_SMOKE_RUNBOOK.md` and `LIVE_PROVISIONING_RUNBOOK.md` in the
 Batch 4A closure-preparation handoff artifact for the Owner-run steps.
+
+## Batch 4C — ID-scoped roster + monthly Reward Credits (issue #159)
+
+Issue #159 extends, rather than replaces, the two reviewed authorities. Monthly
+roster preview/apply runs through `lib/domain/workforce/shifts.ts`, the existing
+distributed mutation lock, one Google Sheets batch, and one aggregate
+`20_Data_Audit` event. The plan is deterministic, writes Published
+`Staff_Shifts`, validates the active staff directory, refuses existing-shift or
+Approved-leave conflicts, keeps ST004's Receptionist identity with an explicit
+12:00–18:00 schedule, and staggers one weekly half-day per operational staff ID.
+ST007 remains rostered for Dental operations but is not gamification eligible.
+
+Gamification eligibility is the exact Staff_ID set ST002, ST003, ST004, ST005,
+ST008, ST010 and ST011. The gate is enforced at verified-event ingestion,
+weekly score candidate selection, the app leaderboard, staff ledger reads and
+monthly RC finalization; names are never eligibility keys. Dentist scoring
+reuses the clinician metric shape through a versioned `score.role.dentist`
+config rather than comparing raw physical-session counts with reception app
+transactions.
+
+Monthly RC uses the existing append-only Supabase `reward_credit_ledger`. The
+Owner-only Next route reads Published `Staff_Shifts` and sends only a bounded
+per-ID scheduled-minute/count opportunity snapshot to the already-authenticated
+gamification finalizer. The Edge transaction requires every expected weekly
+official role-normalized score, snapshots roster and versioned policy, locks a
+deterministic month key, and inserts idempotent `monthly_score_tier` earnings.
+The reviewed policy is ৳1600 = 160 RC at ৳10/RC, 6 RC protected reserve, 22 RC
+individual cap, and tiers 90/80/70/60 → 22/18/14/8. Seven maximum awards are
+154 RC, so no rank-based rationing can create unfairness. Missing roster,
+missing verified score, invalid config, duplicate staff or budget overflow all
+fail closed before any ledger commit.
+
+This batch does not implement leave accrual, carry, cash conversion or salary
+mutation. Those payroll-impacting rules remain a separate Owner-reviewed issue
+and PR. No live Sheets/Supabase provisioning, migration apply, deployment or
+production mutation was performed from the sandbox.
 
 ## App-primary convergence status
 
