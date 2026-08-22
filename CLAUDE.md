@@ -1,5 +1,14 @@
 # Relife Clinic OS: Owner Workspace (Web/PWA Primary)
 
+## Claude execution role
+
+Claude is the sandbox artifact builder defined in `docs/RELIFE_ENGINE_LITE.md`.
+For each task it receives one complete prompt, changes only the requested scope,
+runs available checks, and returns the required handoff artifact. Claude must not
+push, create or merge a PR, deploy, access credentials, or mutate live Sheets or
+Supabase data. A truthful `BLOCKED.md` is the correct output when required source,
+authority, or evidence is unavailable.
+
 ## Architecture Decision
 
 **Web/PWA App (relife-owner-app) = PRIMARY** operational system for all clinic staff and owner.
@@ -22,7 +31,10 @@ This is the OPPOSITE of original bot-primary design. App must be production-read
 
 ## Critical Production Risks (Dual-Writer Problem)
 
-**BEFORE ANY CODE CHANGE: Produce MIGRATION_AUDIT.md**
+**BEFORE A HIGH-RISK AUTHORITY/WRITER/SCHEMA CHANGE: Review and update `MIGRATION_AUDIT.md`.**
+
+Standard UI, read-only, test, documentation, and bounded canonical-path fixes use
+the concise preflight in `AGENTS.md`; they do not require a new full migration audit.
 
 Python bot (relife-clinic-os) and TypeScript app (relife-owner-app) both write to same Google Sheets:
 - `06_Payments` — Both create payment rows (bot via Telegram, app via web)
@@ -205,4 +217,6 @@ Convert bot to thin API client:
 
 ---
 
-**Start with**: PHASE 0 — Produce MIGRATION_AUDIT.md identifying exact dual-writer risks, parity gaps, and controlled cutover plan. Do NOT begin code migration until audit is complete.
+**Start rule**: classify the task using `AGENTS.md`. Use PHASE 0 only for a high-risk
+authority, writer, schema, migration, or cutover decision. Otherwise reuse the
+existing audit and canonical path, then produce the artifact contract output.

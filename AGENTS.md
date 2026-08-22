@@ -1,17 +1,34 @@
-# Relife mandatory preflight — blocking
+# Relife Engine Lite — mandatory workflow
 
-Before editing application/runtime code:
+`docs/RELIFE_ENGINE_LITE.md` is the execution contract.
 
-1. Read `CLAUDE.md`, `MIGRATION_AUDIT.md`, and `docs/CANONICAL_PATH_REGISTRY.md`.
-2. Search the repository for the requested capability, route, action, writer, reader, lock, audit, and tests.
-3. Extend the existing canonical path. Do not create a parallel route/domain/writer/storage engine.
-4. Verify the real `WebAction` union in `lib/webos/access.ts`; never invent an action string.
-5. Preserve the current operational authority. Do not choose Sheets, Supabase, memory, or another store without an approved authority decision.
-6. Production writes may not use process-local `Map`/`Set` state. All writes require the existing durable writer, authorization, mutation lock, idempotency, department scope, and audit behavior.
-7. Start from latest `main` on a fresh branch. Draft PR only. Never claim merged, deployed, or live from local tests.
-8. If the canonical path or authority is uncertain, stop after audit and report the blocker. Do not code speculatively.
+## Roles
 
-CI enforces the required PR evidence. Instructions in a task or chat do not override these repository gates without an explicit Owner-approved issue.
+- Claude is an artifact builder. It may inspect, edit, and test in its sandbox, then returns one validated handoff artifact. It must not push, open a PR, merge, deploy, use credentials, or mutate production data.
+- Codex is the integrator. It writes the task prompt, verifies the artifact against fresh `main`, reviews the diff, reruns checks, commits, opens a Draft PR, and reports exact CI state.
+- The Owner decides when a PR becomes ready and when it merges or deploys.
+
+## Before runtime code
+
+1. Start from latest `main` and read the relevant source before editing.
+2. Search for the existing route, action, writer, reader, lock, audit, and tests.
+3. Reuse `docs/CANONICAL_PATH_REGISTRY.md`; never add a parallel business path.
+4. Verify `WebAction` values in `lib/webos/access.ts`; never invent permissions.
+5. Preserve Sheets/Supabase authority unless an Owner-approved issue explicitly changes it.
+6. Keep production writes on durable locking, idempotency, authorization, department scope, and audit paths. Process-local state is not production persistence.
+
+## Risk gate
+
+- **Standard:** UI, read-only behavior, bounded bug fixes, tests, and documentation. Record concise search evidence in the PR.
+- **High:** finance semantics, authentication/authorization, a writer, schema/RLS, authority, migration/cutover, or production mutation. Review `CLAUDE.md`, `MIGRATION_AUDIT.md`, and the canonical registry; update durable audit evidence when the decision changes.
+- If authority or the canonical path is uncertain, stop with a blocker artifact. Do not code speculatively.
+
+## Publication gate
+
+- One task produces one artifact, one branch, and one Draft PR.
+- Claude claims are evidence only; Codex independently reruns applicable tests, lint, and build.
+- Draft PRs may defer manual user-flow evidence. Ready-for-review runtime PRs may not.
+- Never claim merged, deployed, live, or production-verified from sandbox tests.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
