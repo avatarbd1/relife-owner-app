@@ -1,7 +1,8 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const body = process.env.PR_BODY ?? "";
 const baseRef = process.env.BASE_REF || "main";
+const baseSha = process.env.BASE_SHA?.trim() ?? "";
 const isDraft = /^true$/i.test(process.env.PR_DRAFT ?? "false");
 
 const AREA_LABELS = [
@@ -24,9 +25,12 @@ const HIGH_RISK_AREAS = new Set([
   "Supabase / Edge Function / database / storage",
 ]);
 
-function gitLines(command, failureMessage) {
+function gitLines(command, args, failureMessage) {
   try {
-    return execSync(command, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    return execFileSync(command, args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
       .split("\n")
       .map((value) => value.trim())
       .filter(Boolean);
@@ -37,8 +41,24 @@ function gitLines(command, failureMessage) {
   }
 }
 
+if (baseSha && !/^[0-9a-f]{40}$/i.test(baseSha)) {
+  console.error("Unable to calculate changed files for PR review.");
+  console.error("BASE_SHA must be a 40-character commit SHA.");
+  process.exit(1);
+}
+
+if (!baseSha && !/^[A-Za-z0-9._/-]+$/.test(baseRef)) {
+  console.error("Unable to calculate changed files for PR review.");
+  console.error("BASE_REF contains unsupported characters.");
+  process.exit(1);
+}
+
+// Pull-request event payloads provide an immutable base SHA. Prefer it over
+// origin/<base>, which can advance while a ready-for-review job is running.
+const diffBase = baseSha || `origin/${baseRef}`;
 const files = gitLines(
-  `git diff --name-only origin/${baseRef}...HEAD`,
+  "git",
+  ["diff", "--name-only", `${diffBase}...HEAD`],
   "Unable to calculate changed files for PR review."
 );
 
