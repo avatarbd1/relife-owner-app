@@ -32,6 +32,11 @@ export default async function MorePage() {
   const canCashRequest =
     canPerform(context, "cash.request", "Physio") ||
     canPerform(context, "cash.request", "Dental");
+  const canWorkforce =
+    canPerform(context, "shift.read", "Physio") ||
+    canPerform(context, "shift.read", "Dental") ||
+    canPerform(context, "leave.read", "Physio") ||
+    canPerform(context, "leave.read", "Dental");
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -77,8 +82,16 @@ export default async function MorePage() {
         </Section>
       )}
 
-      {(canBulkImport || canExpenseRequest || canCashRequest) && (
+      {(canBulkImport || canExpenseRequest || canCashRequest || canWorkforce) && (
         <Section title="Fast operations">
+          {canWorkforce && (
+            <ActionRow
+              href="/workforce"
+              icon="approval"
+              title="Workforce"
+              subtitle="Shift scheduling and leave requests"
+            />
+          )}
           {canBulkImport && (
             <ActionRow
               href="/patients/bulk-import"

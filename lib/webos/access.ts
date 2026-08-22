@@ -50,7 +50,14 @@ export type WebAction =
   | "chamber.receive"
   | "chamber.run"
   | "audit.read"
-  | "settings.manage";
+  | "settings.manage"
+  | "shift.read"
+  | "shift.manage"
+  | "leave.read"
+  | "leave.request"
+  | "leave.decide"
+  | "leave.cancel"
+  | "leave.cancel_own";
 
 export interface AccessContext {
   staffId: string;
@@ -112,6 +119,13 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "chamber.run",
     "audit.read",
     "settings.manage",
+    "shift.read",
+    "shift.manage",
+    "leave.read",
+    "leave.request",
+    "leave.decide",
+    "leave.cancel",
+    "leave.cancel_own",
   ]),
   Manager: new Set<WebAction>([
     "patient.read",
@@ -142,6 +156,12 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "chamber.read",
     "chamber.receive",
     "chamber.run",
+    "shift.read",
+    "shift.manage",
+    "leave.read",
+    "leave.request",
+    "leave.decide",
+    "leave.cancel_own",
   ]),
   Receptionist: new Set<WebAction>([
     "patient.read",
@@ -168,6 +188,10 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "inventory.write",
     "chamber.read",
     "chamber.receive",
+    "shift.read",
+    "leave.read",
+    "leave.request",
+    "leave.cancel_own",
   ]),
   Therapist: new Set<WebAction>([
     "patient.read",
@@ -185,6 +209,10 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "inventory.read",
     "chamber.read",
     "chamber.run",
+    "shift.read",
+    "leave.read",
+    "leave.request",
+    "leave.cancel_own",
   ]),
   Dentist: new Set<WebAction>([
     "patient.read",
@@ -200,6 +228,10 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "clinical.write",
     "clinical.clearance_read",
     "inventory.read",
+    "shift.read",
+    "leave.read",
+    "leave.request",
+    "leave.cancel_own",
   ]),
   // Final production capabilities for this role remain deliberately empty
   // until an explicit Dental Assistant allowlist is reviewed and tested.
@@ -209,6 +241,8 @@ const ROLE_ACTIONS: Record<WebRole, ReadonlySet<WebAction>> = {
     "report.read_operational",
     "report.read_financial",
     "expense.read",
+    "shift.read",
+    "leave.read",
     "cash.read",
     "salary.read",
     "attendance.read_team",

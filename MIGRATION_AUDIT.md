@@ -32,6 +32,8 @@ Python Telegram and the TypeScript App can still touch overlapping operational d
 | Salary | `13_Salary` | TypeScript finance domain |
 | Inventory | Inventory + stock log | TypeScript domain/API |
 | Corrections/reversals | payment + delete/audit evidence | TypeScript domain/API |
+| Shift scheduling | `Staff_Shifts` (new, issue #153) | TypeScript domain/API — no Python writer exists |
+| Leave management | `Leave_Requests` (new, issue #153) | TypeScript domain/API — no Python writer exists |
 
 Cutover rule: once a capability is authoritative in TypeScript and parity is verified, Telegram must call that API or become read/notification-only for that capability.
 
@@ -65,6 +67,72 @@ writer. No Python writer was disabled and no authority was changed in this
 batch. The safe next migration step is capability-by-capability parity tests,
 then converting each retained Telegram action into a thin TypeScript API
 client before disabling the corresponding Python business writer.
+
+## Batch 4A — Shift Scheduling + Leave Management (new capability, issue #153)
+
+First new Phase 1A workforce domain. Confirmed by repository search (`rg -liE
+"shift.?schedul|staff_shift|leave_request"`) that no canonical Shift or Leave
+domain, writer, schema, or route existed on `main` before this batch — this
+is additive, not a migration of existing behavior.
+
+**Authority**: TypeScript-only, per issue #153. Two new Google Sheets tabs —
+`Staff_Shifts` and `Leave_Requests` — living in the `physio` workbook
+alongside `08_Staff` / `Staff_Department_Access` / `20_Data_Audit` (the same
+workbook convention `lib/webos/staffManagement.ts` already uses for the
+staff master, since staff span both departments and these are staff-master-
+adjacent records, not per-department ledgers). No existing sheet/column was
+changed. **Live tab provisioning has not been performed** — writers fail
+closed with `WORKFORCE_SCHEMA_NOT_PROVISIONED` until the tabs and their
+exact headers exist, per issue #153's "implementation and tests must not
+create or mutate live sheets" instruction.
+
+**Canonical path**: `lib/domain/workforce/{shifts,leave}.ts` →
+`app/api/workforce/{shifts,leave}/**` → `app/(dashboard)/workforce/page.tsx`.
+Reuses `getWebStaffDirectory`, `withMutationLock` (distributed, per-row and
+per-staff lock keys), the existing Sheets batch-request helpers, and the
+`20_Data_Audit` convention — no new persistence mechanism.
+
+**Idempotency**: every mutation carries a stable client `requestId`
+(`/^[A-Za-z0-9_-]{8,100}$/`, same pattern as `SESSIONREQ`/`DENTALREQ`/`WEBREQ`
+elsewhere). The create marker remains immutable in the dedicated `Request_ID`
+column; update/publish/cancel/decision markers are retained in their atomic
+`20_Data_Audit.After_Value` payloads. This preserves retry recognition even
+after a later transition. Reusing a request ID for a different actor/action/
+entity fails closed.
+
+**Truth boundaries preserved**: Shift = planned work, Leave =
+requested/approved absence, Attendance = actual presence, Salary = finance
+truth, Performance rewards/claims = incentive truth
+(`lib/webos/performanceRewards.ts`'s `two_hour_early_leave` /
+`priority_weekly_off` / `half_day_family_time` reward kinds are Supabase-
+backed gamification perk claims, not this Leave_Requests workflow). Workforce
+mutations never touch attendance, salary, rewards, appointments, clinical,
+inventory, or patient records — verified by structural test
+(`tests/workforceWriters.test.ts`).
+
+**Python parity**: explicitly none. No Python writer exists for shift
+scheduling or leave management anywhere in `relife-clinic-os` (this is a new
+capability, not a migrated one), so there is no dual-writer risk to
+reconcile for this batch — the "no Python writer exists" note in the table
+above is a fact about the source, not an aspiration.
+
+**RBAC**: seven new narrow `WebAction`s (`shift.read`, `shift.manage`,
+`leave.read`, `leave.request`, `leave.decide`, `leave.cancel`,
+`leave.cancel_own`) added to
+`lib/webos/access.ts`. Owner/Manager manage department shifts and decide
+department leave; Receptionist/Therapist/Dentist read only their own
+Published shifts and their own leave; Auditor reads Published coverage and
+leave status/date summaries only, with `Notes`/`Reason`/`Decision_Note`
+redacted and no mutation actions; only Owner can cancel another staff
+member's Pending leave; Dental_Assistant/System Admin have none.
+Self-decision on one's own leave request is blocked for Manager (only Owner
+may decide their own, since no role sits above Owner) — see `REVIEW.md` in
+the Batch 4A handoff artifact for the full rationale.
+
+**Pending before "production ready"**: live tab provisioning (separately
+controlled operation, not performed here), Render deploy verification, and
+an authenticated Android smoke test with synthetic/test-isolated records —
+all explicitly out of this artifact's scope per issue #153.
 
 ## App-primary convergence status
 
