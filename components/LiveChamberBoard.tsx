@@ -213,7 +213,12 @@ export default function LiveChamberBoard({ initial }: { initial: ChamberSnapshot
                         <button
                           type="button"
                           disabled={Boolean(action.key)}
-                          onClick={() => void post(`complete:${session.sessionId}`, { action: "complete", sessionId: session.sessionId })}
+                          onClick={() => {
+                            const confirmed = window.confirm(
+                              "Complete treatment? This writes treatment/completion evidence. Instant Undo is not available; reopening must use a correction workflow."
+                            );
+                            if (confirmed) void post(`complete:${session.sessionId}`, { action: "complete", sessionId: session.sessionId });
+                          }}
                           className="min-h-10 rounded-xl bg-teal-700 px-3 text-[11px] font-bold text-white disabled:opacity-50"
                         >
                           {action.key === `complete:${session.sessionId}` ? "…" : "Complete Treatment"}
