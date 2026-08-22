@@ -9,6 +9,7 @@ function code(message: string) {
   if (message === "ACCESS_DENIED") return 403;
   if (message === "PATIENT_NOT_FOUND") return 404;
   if (["CLINICAL_PHYSIO_ONLY", "ACTIVE_PLAN_REQUIRED"].includes(message)) return 409;
+  if (message === "SESSION_REQUEST_ID_INVALID") return 400;
   if (message === "CLINICAL_SCHEMA_MISMATCH") return 503;
   return 500;
 }
@@ -28,12 +29,15 @@ export async function POST(request: NextRequest) {
         response: body.response,
         modification: body.modification,
         remarks: body.remarks,
+        requestId: body.requestId,
       })
     );
-    try {
-      await consumePhysioInventorySystem(["Hand Gloves", "Tissue"], context.staffId, "Auto-Session");
-    } catch (error) {
-      console.error("Session saved but automatic inventory consumption failed", error);
+    if (!result.duplicate) {
+      try {
+        await consumePhysioInventorySystem(["Hand Gloves", "Tissue"], context.staffId, "Auto-Session");
+      } catch (error) {
+        console.error("Session saved but automatic inventory consumption failed", error);
+      }
     }
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

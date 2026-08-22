@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { InlineNotice, ProgressBar, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import TapChoice from "@/components/TapChoice";
 import { haptic } from "@/lib/interactions";
@@ -63,6 +63,13 @@ type Tab = "assessment" | "plans" | "today" | "history";
 const inputClass =
   "min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition-[border-color,box-shadow] duration-100 focus:border-blue-800 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400";
 const textareaClass = `${inputClass} min-h-24 resize-y py-3`;
+
+function nextRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `SESSION_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 async function post(url: string, body: Record<string, unknown>) {
   const response = await fetch(url, {
@@ -315,6 +322,7 @@ function SessionForm({ patientId, activePlan, sessions, onSaved, online }: { pat
   const [response, setResponse] = useState("");
   const [modification, setModification] = useState("");
   const [remarks, setRemarks] = useState("");
+  const requestIdRef = useRef("");
   const lastSession = sessions[0];
   const latestPainSession = sessions.find((session) => painNumber(session.painBefore) !== null || painNumber(session.painAfter) !== null);
   const painAgeDays = latestPainSession ? daysSinceIsoDate(latestPainSession.date) : null;
@@ -332,15 +340,17 @@ function SessionForm({ patientId, activePlan, sessions, onSaved, online }: { pat
     event.preventDefault();
     if (!online) return onSaved("✕ Internet connection required");
     if (painDue && !painBefore) return onSaved("✕ Progress follow-up due: Pain before 0–10 নির্বাচন করুন।");
+    if (!requestIdRef.current) requestIdRef.current = nextRequestId();
     setBusy(true);
     try {
-      const result = await post("/api/clinical/session", { patientId, painBefore, painAfter, response, modification, remarks });
+      const result = await post("/api/clinical/session", { patientId, painBefore, painAfter, response, modification, remarks, requestId: requestIdRef.current });
       setPainBefore("");
       setPainAfter("");
       setResponse("");
       setModification("");
       setRemarks("");
-      onSaved(`✓ Session ${String(result.sessionNo || "")} saved`);
+      requestIdRef.current = "";
+      onSaved(`${result.duplicate ? "✓ Already saved — duplicate submit blocked" : "✓ Session " + String(result.sessionNo || "") + " saved"}`);
     } catch (error) {
       onSaved(`✕ ${error instanceof Error ? error.message : "Session save failed"}`);
     } finally {
