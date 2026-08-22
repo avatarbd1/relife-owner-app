@@ -63,10 +63,53 @@ export function isFixedOverheadExpense(row: ExpensePolicyRow): boolean {
   return fixedCategoryCommitment(row.department, row.category) !== undefined;
 }
 
+/**
+ * Legacy payroll expense categories that should not be counted as variable
+ * clinic expenses to avoid double-counting with staff salary commitments.
+ *
+ * These represent payments made through 07_Expenses for staff compensation,
+ * but the staff member has an active salary commitment from 08_Staff.
+ * The fix: exclude these categories from variable expense calculations.
+ * The staff commitment counts; the legacy payment is a historic settlement.
+ */
+const LEGACY_PAYROLL_CATEGORIES: Readonly<Set<string>> = Object.freeze(
+  new Set([
+    "cleaner",
+    "ক্লিনার",
+    "ক্লিনার বেতন",
+    "receptionist",
+    "রিসেপশনিস্ট",
+    "therapist",
+    "থেরাপিস্ট",
+    "dentist",
+    "ডেন্টিস্ট",
+    "assistant",
+    "সহায়ক",
+    "dental assistant",
+    "salary",
+    "বেতন",
+    "wages",
+    "মজুরি",
+    "staff salary",
+    "কর্মচারী বেতন",
+  ])
+);
+
+export function isLegacyPayrollExpense(row: ExpensePolicyRow): boolean {
+  const normalized_category = normalized(row.category);
+  for (const pattern of LEGACY_PAYROLL_CATEGORIES) {
+    if (normalized_category.includes(pattern.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function isVariableClinicExpense(row: ExpensePolicyRow): boolean {
   if (!isPaidLedgerStatus(row.status)) return false;
   if (row.isHouseholdWithdrawal) return false;
   if (normalized(row.expenseType || "Clinic Expense") !== "clinic expense") return false;
   if (isFixedOverheadExpense(row)) return false;
+  if (isLegacyPayrollExpense(row)) return false;
   return true;
 }

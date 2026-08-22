@@ -6,6 +6,7 @@ import {
   isPaidLedgerStatus,
   isSalaryCommitmentStaff,
   isVariableClinicExpense,
+  isLegacyPayrollExpense,
 } from "../lib/domain/finance/policy.ts";
 
 test("owner is never part of fixed salary commitment", () => {
@@ -75,4 +76,96 @@ test("only accepted cash movement changes custody position", () => {
   assert.equal(isAcceptedCashMovementStatus("Accepted"), true);
   assert.equal(isAcceptedCashMovementStatus("Pending"), false);
   assert.equal(isAcceptedCashMovementStatus("Rejected"), false);
+});
+
+test("legacy payroll expenses are excluded from variable clinic expense", () => {
+  assert.equal(
+    isLegacyPayrollExpense({
+      department: "Physio",
+      category: "ক্লিনার বেতন",
+      status: "Paid",
+    }),
+    true,
+    "Bengali cleaner salary recognized"
+  );
+  assert.equal(
+    isLegacyPayrollExpense({
+      department: "Physio",
+      category: "Cleaner salary",
+      status: "Paid",
+    }),
+    true,
+    "English cleaner salary recognized"
+  );
+  assert.equal(
+    isLegacyPayrollExpense({
+      department: "Physio",
+      category: "কর্মচারী বেতন",
+      status: "Paid",
+    }),
+    true,
+    "Bengali staff salary recognized"
+  );
+  assert.equal(
+    isLegacyPayrollExpense({
+      department: "Physio",
+      category: "Generator petrol",
+      status: "Paid",
+    }),
+    false,
+    "Non-payroll expense not recognized"
+  );
+});
+
+test("Physio cleaner legacy payroll is not counted as variable expense", () => {
+  const cleaner_ex0012: Parameters<typeof isVariableClinicExpense>[0] = {
+    department: "Physio",
+    category: "ক্লিনার বেতন",
+    status: "Paid",
+    expenseType: "Clinic Expense",
+  };
+  assert.equal(
+    isVariableClinicExpense(cleaner_ex0012),
+    false,
+    "Legacy cleaner expense excluded to avoid double-count with ST009 salary commitment"
+  );
+});
+
+test("Dental cleaner fixed overhead is also excluded from variable expense", () => {
+  const dental_fixed_cleaner: Parameters<typeof isVariableClinicExpense>[0] = {
+    department: "Dental",
+    category: "ক্লিনার বেতন",
+    status: "Paid",
+    expenseType: "Clinic Expense",
+  };
+  assert.equal(
+    isVariableClinicExpense(dental_fixed_cleaner),
+    false,
+    "Dental cleaner is fixed overhead and excluded"
+  );
+});
+
+test("active staff salary commitment counts once, not duplicated by legacy expense", () => {
+  const therapist_commitment = {
+    role: "Therapist",
+    status: "Active",
+    salary: 15_000,
+  };
+  assert.equal(
+    isSalaryCommitmentStaff(therapist_commitment),
+    true,
+    "Active therapist is a salary commitment"
+  );
+
+  const legacy_therapist_expense: Parameters<typeof isVariableClinicExpense>[0] = {
+    department: "Physio",
+    category: "থেরাপিস্ট বেতন",
+    status: "Paid",
+    expenseType: "Clinic Expense",
+  };
+  assert.equal(
+    isVariableClinicExpense(legacy_therapist_expense),
+    false,
+    "Therapist salary paid via 07_Expenses is excluded to prevent double-count"
+  );
 });
