@@ -152,6 +152,17 @@ function sheetIdFor(workbook: Workbook): string {
   return workbook === "dental" ? DENTAL_SHEET_ID : PHYSIO_SHEET_ID;
 }
 
+/** Resolved target identity for controlled operational tooling. */
+export function getWorkbookSpreadsheetId(workbook: Workbook): string {
+  return sheetIdFor(workbook);
+}
+
+function readRangeExpression(range: string): string {
+  // Existing callers pass a bare tab title. Controlled readers may pass a
+  // fully qualified A1 expression such as `'Staff_Shifts'!1:1`.
+  return range.includes("!") ? range : `'${range.replaceAll("'", "''")}'`;
+}
+
 async function fetchUncachedSheetRanges(
   workbook: Workbook,
   ranges: string[]
@@ -159,7 +170,7 @@ async function fetchUncachedSheetRanges(
   const token = await getAccessToken();
   const sheetId = sheetIdFor(workbook);
   const params = new URLSearchParams();
-  for (const range of ranges) params.append("ranges", `'${range}'`);
+  for (const range of ranges) params.append("ranges", readRangeExpression(range));
   params.set("majorDimension", "ROWS");
   params.set("valueRenderOption", "FORMATTED_VALUE");
 
