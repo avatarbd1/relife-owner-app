@@ -3,6 +3,7 @@ name: web-ci
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft]
   push:
     branches: [main]
 
@@ -33,6 +34,7 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE_REF: ${{ github.base_ref }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
         run: node scripts/validate-pr-impact.mjs
       - name: Lint
         run: npm run lint
