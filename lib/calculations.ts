@@ -29,6 +29,7 @@ import {
   expensePaidInRange,
   fixedOverheadForDepartment,
   salaryPaidInMonth,
+  salaryPaidInRange,
 } from "@/lib/domain/finance/reportingDates";
 import { cashBusinessDate } from "@/lib/domain/finance/cashBusinessDay";
 import {
@@ -37,6 +38,7 @@ import {
   roundMoney,
 } from "@/lib/domain/finance/dateRange";
 import { getScopedCashPosition } from "@/lib/scopedCash";
+import { reconcileLegacyPayrollExpenses } from "@/lib/domain/finance/legacyPayroll";
 
 function inScope<T extends { department: Department }>(
   rows: T[],
@@ -173,18 +175,32 @@ export async function getMonthBusinessPosition(
   scope: Scope,
   now: Date = new Date()
 ): Promise<MonthBusinessPosition> {
-  const [payments, expenses, staff] = await Promise.all([
+  const [payments, expenses, staff, salaryPayments] = await Promise.all([
     getPayments(),
     getExpenses(),
     getStaff(),
+    getSalaryPayments(),
   ]);
+
+  const legacyPayroll = reconcileLegacyPayrollExpenses({
+    expenses: inScope(expenses, scope),
+    staff: inScope(staff, scope),
+    salaryPayments: inScope(salaryPayments, scope),
+    expenseIncluded: (expense) => expensePaidInMonth(expense, now),
+    salaryIncluded: (payment) => salaryPaidInMonth(payment, now),
+  });
 
   const monthCollection = inScope(payments, scope)
     .filter((p) => isSameMonth(p.date, now))
     .reduce((sum, p) => sum + p.amount, 0);
 
   const variableClinicExpense = inScope(expenses, scope)
-    .filter((e) => expensePaidInMonth(e, now) && isVariableClinicExpense(e))
+    .filter(
+      (e) =>
+        expensePaidInMonth(e, now) &&
+        isVariableClinicExpense(e) &&
+        !legacyPayroll.matchedExpenseIds.includes(e.expenseId)
+    )
     .reduce((sum, e) => sum + e.amount, 0);
 
   const fixedSalaryCommitment = inScope(staff, scope)
@@ -211,14 +227,23 @@ export async function getDateRangeBusinessPosition(
   scope: Scope
 ): Promise<MonthBusinessPosition> {
   const segments = dateRangeMonthSegments(startDate, endDate);
-  const [payments, expenses, staff] = await Promise.all([
+  const [payments, expenses, staff, salaryPayments] = await Promise.all([
     getPayments(),
     getExpenses(),
     getStaff(),
+    getSalaryPayments(),
   ]);
 
   const rangeFilter = (date: string) =>
     normalizedDate(date) >= startDate && normalizedDate(date) <= endDate;
+
+  const legacyPayroll = reconcileLegacyPayrollExpenses({
+    expenses: inScope(expenses, scope),
+    staff: inScope(staff, scope),
+    salaryPayments: inScope(salaryPayments, scope),
+    expenseIncluded: (expense) => expensePaidInRange(expense, startDate, endDate),
+    salaryIncluded: (payment) => salaryPaidInRange(payment, startDate, endDate),
+  });
 
   const monthCollection = inScope(payments, scope)
     .filter((p) => rangeFilter(p.date))
@@ -226,7 +251,10 @@ export async function getDateRangeBusinessPosition(
 
   const variableClinicExpense = inScope(expenses, scope)
     .filter(
-      (e) => expensePaidInRange(e, startDate, endDate) && isVariableClinicExpense(e)
+      (e) =>
+        expensePaidInRange(e, startDate, endDate) &&
+        isVariableClinicExpense(e) &&
+        !legacyPayroll.matchedExpenseIds.includes(e.expenseId)
     )
     .reduce((sum, e) => sum + e.amount, 0);
 
@@ -270,6 +298,10 @@ export interface SalaryStatus {
   salaryPaid: number;
   salaryAdvance: number;
   legacyUnclassified: number;
+  /** Verified legacy 07_Expenses payroll settlement, kept separate from 13_Salary. */
+  legacyExpenseSettlement?: number;
+  /** Ambiguous legacy payroll rows remain expenses and require manual review. */
+  legacyPayrollConflictCount?: number;
   /** Total of (salaryPaid + salaryAdvance), excludes legacy */
   settlementTotal: number;
   /** @deprecated Use settlementTotal for calculations. Kept for temporary compat. */
@@ -284,9 +316,10 @@ export async function getSalaryStatus(
   scope: Scope,
   now: Date = new Date()
 ): Promise<SalaryStatus> {
-  const [staff, salaryPayments] = await Promise.all([
+  const [staff, salaryPayments, expenses] = await Promise.all([
     getStaff(),
     getSalaryPayments(),
+    getExpenses(),
   ]);
 
   const fixedCommitment = inScope(staff, scope)
@@ -313,8 +346,18 @@ export async function getSalaryStatus(
     }
   }
 
+  const legacyPayroll = reconcileLegacyPayrollExpenses({
+    expenses: inScope(expenses, scope),
+    staff: inScope(staff, scope),
+    salaryPayments: inScope(salaryPayments, scope),
+    expenseIncluded: (expense) => expensePaidInMonth(expense, now),
+    salaryIncluded: (payment) => salaryPaidInMonth(payment, now),
+  });
+
   const settlementTotal = salaryPaid + salaryAdvance;
-  const ledgerPaid = settlementTotal + legacyUnclassified;
+  const legacyExpenseSettlement = legacyPayroll.settlementTotal;
+  const ledgerPaid =
+    settlementTotal + legacyUnclassified + legacyExpenseSettlement;
   const remainingDue = Math.max(0, fixedCommitment - ledgerPaid);
   const excessAmount = Math.max(0, ledgerPaid - fixedCommitment);
 
@@ -323,6 +366,8 @@ export async function getSalaryStatus(
     salaryPaid,
     salaryAdvance,
     legacyUnclassified,
+    legacyExpenseSettlement,
+    legacyPayrollConflictCount: legacyPayroll.conflicts.length,
     settlementTotal,
     ledgerPaid,
     paidOrAdvance: ledgerPaid,

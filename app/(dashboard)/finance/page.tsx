@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import OwnerControlsClient from "@/components/OwnerControlsClient";
 import ScopeSelector from "@/components/ScopeSelector";
-import { ProgressBar, StatusBadge } from "@/components/FeedbackUI";
+import { InlineNotice, ProgressBar, StatusBadge } from "@/components/FeedbackUI";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import {
   getMonthBusinessPosition,
@@ -111,6 +111,8 @@ export default async function FinancePage() {
         <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">Salary position</h2><p className="mt-0.5 text-xs text-slate-500">Salary Commitment versus actual 13_Salary ledger payments</p></div><StatusBadge tone={salary.remainingDue > 0 ? "warning" : salary.excessAmount > 0 ? "info" : "success"}>{salary.remainingDue > 0 ? "Due remains" : salary.excessAmount > 0 ? "Over commitment" : "Commitment covered"}</StatusBadge></div>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><p className="text-[10px] text-slate-500">Commitment</p><p className="mt-1 text-xs font-bold tabular-nums">{formatBDT(salary.fixedCommitment)}</p></div><div className="rounded-lg bg-emerald-50 p-2"><p className="text-[10px] text-emerald-700">Ledger paid</p><p className="mt-1 text-xs font-bold tabular-nums text-emerald-900">{formatBDT(salary.ledgerPaid)}</p></div><div className="rounded-lg bg-red-50 p-2"><p className="text-[10px] text-red-700">Remaining</p><p className="mt-1 text-xs font-bold tabular-nums text-red-900">{formatBDT(salary.remainingDue)}</p></div></div>
         <ProgressBar value={salaryPaidPct} label="Payroll coverage this month" className="mt-4" />
+        {(salary.legacyExpenseSettlement || 0) > 0 && <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-[11px] leading-4 text-blue-800">Includes {formatBDT(salary.legacyExpenseSettlement || 0)} verified legacy cleaner payroll paid through the expense ledger. The cash deduction remains in 07_Expenses.</p>}
+        {(salary.legacyPayrollConflictCount || 0) > 0 && <InlineNotice tone="warning" className="mt-2">{salary.legacyPayrollConflictCount} legacy payroll-looking expense could not be linked safely. It remains visible as a clinic expense and requires manual reconciliation.</InlineNotice>}
         {salary.excessAmount > 0 && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">Staff overpaid by {formatBDT(salary.excessAmount)} this month. Tracked separately; does not reduce commitment next month.</p>}
         <Link href="/salary" className="mt-3 flex min-h-11 items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-800 hover:bg-blue-100"><span>Open salary management</span><span aria-hidden="true">→</span></Link>
       </section>
