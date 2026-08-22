@@ -1,9 +1,11 @@
 import Link from "next/link";
+import "./performance-gamified.css";
 
+// Presentation-only wrapper: child routes keep their existing data and authorization logic.
 export default function PerformanceLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <nav className="mx-auto mb-3 flex w-full max-w-3xl gap-2 px-0" aria-label="Performance navigation">
+      <nav className="performance-gamified-nav mx-auto mb-3 flex w-full max-w-3xl gap-2 px-0" aria-label="Performance navigation">
         <Link href="/performance" className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200">
           Performance
         </Link>
@@ -17,7 +19,7 @@ export default function PerformanceLayout({ children }: { children: React.ReactN
           Monthly RC
         </Link>
       </nav>
-      {children}
+      <div className="performance-gamified-wrap">{children}</div>
     </div>
   );
 }
