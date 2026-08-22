@@ -14,6 +14,7 @@ import {
   appendEntityWithAudit,
   replaceEntityRowWithAudit,
 } from "@/lib/webos/sheetTransaction";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 export type AttendanceAction = "check_in" | "break_out" | "break_in" | "check_out";
 
@@ -264,21 +265,8 @@ function auditRow(
   ];
 }
 
-const actionLocks = new Map<string, Promise<unknown>>();
-
-async function withStaffDateLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const previous = actionLocks.get(key) || Promise.resolve();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  const current = previous.then(() => gate);
-  actionLocks.set(key, current);
-  await previous;
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (actionLocks.get(key) === current) actionLocks.delete(key);
-  }
+export function attendanceMutationLockKey(staffId: string, date: string): string {
+  return `attendance:${staffId.trim()}:${date.trim()}`;
 }
 
 export async function getTodayAttendance(): Promise<AttendanceRecord[]> {
@@ -295,9 +283,9 @@ export async function performAttendanceAction(
   const identity = await getActiveWebStaffById(context.staffId);
   if (!identity) throw new Error("STAFF_NOT_FOUND");
   const now = dhakaNow();
-  const lockKey = `${context.staffId}:${now.date}`;
+  const lockKey = attendanceMutationLockKey(context.staffId, now.date);
 
-  return withStaffDateLock(lockKey, async () => {
+  return withMutationLock(lockKey, async () => {
     const snapshot = await fetchSheetRanges("physio", ["03_Attendance"]);
     const rows = snapshot["03_Attendance"] || [];
     if (rows.length === 0) throw new Error("ATTENDANCE_SCHEMA_MISMATCH");

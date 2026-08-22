@@ -4,8 +4,12 @@ import { randomUUID } from "node:crypto";
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
-import type { AttendanceRecord } from "@/lib/webos/attendance";
+import {
+  attendanceMutationLockKey,
+  type AttendanceRecord,
+} from "@/lib/webos/attendance";
 import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
+import { withMutationLock } from "@/lib/webos/mutationLock";
 
 type SheetValue = string | number | boolean;
 
@@ -94,25 +98,6 @@ function auditRow(
   ];
 }
 
-const checkInLocks = new Map<string, Promise<void>>();
-
-async function withCheckInLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const previous = checkInLocks.get(key) || Promise.resolve();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const current = previous.then(() => gate);
-  checkInLocks.set(key, current);
-  await previous;
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (checkInLocks.get(key) === current) checkInLocks.delete(key);
-  }
-}
-
 export async function performNormalAttendanceCheckIn(
   context: AccessContext
 ): Promise<AttendanceRecord> {
@@ -121,9 +106,9 @@ export async function performNormalAttendanceCheckIn(
   if (!identity) throw new Error("STAFF_NOT_FOUND");
 
   const now = dhakaNow();
-  const lockKey = `${context.staffId}:${now.date}`;
+  const lockKey = attendanceMutationLockKey(context.staffId, now.date);
 
-  return withCheckInLock(lockKey, async () => {
+  return withMutationLock(lockKey, async () => {
     const snapshot = await fetchSheetRanges("physio", ["03_Attendance"]);
     const rows = snapshot["03_Attendance"] || [];
     if (rows.length === 0) throw new Error("ATTENDANCE_SCHEMA_MISMATCH");
