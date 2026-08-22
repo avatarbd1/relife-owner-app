@@ -134,6 +134,19 @@ controlled operation, not performed here), Render deploy verification, and
 an authenticated Android smoke test with synthetic/test-isolated records —
 all explicitly out of this artifact's scope per issue #153.
 
+**Production-closure preparation**: a bounded, tested preflight/provisioning
+CLI (`scripts/workforce-schema-provision.mjs`, pure planner in
+`lib/domain/workforce/provisioning.ts`) now exists to create only the two
+missing tabs and write only their exact reviewed header row in one atomic
+Sheets batch — it defaults to a read-only dry-run, reads the complete first
+row so later extra headers cannot be hidden, and requires both an `--apply`
+flag and a `WORKFORCE_SCHEMA_APPLY_CONFIRM` value bound to the resolved
+spreadsheet ID and exact tab set. It never touches an existing tab's
+contents and fails closed on any header mismatch or stale plan. It has not
+been run against the live workbook from any sandbox;
+see `ANDROID_SMOKE_RUNBOOK.md` and `LIVE_PROVISIONING_RUNBOOK.md` in the
+Batch 4A closure-preparation handoff artifact for the Owner-run steps.
+
 ## App-primary convergence status
 
 ### A1 — Multi-date / multi-time Appointment Booking — COMPLETE
