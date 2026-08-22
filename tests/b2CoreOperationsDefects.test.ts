@@ -1,7 +1,10 @@
 /**
- * Batch 2: Core Operations Consolidation — Verified Defect Tests
+ * Batch 2: Core Operations Consolidation — AUDIT-ONLY PHASE
  *
- * Tests for:
+ * STATUS: Incomplete verification framework.
+ *
+ * This file documents defects that Batch 2 was INTENDED to verify but
+ * does NOT currently implement executable tests for:
  * - Duplicate check-in prevention
  * - Double appointment booking prevention
  * - Concurrent chamber sessions check
@@ -11,126 +14,81 @@
  * - Treatment/session duplicate prevention
  * - Inventory insufficient stock rejection
  *
- * All tests verify server-side enforcement, not UI-level only.
+ * GAPS ACKNOWLEDGED:
+ * 1. Python/App parity inspection was not performed. See BATCH_2_CANONICAL_INVENTORY.md
+ *    for intended audit scope. Exact Python writer locations in relife-clinic-os remain unverified.
+ * 2. Test harness for mutation locks is not exposed. All unit test attempts require
+ *    live spreadsheet or Supabase integration.
+ * 3. No executable behavioral tests. This file serves as a checklist of defects that
+ *    require integration testing, not unit test fixtures.
+ *
+ * NEXT STEPS (Post-Batch 2):
+ * - Implement integration test harness with mocked/staging Sheets + Supabase
+ * - Inspect Python bot (relife-clinic-os) for exact writer locations and parity gaps
+ * - Verify TypeScript mutations use withMutationLock() consistently
+ * - Implement requestId deduplication and idempotency checks
+ * - Validate department isolation enforcement on all routes
+ * - Test concurrent writer scenarios (bot vs app) under load
  */
 
 import test from "node:test";
-import assert from "node:assert/strict";
 
-test.skip("Defect Tests: Duplicate Check-in Prevention", () => {
-  // TODO: Implement when attendance mutation lock is exposed for testing
-  // Test: Same staff ID + date, concurrent requests → only one succeeds
+test.skip("Core Operations: Duplicate Check-in Prevention", () => {
+  // Pending integration test harness.
+  // Requirement: Same staff ID + date, concurrent requests → only one succeeds
   // Mechanism: withMutationLock(`attendance:${staffId}:${date}`)
-  assert.ok(true, "Blocked: Awaiting attendance writer test harness");
+  // Files to verify: app/api/attendance/action/route.ts, lib/domain/attendance/*
 });
 
-test.skip("Defect Tests: Double Appointment Booking", () => {
-  // TODO: Implement when capacity booking is exposed for testing
-  // Test: Same patient + time slot, concurrent requests → only one succeeds
+test.skip("Core Operations: Double Appointment Booking", () => {
+  // Pending integration test harness.
+  // Requirement: Same patient + time slot, concurrent requests → only one succeeds
   // Mechanism: withMutationLock(`capacity-booking:${date}`) + appointment create
-  assert.ok(true, "Blocked: Awaiting capacity booking test harness");
+  // Files to verify: app/api/appointments/route.ts, lib/domain/appointments/capacityBooking.ts
 });
 
-test.skip("Defect Tests: Concurrent Active Chamber Sessions", () => {
-  // TODO: Implement when chamber runtime is exposed for testing
-  // Test: Same patient in two active sessions in different chambers → prevented
+test.skip("Core Operations: Concurrent Active Chamber Sessions", () => {
+  // Pending integration test harness.
+  // Requirement: Same patient in two active sessions in different chambers → prevented
   // Mechanism: patientConcurrency check in chamber receive
-  assert.ok(true, "Blocked: Awaiting chamber runtime test harness");
+  // Files to verify: lib/domain/chamber/runtime.ts
 });
 
-test.skip("Defect Tests: Appointment Retry Idempotency", () => {
-  // TODO: Implement when appointment create is exposed for testing
-  // Test: Same requestId on retry → same result, no new row in sheet
+test.skip("Core Operations: Appointment Retry Idempotency", () => {
+  // Pending integration test harness.
+  // Requirement: Same requestId on retry → same result, no new row in sheet
   // Mechanism: requestId deduplication in appointment create flow
-  assert.ok(true, "Blocked: Awaiting appointment create test harness");
+  // Files to verify: app/api/appointments/route.ts, lib/domain/appointments/create.ts
 });
 
-test.skip("Defect Tests: Cross-Department Access Enforcement", () => {
-  // TODO: Implement when patient/appointment/clinical routes are exposed
-  // Test 1: Physio therapist tries to access Dental patient → 403 Forbidden
-  // Test 2: Dental dentist tries to access Physio clinical → 403 Forbidden
-  // Test 3: Manager views both departments with scope toggle → only toggled department data
-  // Mechanism: assertCanPerform + department scope in each route
-  assert.ok(true, "Blocked: Awaiting route access test harness");
+test.skip("Core Operations: Cross-Department Access Enforcement", () => {
+  // Pending integration test harness.
+  // Requirements:
+  //   (a) Physio therapist tries to access Dental patient → 403 Forbidden
+  //   (b) Dental dentist tries to access Physio clinical → 403 Forbidden
+  //   (c) Manager views both departments with scope toggle → only toggled department data
+  // Mechanism: assertCanPerform + department scope checks in each route
+  // Files to verify: app/api/patients/route.ts, app/api/clinical/session/route.ts,
+  //                 lib/webos/access.ts (assertCanPerform)
 });
 
-test.skip("Defect Tests: Bulk Import Duplicate Handling", () => {
-  // TODO: Implement when patient bulk import is exposed for testing
-  // Test: Import CSV with duplicate patient names → response includes warning/count
+test.skip("Core Operations: Bulk Import Duplicate Handling", () => {
+  // Pending integration test harness.
+  // Requirement: Import CSV with duplicate patient names → response includes warning/count
   // Mechanism: Duplicate detection logic in bulk import processor
-  assert.ok(true, "Blocked: Awaiting bulk import test harness");
+  // Files to verify: app/api/patients/bulk-import/route.ts, lib/domain/patients/bulkImport.ts
 });
 
-test.skip("Defect Tests: Treatment Session Duplicate Prevention", () => {
-  // TODO: Implement when clinical session writer is exposed for testing
-  // Test: Same clinical session written twice (retry) → only one ledger entry
+test.skip("Core Operations: Treatment Session Duplicate Prevention", () => {
+  // Pending integration test harness.
+  // Requirement: Same clinical session written twice (retry) → only one ledger entry
   // Mechanism: withMutationLock + requestId on session create
-  assert.ok(true, "Blocked: Awaiting clinical session test harness");
+  // Files to verify: app/api/clinical/session/route.ts, lib/domain/clinical/session.ts
 });
 
-test.skip("Defect Tests: Inventory Insufficient Stock Rejection", () => {
-  // TODO: Implement when inventory writer is exposed for testing
-  // Test: Try to consume more than available → REJECTED with error
+test.skip("Core Operations: Inventory Insufficient Stock Rejection", () => {
+  // Pending integration test harness.
+  // Requirement: Try to consume more than available → REJECTED with error
   // Mechanism: Stock level check before inventory.write in domain
-  assert.ok(true, "Blocked: Awaiting inventory writer test harness");
-});
-
-test("Canonical route inventory exists and paths are correct", () => {
-  // Non-skipped smoke test: Verify canonical paths are documented
-  const canonicalPaths = [
-    "app/api/appointments/route.ts",
-    "app/api/appointments/status/route.ts",
-    "app/api/patients/route.ts",
-    "app/api/patients/bulk-import/route.ts",
-    "app/api/attendance/action/route.ts",
-    "app/api/clinical/session/route.ts",
-    "app/api/chamber/route.ts",
-    "app/api/tools/inventory/route.ts",
-  ];
-
-  for (const path of canonicalPaths) {
-    assert.ok(
-      path.startsWith("app/api/"),
-      `Canonical path must be in app/api: ${path}`
-    );
-    assert.ok(
-      path.includes("route.ts"),
-      `Canonical path must be a route: ${path}`
-    );
-  }
-
-  assert.ok(canonicalPaths.length > 0, "Core operations routes inventory found");
-});
-
-test("No parallel /api/treatment writer exists (clinical/session is canonical)", () => {
-  // Smoke test: Verify architectural constraint
-  // If this test fails, it means a /api/treatment route was created
-  // which violates the canonical path registry
-  assert.ok(
-    true,
-    "Clinical session at app/api/clinical/session/route.ts is the only treatment writer"
-  );
-});
-
-test("Map/Set usage is for transient deduplication only, not production storage", () => {
-  // Documentation test: Affirm that Map/Set in chamber/runtime/appointments/etc
-  // are used for READ-ONLY deduplication and state filtering, not as DynamoDB/cache
-  const transientMapUseCases = [
-    "chamber/board.ts: Map for deduplication of Sheets vs Supabase appointments",
-    "chamber/runtime.ts: Map for appointment ID lookup",
-    "appointments/capacityBooking.ts: Set for active appointment status filtering",
-  ];
-
-  for (const useCase of transientMapUseCases) {
-    assert.ok(
-      useCase.includes("Map") || useCase.includes("Set"),
-      `Transient use case documented: ${useCase}`
-    );
-  }
-
-  // Affirm no process-local Map used as production ledger
-  assert.ok(
-    true,
-    "Production writes use withMutationLock + Sheets/Supabase, never in-memory Map"
-  );
+  // Files to verify: app/api/tools/inventory/route.ts, lib/domain/inventory/write.ts
 });
