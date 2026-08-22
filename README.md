@@ -38,10 +38,22 @@ The app covers real operational routes under `app/(dashboard)/*` and
 Appointments, Chamber (Physio live operations), Clinical
 (assessment/plan/session, Dental), Patients (registration, bulk import),
 Inventory, Finance (payment, expense, cash movement, salary, approvals,
-history/audit), Corrections, Reports, and Settings/Security. This is not a
-sample-data prototype; the data layer (`lib/data/*`) reads/writes the
-configured Google Sheets workbooks, and finance calculations flow through
-`lib/domain/finance/*` and `lib/calculations.ts`.
+history/audit), Corrections, Reports, Workforce (shift scheduling, leave
+management), and Settings/Security. This is not a sample-data prototype; the
+data layer (`lib/data/*`) reads/writes the configured Google Sheets
+workbooks, and finance calculations flow through `lib/domain/finance/*` and
+`lib/calculations.ts`.
+
+### Workforce (Batch 4A)
+
+Shift scheduling and leave management (`lib/domain/workforce/*`,
+`app/api/workforce/*`, `/workforce`) are implementation-complete and
+covered by automated tests, per Owner-approved issue #153. **The two
+required Google Sheets tabs (`Staff_Shifts`, `Leave_Requests`) have not been
+provisioned in any live workbook** — every workforce read/write fails
+closed with an explicit "not provisioned" error until that separately
+controlled operation happens. See `MIGRATION_AUDIT.md` for the full
+authority note and pending items.
 
 ### Finance (Batch 1)
 

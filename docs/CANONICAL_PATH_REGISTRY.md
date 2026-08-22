@@ -16,6 +16,8 @@ This registry is a discovery gate, not a replacement for source inspection. Sear
 | Cash movement | Existing finance/control APIs → canonical cash domain | cash actions from `access.ts` | `21_Cash_Movement` |
 | Salary | `/api/finance/salary` → canonical salary writer | `salary.pay` | `13_Salary` |
 | Inventory | Existing inventory API/domain on current `main` | `inventory.write` | Existing inventory + log contract |
+| Shift scheduling | `app/api/workforce/shifts/**` → `lib/domain/workforce/shifts.ts` | `shift.read` / `shift.manage` | `Staff_Shifts` (issue #153, Owner-approved; fails closed if the tab/headers are not yet provisioned) |
+| Leave management | `app/api/workforce/leave/**` → `lib/domain/workforce/leave.ts` | `leave.read` / `leave.request` / `leave.decide` / `leave.cancel` / `leave.cancel_own` | `Leave_Requests` (issue #153, Owner-approved; fails closed if the tab/headers are not yet provisioned) |
 
 ## Mandatory discovery evidence
 
