@@ -1,101 +1,114 @@
-# Relife Owner Web App — Stage A
+# Relife Owner Web App
 
-Mobile-first, read-only Owner dashboard for Relife Clinic (Physio + Dental).
-This is the **Stage A** build from the project plan: project structure,
-mobile UI, Owner PIN login, navigation, the Combined / Physio / Dental scope
-selector, and a read-only data service layer.
+Mobile-first Web/PWA operational system for Relife Clinic (Physio + Dental).
+Per `CLAUDE.md`, this app is the **primary** operational system for all
+clinic staff and the Owner. The Telegram bot (`relife-clinic-os`) is an
+optional notification/convenience layer during migration, not the source of
+business logic.
 
-## What's real vs. sample right now
+## Architecture and authority
 
-- **App structure, auth, navigation, scope selector, calculation logic**:
-  fully built and working.
-- **Numbers on the Home dashboard**: driven by sample/seed data in
-  `data/seed/*.json`, shaped exactly like the real sheet schema
-  (06_Payments, 07_Expenses, 08_Staff, 13_Salary, 21_Cash_Movement). They
-  are **not** your live Google Sheets numbers yet — that's Stage B.
-  A "Sample data" badge shows in the header as a reminder.
-- Two figures were deliberately seeded to match numbers you already gave me
-  so you can sanity-check the logic: switch scope to **Dental** and you'll
-  see Fixed salary commitment = ৳69,000 (Avatar + Rakib + Hasibur) and
-  Variable clinic expense = ৳7,065, with the ৳3,000 household withdrawal
-  correctly excluded from clinic expense.
-- **Fixed overhead** has no confirmed source sheet/tab yet in the data
-  contract you gave me, so it's hardcoded to ৳0 with a note on the card.
-  Tell me where that should come from and I'll wire it up.
-- **Cash Position** buckets (Reception / Home Treasury / Bank) are computed
-  from a seeded ledger in `data/seed/cashMovements.json`. The real
-  bucket-derivation formula (which payment methods land in which bucket,
-  how transfers are recorded) needs to be reconciled against your existing
-  Sheet/Bot — that reconciliation is explicitly Stage B work per the plan.
+- **Data authority**: Google Sheets remains the operational source of truth
+  during the current migration. Supabase provides distributed locking and a
+  finance shadow/audit ledger where configured. See `MIGRATION_AUDIT.md` for
+  the authority decision and dual-writer risk matrix.
+- **Business logic**: lives in the existing `lib/domain/*` and `lib/webos/*`
+  service boundaries, not in UI components.
+- **Mutation safety**: production App writers use the existing durable
+  `withMutationLock()` path where required. Replayable workflows use
+  request-identity or business-key deduplication where implemented; remaining
+  App/Bot parity gaps are recorded in `MIGRATION_AUDIT.md` rather than hidden.
+- **Department isolation**: Physio and Dental data, staff, and finance are
+  scoped and reconciled independently; a combined Owner view aggregates
+  without collapsing the two into a fabricated third department.
+- **Roles**: Owner, Manager, Receptionist, Therapist, Dentist,
+  Dental_Assistant, Auditor — defined in `lib/webos/access.ts`
+  (`ROLE_ACTIONS`).
 
-## Project structure
+For the controlled development workflow (Owner goal → Codex prompt → Claude
+artifact → Codex verification → Draft PR → CI → Owner merge), see
+`docs/RELIFE_ENGINE_LITE.md`. For the canonical route/domain/writer for any
+capability, see `docs/CANONICAL_PATH_REGISTRY.md` — search and read the
+existing implementation before adding anything new.
+
+## What's implemented
+
+The app covers real operational routes under `app/(dashboard)/*` and
+`app/api/*`, including: Home, Daily register, Attendance/check-in,
+Appointments, Chamber (Physio live operations), Clinical
+(assessment/plan/session, Dental), Patients (registration, bulk import),
+Inventory, Finance (payment, expense, cash movement, salary, approvals,
+history/audit), Corrections, Reports, and Settings/Security. This is not a
+sample-data prototype; the data layer (`lib/data/*`) reads/writes the
+configured Google Sheets workbooks, and finance calculations flow through
+`lib/domain/finance/*` and `lib/calculations.ts`.
+
+### Finance (Batch 1)
+
+The finance domain distinguishes, with dedicated canonical readers/writers
+and regression tests under `tests/*finance*`, `tests/p0Finance*`, and
+`tests/legacyPayrollReconciliation.test.ts`:
+
+- Billed Services vs. Collections vs. Outstanding vs. Cash Handover as
+  separate accounting meanings (Cash Handover is custody, never revenue or
+  expense).
+- Cash Position (Reception / Home Treasury / Bank) using the 09:00
+  Asia/Dhaka business-day rule, carrying forward across day and month
+  boundaries.
+- Fixed overhead commitment vs. actual paid expense, kept distinct.
+- Salary fixed commitment vs. salary paid vs. advance vs. legacy/unknown
+  payment type vs. remaining due/overpayment, kept distinct.
+- Verified legacy cleaner-payroll expense rows reconciled by matching an
+  exact active-staff commitment (department + role + salary amount), so a
+  cleaner's salary is not counted as both a salary commitment and a
+  variable clinic expense. Ambiguous or conflicting rows are left as
+  ordinary expenses and surfaced as a conflict count rather than guessed.
+
+Batch 1 finance work (PRs #141, #145, #148) is implementation-complete and
+covered by automated tests on `main`. **Live reconciliation against the
+production Google Sheets and a production smoke check have not been
+performed from this environment** — see `MIGRATION_AUDIT.md` for what
+remains pending before any "production verified" claim.
+
+## Project structure (current)
 
 ```
 app/
-  login/              PIN login screen
-  (dashboard)/         Owner-only routes (protected by proxy.ts)
-    layout.tsx          top scope selector + bottom nav shell
-    home/               Home dashboard (the 4 cards)
-    finance/            stub (Stage C)
-    patients/           stub (Stage D)
-    reports/            stub (Stage D)
-    more/               settings + logout (Stage E will add write access)
-  api/
-    login/  logout/  scope/   route handlers
+  (dashboard)/        Owner/staff routes (protected)
+    home/  daily/  register/  appointments/  chamber/
+    patients/  finance/  expenses/  salary/  payments/
+    inventory/  reports/  performance/  corrections/
+    audit/  security/  settings/  more/  menu/  tools/
+  api/                 route handlers — canonical writers per
+                       docs/CANONICAL_PATH_REGISTRY.md
 lib/
-  auth.ts             PIN check + signed session cookie
-  types.ts            Payment / Expense / StaffMember / SalaryPayment / CashMovement
-  data/index.ts        READ-ONLY DATA SERVICE — swap this for live Sheets in Stage B
-  calculations.ts      all dashboard business logic (today's collection, month
-                        position, salary status, cash position)
-  format.ts            ৳ currency formatting (lakh/crore grouping)
-data/seed/*.json       sample data matching the real sheet schema
-proxy.ts               route protection (Next.js 16 renamed "middleware" to "proxy")
+  domain/              business logic (finance/, appointments/, chamber/,
+                       clinical/, patients/, inventory/, ...)
+  webos/               access control, mutation locks, staff directory
+  data/                Google Sheets read/write layer
+  calculations.ts      finance aggregation entry points used by the UI
+docs/                  migration/canonical-path/engine documentation
+tests/                 automated regression tests (`node --test`)
 ```
 
 ## Running locally
 
 ```bash
 npm install
-cp .env.local.example .env.local   # then edit OWNER_PIN and SESSION_SECRET
+cp .env.local.example .env.local   # then edit required environment values
 npm run dev
 ```
 
-Open http://localhost:3000 on your phone (same network) or desktop browser.
-Default PIN if you don't set `.env.local` is `1234` — change it before any
-real use.
+## Verification
 
-## Deploying to get a real live URL
+```bash
+npm test          # automated test suite
+npm run lint       # eslint
+npm run build      # production build
+```
 
-I can't create a public URL directly from this session (no hosting
-credentials here). Two straightforward options:
-
-1. **Vercel (recommended, easiest for Next.js)**
-   - Push this folder to a GitHub repo, then import it at vercel.com, or
-     run `npx vercel` from this folder if you have the Vercel CLI.
-   - Set `OWNER_PIN` and `SESSION_SECRET` as environment variables in the
-     Vercel project settings before your first real login.
-   - If you connect your Vercel account to Claude (the Vercel connector),
-     I can drive the deploy directly next time instead of you doing it by
-     hand — just say the word.
-
-2. **Any other Node host** (Railway, Render, your own VPS): `npm run build`
-   then `npm run start`, with the same two env vars set.
-
-## Stage B — connecting live Google Sheets (next step)
-
-I found your two live workbooks in Google Drive:
-- **Relife_Clinic_OS_Database_Template_FIXED** → Physio
-- **Relife Dental OS** → Dental
-
-To wire `lib/data/index.ts` to these for real, the cleanest options are:
-- A Google Cloud service account with Viewer access shared on both sheets,
-  read via the Sheets API (most robust, a bit of one-time setup on your
-  end), or
-- Publishing the specific tabs (06_Payments, 07_Expenses, 08_Staff,
-  13_Salary, 21_Cash_Movement) to the web as CSV and fetching those URLs
-  (much faster to set up, slightly less locked-down).
-
-Once you pick one, Stage B is: implement the fetch in `lib/data/index.ts`,
-set `IS_LIVE_DATA = true`, and reconcile each card's number against the
-existing Sheet/Bot one at a time, exactly as the plan describes.
+Deployment, live Google Sheets connectivity, and production credentials are
+managed outside this repository's local development environment; this
+README does not claim a specific hosting URL or live deployment status.
+See `docs/RELIFE_ENGINE_LITE.md` for how a change moves from artifact to
+Draft PR to Owner-approved merge and deploy.

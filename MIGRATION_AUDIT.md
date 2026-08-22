@@ -35,6 +35,37 @@ Python Telegram and the TypeScript App can still touch overlapping operational d
 
 Cutover rule: once a capability is authoritative in TypeScript and parity is verified, Telegram must call that API or become read/notification-only for that capability.
 
+## Batch 2 verified Bot/App writer parity
+
+Evidence reviewed against Owner App `ee1c5857` and Python Bot `49f7f054` on
+2026-08-22. The Python call sites and writer bodies were inspected directly;
+this is not a cutover authorization.
+
+The Bot's `async_runtime.run_sheets_write()` uses an in-process
+`asyncio.Lock` per clinic. It serializes writes inside one Bot process, but it
+does not coordinate with the App's Supabase-backed distributed mutation lock,
+another Bot instance, or a direct Sheets writer. Therefore every active pair
+below remains a cross-process dual-writer risk.
+
+| Capability | TypeScript canonical path | Active Python writer | Verified parity state |
+|---|---|---|---|
+| Patient registration | patient API -> `registerPatient` | `sheets.add_patient` | Bot allocates the next ID and appends under only its local lock; no request marker or cross-App lock. |
+| Appointment booking | appointments API -> capacity/reception writers | `sheets.add_appointment` | Bot allocates resources and appends under only its local lock; no request marker or cross-App lock. |
+| Attendance | attendance API -> normal/action writers | `sheets.attendance_check_in` and break/check-out writers | Bot checks the staff/day business key, but only its local lock protects the read/write. App uses the durable shared staff/day lock. |
+| Physio/Dental treatment | clinical APIs -> canonical clinical writers | `sheets.add_treatment_note` / `add_treatment_plan` | Bot rejects a repeated plan/session business key in some flows, but treatment append and plan-session increment are separate writes. App Physio sessions use a stable `SESSIONREQ` marker and one Sheets batch for treatment + plan count; Dental uses `DENTALREQ`. |
+| Payments | finance payment API/domain | `sheets.record_payment_transaction` | Bot has `REQ:<Telegram update_id>` replay protection and a local tenant lock. App uses its own request identity plus distributed patient-scoped mutation lock. The two marker/lock systems do not coordinate. |
+| Salary | finance salary API/domain | `sheets.add_salary_payment_checked` | Bot re-reads due before append but has no request marker and only its local lock. |
+| Expenses | finance expense/control APIs/domain | `sheets.add_expense` / shared-expense flow | Bot validates workflow fields but has no request marker and only its local lock. |
+| Cash movement | finance cash/control APIs/domain | `sheets.add_cash_movement` | Bot creates a pending movement without a request marker and uses only its local lock. |
+| Inventory | inventory API/domain | `sheets.adjust_inventory_stock` | Bot read-modify-writes under only its local lock, clamps shortages to zero, and writes the stock log separately. App uses an item-scoped distributed lock, rejects insufficient stock, and batches stock/log/audit. |
+
+Batch 2 also verified that the App service worker queues no mutations: it
+intercepts `GET` requests only, so unsafe offline replay is not an additional
+writer. No Python writer was disabled and no authority was changed in this
+batch. The safe next migration step is capability-by-capability parity tests,
+then converting each retained Telegram action into a thin TypeScript API
+client before disabling the corresponding Python business writer.
+
 ## App-primary convergence status
 
 ### A1 — Multi-date / multi-time Appointment Booking — COMPLETE

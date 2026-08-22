@@ -3,6 +3,10 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
 import { recordTreatmentDocumentationGamification } from "@/lib/domain/gamification/events";
+import {
+  remarksEndWithSessionRequest,
+  sessionRequestMarker,
+} from "@/lib/domain/clinical/sessionRequest";
 import type { PatientRecord } from "@/lib/patients";
 import { assertCanPerform, canPerform, type AccessConditions, type AccessContext } from "@/lib/webos/access";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
@@ -421,22 +425,44 @@ export async function recordTreatmentSession(
     response?: string;
     modification?: string;
     remarks?: string;
+    requestId: string;
   }
-): Promise<{ treatmentId: string; sessionNo: number }> {
+): Promise<{ treatmentId: string; sessionNo: number; duplicate: boolean }> {
   const patient = await requirePhysioPatient(context, normalize(input.patientId));
   await assertClinicalWrite(context, patient);
+  const marker = sessionRequestMarker(input.requestId);
   const identity = await getActiveWebStaffById(context.staffId);
   if (!identity) throw new Error("STAFF_NOT_FOUND");
   const snapshot = await fetchSheetRanges("physio", ["12_Treatment_Plans", "05_Treatments"]);
   const planRows = snapshot["12_Treatment_Plans"] || [];
   const treatmentRows = snapshot["05_Treatments"] || [];
   if (planRows.length === 0 || treatmentRows.length === 0) throw new Error("CLINICAL_SCHEMA_MISMATCH");
+
+  const headers = treatmentRows[0];
+  const treatmentPatientIdx = headerIndex(headers, "Patient_ID");
+  const remarksIdx = headerIndex(headers, "Remarks");
+  if (treatmentPatientIdx >= 0 && remarksIdx >= 0) {
+    const existingRequest = treatmentRows.slice(1).find(
+      (row) =>
+        at(row, treatmentPatientIdx).toUpperCase() === patient.patientId.toUpperCase() &&
+        remarksEndWithSessionRequest(at(row, remarksIdx), marker)
+    );
+    if (existingRequest) {
+      const idIdx = headerIndex(headers, "Treatment_ID");
+      const sessionNoIdx = headerIndex(headers, "Session_No");
+      return {
+        treatmentId: at(existingRequest, idIdx),
+        sessionNo: Number(at(existingRequest, sessionNoIdx)) || 0,
+        duplicate: true,
+      };
+    }
+  }
+
   const plans = parsePlans(planRows, patient.patientId);
   const activePlan = plans.find((plan) => plan.status.toLowerCase() === "active");
   if (!activePlan) throw new Error("ACTIVE_PLAN_REQUIRED");
   const sessions = parseTreatments(treatmentRows, patient.patientId);
   const sessionNo = sessions.filter((row) => row.planId === activePlan.planId).length + 1;
-  const headers = treatmentRows[0];
   const now = dhakaNow();
   const treatmentId = webId("TR");
   const treatmentGiven = [
@@ -456,7 +482,7 @@ export async function recordTreatmentSession(
     Manual_Therapy: activePlan.manualTherapyPlan,
     Session_No: sessionNo,
     Therapist: identity.fullName,
-    Remarks: normalize(input.remarks),
+    Remarks: [normalize(input.remarks), marker].filter(Boolean).join(" | "),
     Plan_ID: activePlan.planId,
     Pain: normalize(input.painAfter) || normalize(input.painBefore),
     Organization_ID: "RELIFE",
@@ -516,5 +542,5 @@ export async function recordTreatmentSession(
     actorContext: context,
     sourceType: "clinical_session",
   });
-  return { treatmentId, sessionNo };
+  return { treatmentId, sessionNo, duplicate: false };
 }
