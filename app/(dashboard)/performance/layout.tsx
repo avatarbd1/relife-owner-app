@@ -1,6 +1,7 @@
 import Link from "next/link";
 import "./performance-gamified.css";
 
+// Presentation-only wrapper: child routes keep their existing data and authorization logic.
 export default function PerformanceLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
