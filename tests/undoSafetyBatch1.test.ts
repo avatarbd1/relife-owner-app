@@ -54,20 +54,13 @@ test("staff deactivate undo is Owner-only and refuses stale profile restore", ()
   assert.match(client, /\/undo-deactivate`/);
 });
 
-test("chamber secondary step undo preserves history and all Complete controls require confirmation", () => {
-  const stepClient = source("components/ChamberStepWorkflow.tsx");
+test("primary live chamber Complete requires confirmation and advertises correction workflow", () => {
   const liveBoard = source("components/LiveChamberBoard.tsx");
-  const chamber = source("lib/webos/chamber.ts");
+  const route = source("app/api/chamber/route.ts");
 
-  assert.match(stepClient, /window\.setTimeout\(\(\) => setUndoStep\(null\), 8_000\)/);
-  assert.match(stepClient, /action: "update_step"/);
-  assert.match(stepClient, /step: pending\.from/);
-  assert.match(stepClient, /step !== "Complete"/);
-  assert.match(stepClient, /Complete treatment\?/);
-  assert.match(stepClient, /cannot use instant Undo/);
   assert.match(liveBoard, /Complete treatment\?/);
   assert.match(liveBoard, /Instant Undo is not available/);
   assert.match(liveBoard, /if \(confirmed\) void post\(`complete:/);
-  assert.match(chamber, /"chamber\.step\.update"/);
-  assert.match(chamber, /stepLog: closeCurrentStep\(stored, now\.iso\)/);
+  assert.match(route, /case "complete"/);
+  assert.match(route, /recordChamberCompletionTreatmentNote/);
 });
