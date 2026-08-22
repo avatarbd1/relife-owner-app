@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { haptic } from "@/lib/interactions";
 import TapChoice from "@/components/TapChoice";
 
@@ -12,6 +12,8 @@ interface StepWorkflowProps {
   onPost: (key: string, body: Record<string, unknown>) => Promise<void>;
   busyKey: string;
 }
+
+type UndoStep = { from: string; to: string };
 
 const WORKFLOW_STEPS = [
   { id: "Corridor", label: "Corridor", subtitle: "Movement/exercise area", tone: "blue" as const, durationMin: 10 },
@@ -31,6 +33,14 @@ export default function ChamberStepWorkflow({
   const [showDuration, setShowDuration] = useState(false);
   const [selectedStep, setSelectedStep] = useState<string | null>(null);
   const [duration, setDuration] = useState("15");
+  const [undoStep, setUndoStep] = useState<UndoStep | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+
+  useEffect(() => {
+    if (!undoStep) return;
+    const timer = window.setTimeout(() => setUndoStep(null), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [undoStep]);
 
   const nextSteps = WORKFLOW_STEPS.filter((step) => {
     const current = currentStep.toLowerCase().trim();
@@ -44,8 +54,10 @@ export default function ChamberStepWorkflow({
   });
 
   async function handleStepTransition(step: string, dur: number) {
+    const previousStep = currentStep;
     setShowDuration(false);
     setSelectedStep(null);
+    setUndoStep(null);
     haptic("tap");
     try {
       await onPost(`step:${sessionId}:${step}`, {
@@ -55,9 +67,41 @@ export default function ChamberStepWorkflow({
         durationMin: dur,
         stationId,
       });
+      if (step !== "Complete" && previousStep && previousStep !== step) {
+        setUndoStep({ from: previousStep, to: step });
+      }
     } catch {
       // Error handled by parent.
     }
+  }
+
+  async function undoLastStep() {
+    if (!undoStep || undoBusy) return;
+    const pending = undoStep;
+    setUndoBusy(true);
+    try {
+      await onPost(`step:${sessionId}:undo:${pending.from}`, {
+        action: "update_step",
+        sessionId,
+        step: pending.from,
+        durationMin: 0,
+        stationId,
+      });
+      setUndoStep(null);
+      haptic("success");
+    } catch {
+      haptic("error");
+      setUndoStep(null);
+    } finally {
+      setUndoBusy(false);
+    }
+  }
+
+  function confirmComplete() {
+    const confirmed = window.confirm(
+      "Complete treatment? This writes completion/treatment evidence and cannot use instant Undo. Reopen must use a clinical correction workflow."
+    );
+    if (confirmed) void handleStepTransition("Complete", 0);
   }
 
   return (
@@ -116,7 +160,7 @@ export default function ChamberStepWorkflow({
             if (!step) return;
             const stepDef = WORKFLOW_STEPS.find((item) => item.id === step);
             if (step === "Complete") {
-              void handleStepTransition(step, 0);
+              confirmComplete();
             } else {
               setSelectedStep(step);
               setDuration(String(stepDef?.durationMin || 15));
@@ -126,7 +170,21 @@ export default function ChamberStepWorkflow({
         />
       )}
 
-      <p className="mt-2 text-[9px] leading-3 text-slate-400">Tap step to move patient. Duration estimate helps track expected release time.</p>
+      {undoStep && (
+        <div className="mt-2 flex min-h-10 items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200">
+          <span>Moved to {undoStep.to}</span>
+          <button
+            type="button"
+            disabled={undoBusy || Boolean(busyKey)}
+            onClick={() => void undoLastStep()}
+            className="min-h-8 rounded-md bg-white px-3 font-bold text-blue-800 ring-1 ring-blue-200 disabled:opacity-50"
+          >
+            {undoBusy ? "Undoing…" : "UNDO"}
+          </button>
+        </div>
+      )}
+
+      <p className="mt-2 text-[9px] leading-3 text-slate-400">Step changes keep history. Complete requires confirmation and a correction workflow to reopen.</p>
     </div>
   );
 }
