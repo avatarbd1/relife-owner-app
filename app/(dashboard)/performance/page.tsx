@@ -313,6 +313,12 @@ export default async function PerformancePage() {
             <p className="font-bold text-slate-900">XP, Score আর Reward Credit আলাদা</p>
             <p>XP = lifetime progress · Score = weekly 0–100 · RC = spendable rewards.</p>
             <p>Spendable balance immutable RC ledger থেকে আসে.</p>
+            <p>Raw session/payment count নয়—official rank normalized verified score থেকে আসে.</p>
+          </div>
+          <div>
+            <p className="font-bold text-slate-900">Reward Credits</p>
+            <p>Catalog uses configured reward credit cost; no fallback cost is invented.</p>
+            <p>Claim Writer v1 active; claims reserve available RC before redemption.</p>
           </div>
           <div>
             <p className="font-bold text-slate-900">Monthly RC tiers</p>
@@ -323,6 +329,10 @@ export default async function PerformancePage() {
           <div>
             <p className="font-bold text-slate-900">Reward claims</p>
             <p>Claim requests reserve available RC; deny/cancel releases it, fulfilled claims redeem it.</p>
+          </div>
+          <div>
+            <p className="font-bold text-slate-900">Verified activity milestones</p>
+            <p>Milestone progress comes from the existing verified activity sources.</p>
           </div>
           <div>
             <p className="font-bold text-slate-900">📈 {PERFORMANCE_SALARY_POLICY.label}</p>
