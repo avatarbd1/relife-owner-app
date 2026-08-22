@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
@@ -37,6 +37,7 @@ type LeaveRow = {
 };
 
 type StaffOption = { staffId: string; fullName: string; primaryDepartment: Department | null };
+type ShiftUndoState = { shiftId: string; from: ShiftStatus; to: ShiftStatus };
 
 type Tab = "shifts" | "leave";
 
@@ -79,6 +80,8 @@ const ERROR_TEXT: Record<string, string> = {
   SHIFT_OVERLAP: "এই staff-এর জন্য একই সময়ে অন্য shift আছে।",
   SHIFT_LEAVE_CONFLICT: "Approved leave-এর সাথে conflict করছে।",
   SHIFT_INVALID_TRANSITION: "এই shift এই action-এর জন্য প্রস্তুত নয়।",
+  SHIFT_UNDO_CONFLICT: "Shift অন্যভাবে পরিবর্তন হয়েছে; Undo করা হয়নি।",
+  SHIFT_UNDO_INVALID: "এই shift state Undo করা যাবে না।",
   WORKFORCE_REQUEST_ID_CONFLICT: "এই request ID অন্য action-এ ব্যবহার হয়েছে। আবার চেষ্টা করুন।",
   WORKFORCE_DATA_INVALID: "Workforce data invalid; Owner review প্রয়োজন।",
   SHIFT_DATE_INVALID: "সঠিক তারিখ দিন।",
@@ -127,7 +130,14 @@ export default function WorkforceClient({
   const [tab, setTab] = useState<Tab>(canReadShifts ? "shifts" : "leave");
   const [message, setMessage] = useState<{ text: string; good: boolean } | null>(null);
   const [busy, setBusy] = useState("");
+  const [shiftUndo, setShiftUndo] = useState<ShiftUndoState | null>(null);
   const requestIdsRef = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    if (!shiftUndo) return;
+    const timer = window.setTimeout(() => setShiftUndo(null), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [shiftUndo]);
 
   function actionRequestId(key: string): string {
     const existing = requestIdsRef.current.get(key);
@@ -222,6 +232,10 @@ export default function WorkforceClient({
 
   async function shiftAction(shiftId: string, action: "publish" | "cancel") {
     const actionKey = `${action}:${shiftId}`;
+    const row = initialShifts.find((item) => item.shiftId === shiftId);
+    const previousStatus = row?.status;
+    const nextStatus: ShiftStatus = action === "publish" ? "Published" : "Cancelled";
+    setShiftUndo(null);
     setBusy(actionKey);
     try {
       const result = await mutate(`/api/workforce/shifts/${encodeURIComponent(shiftId)}/${action}`, "POST", {
@@ -229,9 +243,46 @@ export default function WorkforceClient({
       });
       announce(result.duplicate ? "✓ Already up to date" : `✓ Shift ${action}ed`, true);
       clearActionRequestId(actionKey);
+      if (
+        !result.duplicate &&
+        previousStatus &&
+        ((nextStatus === "Published" && previousStatus === "Draft") ||
+          (nextStatus === "Cancelled" && (previousStatus === "Draft" || previousStatus === "Published")))
+      ) {
+        setShiftUndo({ shiftId, from: previousStatus, to: nextStatus });
+      }
       router.refresh();
     } catch (error) {
       announceMutationError(error, actionKey);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function undoShiftAction() {
+    if (!shiftUndo || busy) return;
+    const pending = shiftUndo;
+    const actionKey = `undo-shift:${pending.shiftId}:${pending.from}:${pending.to}`;
+    setBusy(actionKey);
+    try {
+      const result = await mutate(
+        `/api/workforce/shifts/${encodeURIComponent(pending.shiftId)}/undo`,
+        "POST",
+        {
+          expectedCurrentStatus: pending.to,
+          restoreStatus: pending.from,
+          requestId: actionRequestId(actionKey),
+        }
+      );
+      announce(result.duplicate ? `✓ Already restored to ${pending.from}` : `✓ Shift restored to ${pending.from}`, true);
+      clearActionRequestId(actionKey);
+      setShiftUndo(null);
+      router.refresh();
+    } catch (error) {
+      setShiftUndo(null);
+      clearActionRequestId(actionKey);
+      announceMutationError(error, actionKey);
+      router.refresh();
     } finally {
       setBusy("");
     }
@@ -322,6 +373,20 @@ export default function WorkforceClient({
 
       {message && (
         <InlineNotice tone={message.good ? "success" : "error"}>{message.text}</InlineNotice>
+      )}
+
+      {shiftUndo && tab === "shifts" && (
+        <section className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+          <span>Shift {shiftUndo.to.toLowerCase()}</span>
+          <button
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => void undoShiftAction()}
+            className="min-h-9 shrink-0 rounded-lg bg-white px-3 text-xs font-bold text-blue-800 ring-1 ring-blue-200 disabled:opacity-50"
+          >
+            {busy.startsWith("undo-shift:") ? "Undoing…" : "UNDO"}
+          </button>
+        </section>
       )}
 
       {tab === "shifts" && canReadShifts && (
