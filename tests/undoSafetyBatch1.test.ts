@@ -6,7 +6,7 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("appointment instant undo is compare-and-swap and excludes completion", () => {
+test("appointment instant undo is atomic, compare-and-swap and excludes completion", () => {
   const domain = source("lib/domain/appointments/undoStatus.ts");
   const route = source("app/api/appointments/status/undo/route.ts");
   const client = source("components/AppointmentStatusControl.tsx");
@@ -16,6 +16,7 @@ test("appointment instant undo is compare-and-swap and excludes completion", () 
   assert.match(domain, /currentStatus !== expectedCurrentStatus/);
   assert.match(domain, /APPOINTMENT_UNDO_CONFLICT/);
   assert.match(domain, /appointment\.status\.undo/);
+  assert.match(domain, /batchUpdateSpreadsheet\(workbook, requests\)/);
   assert.match(route, /withMutationLock\(`appointment-update:\$\{appointmentId\}`/);
   assert.match(client, /window\.setTimeout\(\(\) => setUndoState\(null\), 8_000\)/);
   assert.match(client, /\/api\/appointments\/status\/undo/);
@@ -53,16 +54,20 @@ test("staff deactivate undo is Owner-only and refuses stale profile restore", ()
   assert.match(client, /\/undo-deactivate`/);
 });
 
-test("chamber step undo keeps compensating history while Complete requires confirmation", () => {
-  const client = source("components/ChamberStepWorkflow.tsx");
+test("chamber secondary step undo preserves history and all Complete controls require confirmation", () => {
+  const stepClient = source("components/ChamberStepWorkflow.tsx");
+  const liveBoard = source("components/LiveChamberBoard.tsx");
   const chamber = source("lib/webos/chamber.ts");
 
-  assert.match(client, /window\.setTimeout\(\(\) => setUndoStep\(null\), 8_000\)/);
-  assert.match(client, /action: "update_step"/);
-  assert.match(client, /step: pending\.from/);
-  assert.match(client, /step !== "Complete"/);
-  assert.match(client, /Complete treatment\?/);
-  assert.match(client, /cannot use instant Undo/);
+  assert.match(stepClient, /window\.setTimeout\(\(\) => setUndoStep\(null\), 8_000\)/);
+  assert.match(stepClient, /action: "update_step"/);
+  assert.match(stepClient, /step: pending\.from/);
+  assert.match(stepClient, /step !== "Complete"/);
+  assert.match(stepClient, /Complete treatment\?/);
+  assert.match(stepClient, /cannot use instant Undo/);
+  assert.match(liveBoard, /Complete treatment\?/);
+  assert.match(liveBoard, /Instant Undo is not available/);
+  assert.match(liveBoard, /if \(confirmed\) void post\(`complete:/);
   assert.match(chamber, /"chamber\.step\.update"/);
   assert.match(chamber, /stepLog: closeCurrentStep\(stored, now\.iso\)/);
 });
