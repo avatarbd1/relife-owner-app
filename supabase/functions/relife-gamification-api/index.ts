@@ -12,6 +12,9 @@ const SERVER_KEY_HASHES = new Set([
 const DEFAULT_ORGANIZATION_SLUG = "relife";
 const DEFAULT_CLINIC_SLUG = "amtali-main";
 const DEPARTMENTS = new Set(["Physio", "Dental"]);
+const GAMIFICATION_ELIGIBLE_STAFF_IDS = new Set([
+  "ST002", "ST003", "ST004", "ST005", "ST008", "ST010", "ST011",
+]);
 
 type Tenant = { organizationId: string; clinicId: string };
 type XpRule = {
@@ -353,6 +356,9 @@ Deno.serve(async (req) => {
     }
 
     if (action === "staff_summary") {
+      if (!GAMIFICATION_ELIGIBLE_STAFF_IDS.has(norm(body.staffId))) {
+        return response({ ok: false, error: "STAFF_NOT_GAMIFICATION_ELIGIBLE" }, 403);
+      }
       const result = await staffSummary(tenant, body);
       return response({ ok: true, tenant, ...result });
     }
@@ -387,6 +393,9 @@ Deno.serve(async (req) => {
     }
     if (!staffId || !roleContext || !eventType || !eventKey || !sourceType || !sourceId || !eventAt) {
       return response({ ok: false, error: "INVALID_PERFORMANCE_EVENT" }, 400);
+    }
+    if (!GAMIFICATION_ELIGIBLE_STAFF_IDS.has(staffId)) {
+      return response({ ok: false, error: "STAFF_NOT_GAMIFICATION_ELIGIBLE" }, 403);
     }
     if (!DEPARTMENTS.has(department)) {
       return response({ ok: false, error: "INVALID_DEPARTMENT" }, 400);

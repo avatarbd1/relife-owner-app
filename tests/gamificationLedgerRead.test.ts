@@ -64,11 +64,11 @@ test("Performance page shows immutable ledger truth and never treats missing led
   assert.doesNotMatch(page, /entry\.xpEarnedThisWeek/);
 });
 
-test("weekly rank Reward Credit remains a preview and is not mislabeled as spendable balance", () => {
-  assert.match(page, /const rankRewardPreview = weeklyRewardCredits/);
-  assert.match(page, /weekly award preview/);
-  assert.match(page, /এটা available balance নয়/);
+test("monthly Reward Credit tiers remain separate from the spendable ledger balance", () => {
+  assert.match(page, /Monthly RC tiers/);
+  assert.match(page, /90\+ = 22 RC/);
+  assert.match(page, /Published roster/);
   assert.match(page, /ledger\.rewardCredits\.availableBalance/);
   assert.match(page, /Spendable balance immutable RC ledger থেকে আসে/);
-  assert.doesNotMatch(page, /RC rank preview/);
+  assert.doesNotMatch(page, /weekly award preview/);
 });

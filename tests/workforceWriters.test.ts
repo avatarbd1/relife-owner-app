@@ -115,7 +115,7 @@ test("every mutation writes the domain row/cell updates and the 20_Data_Audit ro
   assert.match(sheetsIo, /await batchUpdateSpreadsheet\(WORKFORCE_WORKBOOK, requests\)/);
   const shiftCommitCalls = shifts.match(/commitWorkforceBatch\(/g) || [];
   const leaveCommitCalls = leave.match(/commitWorkforceBatch\(/g) || [];
-  assert.equal(shiftCommitCalls.length, 3, "create + draft update + one shared transition call");
+  assert.equal(shiftCommitCalls.length, 4, "create + draft update + monthly roster + one shared transition call");
   assert.match(shifts, /async function writeShiftTransition/);
   const writeShiftTransitionCalls = (shifts.match(/await writeShiftTransition\(\{/g) || []).length;
   assert.equal(writeShiftTransitionCalls, 2, "publishShift and cancelShift both funnel through the single writeShiftTransition commit path");
@@ -124,6 +124,18 @@ test("every mutation writes the domain row/cell updates and the 20_Data_Audit ro
   assert.match(leave, /async function writeLeaveTransition/);
   const writeLeaveTransitionCalls = (leave.match(/await writeLeaveTransition\(\{/g) || []).length;
   assert.equal(writeLeaveTransitionCalls, 2, "decideLeave and cancelLeave both funnel through the single writeLeaveTransition commit path");
+});
+
+test("monthly roster reuses the canonical Sheets writer, aggregate audit and month lock", () => {
+  const shifts = source("lib/domain/workforce/shifts.ts");
+  const route = source("app/api/workforce/shifts/monthly-roster/route.ts");
+  assert.match(shifts, /withMutationLock\(`workforce-roster:\$\{input\.month\}`/);
+  assert.match(shifts, /action: "shift\.roster\.apply"/);
+  assert.match(shifts, /await commitWorkforceBatch\(\[\.\.\.requests, appendRowRequest\(auditSheetId, auditRow\)\]\)/);
+  assert.match(shifts, /Status: "Published"/);
+  assert.match(route, /previewMonthlyRoster/);
+  assert.match(route, /applyMonthlyRoster/);
+  assert.doesNotMatch(route, /python|telegram|bot\.py/i);
 });
 
 test("publishing a shift checks Approved-leave conflict before writing the Published transition", () => {
@@ -142,7 +154,7 @@ test("publishing a shift checks Approved-leave conflict before writing the Publi
       conflictThrowIndex < writeIndex,
     "order must be: transition validity -> Approved-leave conflict check -> write"
   );
-  assert.match(shifts, /import \{ readApprovedLeaveRangesForStaff \} from "\.\/leave"/);
+  assert.match(shifts, /readApprovedLeaveRangesForStaff,[\s\S]*?from "\.\/leave"/);
 });
 
 test("the Workforce UI separates schema readiness from an ordinary read failure", () => {

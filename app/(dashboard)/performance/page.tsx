@@ -4,13 +4,12 @@ import {
   getGamificationStaffSummary,
   type GamificationStaffSummary,
 } from "@/lib/data/supabaseGamification";
+import { isGamificationEligibleStaffId } from "@/lib/domain/gamification/monthlyPolicy";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getPerformanceSnapshot } from "@/lib/webos/performance";
 import {
   getPerformanceRewardPolicy,
   PERFORMANCE_SALARY_POLICY,
-  weeklyRewardCredits,
-  weeklyWinnerReward,
 } from "@/lib/webos/performanceRewards";
 
 function medal(rank: number): string {
@@ -78,6 +77,25 @@ async function loadLedgerSummary(input: {
 
 export default async function PerformancePage() {
   const context = await requireCurrentAccessContext();
+  if (!isGamificationEligibleStaffId(context.staffId)) {
+    return (
+      <div className="mx-auto w-full max-w-3xl">
+        <PageHeading title="Performance" subtitle="Staff-ID scoped gamification" />
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-slate-950">এই Staff_ID gamification cohort-এ নেই</h2>
+          <p className="mt-2 text-xs leading-5 text-slate-600">
+            XP, RC এবং official leaderboard শুধু ST002, ST003, ST004, ST005, ST008, ST010 ও ST011-এর জন্য active। নাম দিয়ে eligibility বদলাবে না।
+          </p>
+          {context.roles.includes("Owner") && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/performance/weekly" className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-bold text-white">Weekly review</Link>
+              <Link href="/performance/monthly" className="rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-bold text-white">Monthly RC</Link>
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
   const snapshot = await getPerformanceSnapshot(context);
   const [rewardPolicy, ledger] = await Promise.all([
     getPerformanceRewardPolicy(),
@@ -89,12 +107,6 @@ export default async function PerformancePage() {
     }),
   ]);
   const current = snapshot.current;
-  const winnerReward = weeklyWinnerReward(
-    snapshot.leaderboard,
-    rewardPolicy.rank,
-    rewardPolicy.winnerChoices
-  );
-  const rankRewardPreview = weeklyRewardCredits(current, rewardPolicy.rank);
   const displayedScore = current.normalizedScore ?? current.provisionalScore;
   const scoreIsOfficial = current.normalizedScore !== null;
   const rewardBalanceValid = Boolean(ledger?.rewardCredits.valid);
@@ -192,7 +204,7 @@ export default async function PerformancePage() {
       <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-slate-950">কী করলে XP বাড়বে</h2>
+            <h2 className="text-sm font-bold text-slate-950">My Missions · কী করলে XP বাড়বে</h2>
             <p className="mt-0.5 text-[10px] text-slate-400">শুধু immutable verified event + active Owner config থেকে XP হবে।</p>
           </div>
           <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">Ledger-backed</span>
@@ -213,37 +225,6 @@ export default async function PerformancePage() {
           <p>• XP = immutable ledger-এর lifetime career progress; spend হবে না।</p>
           <p>• Weekly Score = role-normalized 0–100; official Leaderboard এই score দিয়ে হবে।</p>
           <p>• Reward Credit = আলাদা spendable ledger; Reward claim করলে XP বা score কমবে না।</p>
-        </div>
-      </section>
-
-      <section className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-        <div className="flex items-start gap-3">
-          <span className="text-2xl">🏆</span>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-bold text-amber-950">{winnerReward.title}</h2>
-            <p className="mt-1 text-xs leading-5 text-amber-800">{winnerReward.description}</p>
-            {winnerReward.eligible ? (
-              <p className="mt-2 text-xs font-bold text-amber-950">
-                এখন #1: {winnerReward.winnerName} · {winnerReward.rewardCredits} Reward Credit
-              </p>
-            ) : (
-              <p className="mt-2 text-xs font-semibold text-amber-800">
-                Complete normalized score এবং valid Owner config থাকলে winner activate হবে।
-              </p>
-            )}
-            {winnerReward.perks.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {winnerReward.perks.map((perk) => (
-                  <span
-                    key={perk}
-                    className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-amber-900 ring-1 ring-amber-200"
-                  >
-                    {perk}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </section>
 
@@ -290,7 +271,7 @@ export default async function PerformancePage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-950">Reward Credits</h2>
-            <p className="mt-0.5 text-[10px] text-slate-400">Spendable balance immutable RC ledger থেকে আসে; weekly award preview আলাদা।</p>
+            <p className="mt-0.5 text-[10px] text-slate-400">Spendable balance immutable RC ledger থেকে আসে; monthly official score final হলে RC earn হয়।</p>
           </div>
           <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">
             {availableRc === null ? "RC —" : `${availableRc} RC available`}
@@ -314,11 +295,11 @@ export default async function PerformancePage() {
           </div>
         )}
 
-        {rankRewardPreview > 0 && (
-          <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-800">
-            Current official rank হলে weekly award preview: +{rankRewardPreview} RC. এটা available balance নয়; award writer final করলে ledger-এ earn হবে।
-          </p>
-        )}
+        <div className="mt-3 rounded-xl bg-violet-50 px-3 py-3 text-[10px] leading-5 text-violet-900">
+          <p className="font-bold">Monthly RC tiers</p>
+          <p>90+ = 22 RC · 80+ = 18 RC · 70+ = 14 RC · 60+ = 8 RC</p>
+          <p>Published roster এবং সব verified weekly official score complete না হলে 0 RC; missing data-কে zero score ধরা হবে না।</p>
+        </div>
 
         {rewardPolicy.catalog.length > 0 ? (
           <div className="mt-3 grid gap-2 sm:grid-cols-2">

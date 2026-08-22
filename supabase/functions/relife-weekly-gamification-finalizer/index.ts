@@ -12,12 +12,15 @@ const APP_KEY_HASHES = new Set([
 const CRON_KEY_HASH = "a283612e2cdd1350bb2b4e85a92b36f717388565020e4cb4d8ef22b6b092e3d4";
 const DEFAULT_ORGANIZATION_SLUG = "relife";
 const DEFAULT_CLINIC_SLUG = "amtali-main";
-const SUPPORTED_ROLES = new Set(["Therapist", "Receptionist"]);
+const SUPPORTED_ROLES = new Set(["Therapist", "Receptionist", "Dentist"]);
 const SUPPORTED_DEPARTMENTS = new Set(["Physio", "Dental"]);
+const GAMIFICATION_ELIGIBLE_STAFF_IDS = new Set([
+  "ST002", "ST003", "ST004", "ST005", "ST008", "ST010", "ST011",
+]);
 
 type AuthKind = "app" | "cron" | null;
 type Tenant = { organizationId: string; clinicId: string };
-type WeeklyRole = "Therapist" | "Receptionist";
+type WeeklyRole = "Therapist" | "Receptionist" | "Dentist";
 type RolePolicy = {
   role: WeeklyRole;
   version: number;
@@ -39,6 +42,20 @@ type ScoreComponent = {
   denominator: number | null;
   source: string;
   verified: boolean;
+};
+type MonthlyRosterOpportunity = {
+  staffId: string;
+  publishedScheduledMinutes: number;
+  publishedShiftCount: number;
+};
+type MonthlyRewardPolicy = {
+  version: number;
+  totalCredits: number;
+  reserveCredits: number;
+  awardableCredits: number;
+  individualCap: number;
+  tiers: Array<{ minScore: number; credits: number }>;
+  raw: Record<string, unknown>;
 };
 
 function response(data: unknown, status = 200) {
@@ -85,6 +102,33 @@ function validDateKey(value: unknown): string {
   }
   if (parsed.getUTCDay() !== 1) throw new Error("WEEK_START_MUST_BE_MONDAY");
   return text;
+}
+
+function validMonth(value: unknown): string {
+  const month = norm(value);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("INVALID_MONTH");
+  return month;
+}
+
+function monthBounds(month: string): { start: string; end: string; cutoff: string } {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const startDate = new Date(Date.UTC(year, monthNumber - 1, 1));
+  const endDate = new Date(Date.UTC(year, monthNumber, 0));
+  const start = dateKey(startDate);
+  const end = dateKey(endDate);
+  const cutoff = `${end}T17:59:59.999Z`;
+  if (Date.parse(cutoff) >= Date.now()) throw new Error("MONTH_NOT_FINISHED");
+  return { start, end, cutoff };
+}
+
+function expectedWeekEnds(start: string, end: string): string[] {
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const output: string[] = [];
+  while (dateKey(cursor) <= end) {
+    if (cursor.getUTCDay() === 0) output.push(dateKey(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return output;
 }
 
 function addDays(value: string, amount: number): string {
@@ -217,7 +261,7 @@ function parseEarningPolicy(
   if (!row) return { version: null, enabled: false, roles: {}, raw: {} };
   const rolesObject = objectValue(row.value.roles);
   const roles: Partial<Record<WeeklyRole, EarningTier[]>> = {};
-  for (const role of ["Therapist", "Receptionist"] as const) {
+  for (const role of ["Therapist", "Receptionist", "Dentist"] as const) {
     const rawTiers = Array.isArray(rolesObject[role]) ? rolesObject[role] as unknown[] : [];
     const tiers = rawTiers.flatMap((raw) => {
       const item = objectValue(raw);
@@ -237,6 +281,71 @@ function parseEarningPolicy(
     roles,
     raw: row.value,
   };
+}
+
+function parseMonthlyRewardPolicy(
+  row: { version: number; value: Record<string, unknown> } | null
+): MonthlyRewardPolicy {
+  if (!row || row.value.enabled !== true || norm(row.value.mode) !== "score_tiers") {
+    throw new Error("MONTHLY_REWARD_CONFIG_MISSING");
+  }
+  const totalCredits = Number(row.value.total_credits);
+  const reserveCredits = Number(row.value.reserve_credits);
+  const individualCap = Number(row.value.individual_cap);
+  const rawTiers = Array.isArray(row.value.tiers) ? row.value.tiers : [];
+  const tiers = rawTiers.map((raw) => {
+    const tier = objectValue(raw);
+    return { minScore: Number(tier.min_score), credits: Number(tier.credits) };
+  }).filter((tier) =>
+    Number.isFinite(tier.minScore) && tier.minScore >= 0 && tier.minScore <= 100 &&
+    Number.isFinite(tier.credits) && tier.credits >= 0
+  ).sort((a, b) => b.minScore - a.minScore);
+  if (
+    !Number.isInteger(totalCredits) || totalCredits <= 0 ||
+    !Number.isInteger(reserveCredits) || reserveCredits < 0 || reserveCredits >= totalCredits ||
+    !Number.isInteger(individualCap) || individualCap <= 0 ||
+    tiers.length === 0 || tiers.some((tier) => tier.credits > individualCap)
+  ) {
+    throw new Error("MONTHLY_REWARD_CONFIG_INVALID");
+  }
+  const awardableCredits = totalCredits - reserveCredits;
+  if (individualCap * GAMIFICATION_ELIGIBLE_STAFF_IDS.size > awardableCredits) {
+    throw new Error("MONTHLY_REWARD_CONFIG_INVALID");
+  }
+  return {
+    version: row.version,
+    totalCredits,
+    reserveCredits,
+    awardableCredits,
+    individualCap,
+    tiers,
+    raw: row.value,
+  };
+}
+
+function parseMonthlyRosterOpportunity(value: unknown): MonthlyRosterOpportunity[] {
+  if (!Array.isArray(value)) throw new Error("MONTHLY_ROSTER_SNAPSHOT_INVALID");
+  const rows = value.map((raw) => {
+    const item = objectValue(raw);
+    return {
+      staffId: norm(item.staffId),
+      publishedScheduledMinutes: Number(item.publishedScheduledMinutes),
+      publishedShiftCount: Number(item.publishedShiftCount),
+    };
+  });
+  const ids = new Set(rows.map((row) => row.staffId));
+  if (
+    rows.length !== GAMIFICATION_ELIGIBLE_STAFF_IDS.size ||
+    ids.size !== GAMIFICATION_ELIGIBLE_STAFF_IDS.size ||
+    [...GAMIFICATION_ELIGIBLE_STAFF_IDS].some((staffId) => !ids.has(staffId)) ||
+    rows.some((row) =>
+      !Number.isInteger(row.publishedScheduledMinutes) || row.publishedScheduledMinutes <= 0 ||
+      !Number.isInteger(row.publishedShiftCount) || row.publishedShiftCount <= 0
+    )
+  ) {
+    throw new Error("MONTHLY_ROSTER_SNAPSHOT_INVALID");
+  }
+  return rows.sort((a, b) => a.staffId.localeCompare(b.staffId));
 }
 
 function target(policy: RolePolicy, key: string): number | null {
@@ -270,7 +379,7 @@ function componentsFor(
 ): Record<string, ScoreComponent> {
   const onTime = counts.attendance_on_time || 0;
   const attendanceTotal = onTime + (counts.attendance_check_in || 0);
-  if (role === "Therapist") {
+  if (role === "Therapist" || role === "Dentist") {
     const completed = counts.session_completed || 0;
     const documented = Math.min(counts.treatment_documented || 0, completed);
     const sessionsTarget = target(policy, "sessions_per_week");
@@ -567,7 +676,8 @@ async function finalizeWeek(
       select staff_id, department, role_context, event_type, count(*)::int as event_count
       from relife.performance_events
       where clinic_id = ${tenant.clinicId}::uuid
-        and role_context in ('Therapist','Receptionist')
+        and role_context in ('Therapist','Receptionist','Dentist')
+        and staff_id in ('ST002','ST003','ST004','ST005','ST008','ST010','ST011')
         and department in ('Physio','Dental')
         and (event_at at time zone 'Asia/Dhaka')::date
           between ${weekStart}::date and ${weekEnd}::date
@@ -584,6 +694,7 @@ async function finalizeWeek(
        and e.organization_id = x.organization_id
        and e.clinic_id = x.clinic_id
       where x.clinic_id = ${tenant.clinicId}::uuid
+        and x.staff_id in ('ST002','ST003','ST004','ST005','ST008','ST010','ST011')
         and (e.event_at at time zone 'Asia/Dhaka')::date
           between ${weekStart}::date and ${weekEnd}::date
         and e.event_at <= ${cutoff}::timestamptz
@@ -608,6 +719,7 @@ async function finalizeWeek(
     let ambiguous = 0;
 
     for (const [staffId, rows] of byStaff) {
+      if (!GAMIFICATION_ELIGIBLE_STAFF_IDS.has(staffId)) continue;
       const roles = [...new Set(rows.map((row) => norm(row.role_context)).filter((role) => SUPPORTED_ROLES.has(role)))];
       const departments = [...new Set(rows.map((row) => norm(row.department)).filter((department) => SUPPORTED_DEPARTMENTS.has(department)))];
       if (roles.length !== 1 || departments.length !== 1) {
@@ -876,17 +988,226 @@ async function finalizeWeek(
   });
 }
 
+async function monthlyFinalizationStatus(
+  tenant: Tenant,
+  month?: string
+): Promise<Record<string, unknown>> {
+  const rows = month
+    ? await sql`
+        select finalization_id::text, month_key, status, requested_by,
+          roster_snapshot, config_snapshot, result_summary, created_at, finalized_at
+        from relife.monthly_gamification_finalizations
+        where clinic_id = ${tenant.clinicId}::uuid and month_key = ${month}
+        limit 1
+      `
+    : await sql`
+        select finalization_id::text, month_key, status, requested_by,
+          roster_snapshot, config_snapshot, result_summary, created_at, finalized_at
+        from relife.monthly_gamification_finalizations
+        where clinic_id = ${tenant.clinicId}::uuid
+        order by month_key desc limit 1
+      `;
+  if (!rows[0]) return { finalization: null };
+  const row = rows[0];
+  return {
+    finalization: {
+      finalizationId: norm(row.finalization_id),
+      month: norm(row.month_key),
+      status: norm(row.status),
+      requestedBy: norm(row.requested_by),
+      rosterSnapshot: row.roster_snapshot || [],
+      configSnapshot: row.config_snapshot || {},
+      resultSummary: row.result_summary || {},
+      createdAt: row.created_at,
+      finalizedAt: row.finalized_at,
+    },
+  };
+}
+
+async function finalizeMonth(
+  tenant: Tenant,
+  input: { month: string; actorId: string; rosterSnapshot: unknown }
+): Promise<Record<string, unknown>> {
+  const month = validMonth(input.month);
+  const bounds = monthBounds(month);
+  const roster = parseMonthlyRosterOpportunity(input.rosterSnapshot);
+  const expectedEnds = expectedWeekEnds(bounds.start, bounds.end);
+  const finalizationKey = `monthly:${tenant.clinicId}:${month}:v1`;
+
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${finalizationKey}))`;
+    const existing = await tx`
+      select finalization_id::text, status, result_summary
+      from relife.monthly_gamification_finalizations
+      where clinic_id = ${tenant.clinicId}::uuid and finalization_key = ${finalizationKey}
+      limit 1
+    `;
+    if (existing[0]?.status === "finalized") {
+      return {
+        alreadyFinalized: true,
+        finalizationId: norm(existing[0].finalization_id),
+        month,
+        resultSummary: existing[0].result_summary || {},
+      };
+    }
+
+    const policy = parseMonthlyRewardPolicy(
+      await configAt(tx, tenant, "All", "reward.monthly_score_tiers", bounds.cutoff)
+    );
+    const weeklyRows = await tx`
+      select id::text, staff_id, department, role_context, week_end::text,
+        normalized_score::numeric, missing_score_metrics
+      from relife.weekly_performance
+      where clinic_id = ${tenant.clinicId}::uuid
+        and staff_id in ('ST002','ST003','ST004','ST005','ST008','ST010','ST011')
+        and week_end between ${bounds.start}::date and ${bounds.end}::date
+        and status = 'final'
+      order by staff_id, week_end
+    `;
+    const weeklyByStaff = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of weeklyRows) {
+      const staffId = norm(row.staff_id);
+      const list = weeklyByStaff.get(staffId) || [];
+      list.push(row as Record<string, unknown>);
+      weeklyByStaff.set(staffId, list);
+    }
+
+    const incomplete: Array<{ staffId: string; reason: string }> = [];
+    const candidates = roster.map((opportunity) => {
+      const rows = weeklyByStaff.get(opportunity.staffId) || [];
+      const weekEnds = rows.map((row) => norm(row.week_end));
+      const roles = [...new Set(rows.map((row) => norm(row.role_context)))];
+      const departments = [...new Set(rows.map((row) => norm(row.department)))];
+      const scores = rows.map((row) => row.normalized_score === null ? null : Number(row.normalized_score));
+      const complete =
+        rows.length === expectedEnds.length &&
+        expectedEnds.every((weekEnd) => weekEnds.includes(weekEnd)) &&
+        scores.every((score) => score !== null && Number.isFinite(score)) &&
+        roles.length === 1 && departments.length === 1;
+      if (!complete) incomplete.push({ staffId: opportunity.staffId, reason: "verified_weekly_scores_incomplete" });
+      const officialScore = complete
+        ? round2((scores as number[]).reduce((sum, score) => sum + score, 0) / scores.length)
+        : null;
+      return {
+        ...opportunity,
+        department: departments[0] || "",
+        role: roles[0] || "",
+        officialScore,
+        weeklyPerformanceIds: rows.map((row) => norm(row.id)),
+        weekEnds,
+      };
+    });
+    if (incomplete.length > 0) throw new Error("MONTHLY_SCORE_INCOMPLETE");
+
+    const finalizationRows = await tx`
+      insert into relife.monthly_gamification_finalizations(
+        organization_id, clinic_id, month_key, finalization_key, source_cutoff_at,
+        roster_snapshot, config_snapshot, requested_by, status
+      ) values (
+        ${tenant.organizationId}::uuid, ${tenant.clinicId}::uuid, ${month},
+        ${finalizationKey}, ${bounds.cutoff}::timestamptz,
+        ${JSON.stringify(roster)}::jsonb,
+        ${JSON.stringify({ version: policy.version, policy: policy.raw })}::jsonb,
+        ${input.actorId}, 'running'
+      )
+      on conflict (clinic_id, finalization_key) do update set requested_by = excluded.requested_by
+      returning finalization_id::text
+    `;
+    const finalizationId = norm(finalizationRows[0]?.finalization_id);
+    if (!finalizationId) throw new Error("FINALIZATION_INSERT_FAILED");
+
+    let awardedCredits = 0;
+    const allocations = [];
+    for (const candidate of candidates) {
+      const tier = policy.tiers.find((item) => (candidate.officialScore as number) >= item.minScore) || null;
+      const credits = Math.min(tier?.credits || 0, policy.individualCap);
+      awardedCredits += credits;
+      allocations.push({
+        staffId: candidate.staffId,
+        department: candidate.department,
+        role: candidate.role,
+        officialScore: candidate.officialScore,
+        rewardCredits: credits,
+        matchedMinScore: tier?.minScore ?? null,
+        publishedScheduledMinutes: candidate.publishedScheduledMinutes,
+        publishedShiftCount: candidate.publishedShiftCount,
+      });
+      if (credits <= 0) continue;
+      await tx`
+        insert into relife.reward_credit_ledger(
+          organization_id, clinic_id, staff_id, department, entry_type,
+          credit_amount, source_type, source_id, idempotency_key, reason,
+          created_by, score_snapshot
+        ) values (
+          ${tenant.organizationId}::uuid, ${tenant.clinicId}::uuid,
+          ${candidate.staffId}, ${candidate.department}, 'earned', ${credits},
+          'monthly_score_tier', ${finalizationId},
+          ${`monthly-score-tier:${tenant.clinicId}:${month}:${candidate.staffId}:v1`},
+          ${`Monthly ${candidate.role} score ${candidate.officialScore}`},
+          'monthly_gamification_finalizer',
+          ${JSON.stringify({
+            month,
+            officialScore: candidate.officialScore,
+            role: candidate.role,
+            department: candidate.department,
+            weeklyPerformanceIds: candidate.weeklyPerformanceIds,
+            weekEnds: candidate.weekEnds,
+            roster: {
+              publishedScheduledMinutes: candidate.publishedScheduledMinutes,
+              publishedShiftCount: candidate.publishedShiftCount,
+            },
+            policyVersion: policy.version,
+            matchedMinScore: tier?.minScore ?? null,
+            finalizationId,
+          })}::jsonb
+        ) on conflict (clinic_id, idempotency_key) do nothing
+      `;
+    }
+    if (awardedCredits > policy.awardableCredits) throw new Error("MONTHLY_RC_BUDGET_EXCEEDED");
+
+    const summary = {
+      month,
+      staffCount: allocations.length,
+      expectedWeeklyScoresPerStaff: expectedEnds.length,
+      awardedCredits,
+      reserveCredits: policy.totalCredits - awardedCredits,
+      budgetCredits: policy.totalCredits,
+      policyVersion: policy.version,
+      allocations,
+    };
+    await tx`
+      update relife.monthly_gamification_finalizations
+      set status = 'finalized', result_summary = ${JSON.stringify(summary)}::jsonb, finalized_at = now()
+      where finalization_id = ${finalizationId}::uuid
+    `;
+    await audit(tx, {
+      tenant,
+      requestId: `gam-month-finalize-${month}`,
+      actorId: input.actorId,
+      action: "gamification.monthly.finalized",
+      entityType: "MonthlyGamificationFinalization",
+      entityId: finalizationId,
+      payload: summary,
+    });
+    return { alreadyFinalized: false, finalizationId, month, resultSummary: summary };
+  });
+}
+
 function errorStatus(message: string): number {
   if (message === "ACCESS_DENIED" || message === "OWNER_REQUIRED") return 403;
   if (message === "FINALIZATION_NOT_FOUND") return 404;
   if (
     message.startsWith("INVALID_") ||
     message === "WEEK_START_MUST_BE_MONDAY" ||
-    message === "WEEK_NOT_FINISHED"
+    message === "WEEK_NOT_FINISHED" ||
+    message === "MONTH_NOT_FINISHED" ||
+    message === "MONTHLY_ROSTER_SNAPSHOT_INVALID"
   ) return 400;
   if (
     message === "LEGACY_FINAL_WEEK_EXISTS" ||
-    message === "WEEKLY_PERFORMANCE_ALREADY_FINALIZED"
+    message === "WEEKLY_PERFORMANCE_ALREADY_FINALIZED" ||
+    message === "MONTHLY_SCORE_INCOMPLETE" ||
+    message === "MONTHLY_RC_BUDGET_EXCEEDED"
   ) return 409;
   return 500;
 }
@@ -912,6 +1233,31 @@ Deno.serve(async (req) => {
       const weekStart = norm(body.weekStart);
       if (weekStart) validDateKey(weekStart);
       return response({ ok: true, tenant, ...(await finalizationStatus(tenant, weekStart || undefined)) });
+    }
+
+    if (action === "monthly_status") {
+      if (auth !== "app") throw new Error("ACCESS_DENIED");
+      const month = norm(body.month);
+      if (month) validMonth(month);
+      return response({
+        ok: true,
+        tenant,
+        ...(await monthlyFinalizationStatus(tenant, month || undefined)),
+      });
+    }
+
+    if (action === "finalize_month") {
+      const actorId = norm(body.actorId);
+      const actorRoles = Array.isArray(body.actorRoles) ? body.actorRoles.map(norm) : [];
+      if (auth !== "app" || !actorId || !actorRoles.includes("Owner")) {
+        throw new Error("OWNER_REQUIRED");
+      }
+      const result = await finalizeMonth(tenant, {
+        month: validMonth(body.month),
+        actorId,
+        rosterSnapshot: body.rosterSnapshot,
+      });
+      return response({ ok: true, tenant, ...result });
     }
 
     if (action !== "finalize_previous_week" && action !== "finalize_week") {

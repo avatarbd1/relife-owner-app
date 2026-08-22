@@ -7,15 +7,15 @@ live Sheets/Supabase data.
 ## Immutable task packet
 
 - Repository: `avatarbd1/relife-owner-app`
-- Base SHA: `BASE_SHA`
-- Task ID: `TASK_ID`
-- Risk tier: `STANDARD_OR_HIGH`
-- Required outcome: `ONE_BOUNDED_OUTCOME`
-- Allowed changed files/areas: `ALLOWED_SCOPE`
-- Canonical path to reuse: `EXISTING_ROUTE_DOMAIN_WRITER`
-- Permission to reuse: `EXACT_WEBACTION_OR_NONE`
-- Durable authority: `CURRENT_SHEETS_SUPABASE_AUTHORITY`
-- Owner-approved issue: `ISSUE_OR_NONE`
+- Base SHA: `649c9185340f46d70398dd9404384d12e76b390c`
+- Task ID: `issue-159`
+- Risk tier: `HIGH`
+- Required outcome: `Add deterministic monthly roster generation plus ID-scoped, budget-capped RC finalization for the seven approved staff IDs.`
+- Allowed changed files/areas: `Existing workforce shift domain/routes/UI/tests; existing gamification config/rules/finalizer/Edge Functions/migrations/tests; canonical docs required by the approved schema or route extension.`
+- Canonical path to reuse: `lib/domain/workforce/shifts.ts -> app/api/workforce/shifts/** -> /workforce; existing performance_events/weekly_performance/reward_credit_ledger and relife gamification finalizer paths.`
+- Permission to reuse: `shift.manage and performance.weekly.finalize; no new WebAction.`
+- Durable authority: `Google Sheets Staff_Shifts for planned roster; Supabase relife schema append-only reward_credit_ledger for RC.`
+- Owner-approved issue: `https://github.com/avatarbd1/relife-owner-app/issues/159`
 
 ## Invariants
 
@@ -30,10 +30,10 @@ live Sheets/Supabase data.
 
 ## Acceptance contract
 
-- Required behavior: `BEHAVIOR`
-- Required regression cases: `TEST_CASES`
-- Required commands: `COMMANDS`
-- Must remain unchanged: `BOUNDARIES`
+- Required behavior: `Preview and atomically apply a Published monthly roster with the approved role hours, ST004 12:00-18:00 override, and staggered weekly half-days. Enforce the exact ST002/ST003/ST004/ST005/ST008/ST010/ST011 gamification cohort by Staff_ID. Finalize a month only from complete official role-normalized scores and published shift opportunity, using RC tiers 90/80/70/60 -> 22/18/14/8, monthly budget cap 160 RC, individual cap 22 RC, and 6 RC reserve.`
+- Required regression cases: `Invalid month, inactive/mismatched staff, overlap, Approved leave, duplicate request, roster determinism, half-day staggering, excluded IDs, incomplete metrics, missing Published roster, tie determinism, per-person cap, total cap, and finalizer idempotency all fail closed or remain stable as specified.`
+- Required commands: `npm test; npm run lint; npm run build; node scripts/validate-claude-artifact.mjs relife-handoff --base-sha 649c9185340f46d70398dd9404384d12e76b390c`
+- Must remain unchanged: `No leave accrual/carry/encashment or salary mutation; no attendance mutation; no new authority store/writer/RBAC action; no production credential access, live Sheets/Supabase mutation, deploy, or merge.`
 
 ## Required output
 
@@ -49,9 +49,9 @@ Create `relife-handoff/` exactly as defined in `docs/RELIFE_ENGINE_LITE.md`:
 Run:
 
 ```bash
-node scripts/validate-claude-artifact.mjs relife-handoff --base-sha BASE_SHA
-tar -czf relife-TASK_ID-handoff.tar.gz relife-handoff
-sha256sum relife-TASK_ID-handoff.tar.gz
+node scripts/validate-claude-artifact.mjs relife-handoff --base-sha 649c9185340f46d70398dd9404384d12e76b390c
+tar -czf relife-issue-159-handoff.tar.gz relife-handoff
+sha256sum relife-issue-159-handoff.tar.gz
 ```
 
 Return the archive and its SHA-256. Report only verified facts. If blocked, return a

@@ -38,6 +38,13 @@ type LeaveRow = {
 
 type StaffOption = { staffId: string; fullName: string; primaryDepartment: Department | null };
 
+type MonthlyRosterPreview = {
+  month: string;
+  entries: Array<{ staffId: string; weeklyHalfDay: boolean }>;
+  conflicts: string[];
+  canApply: boolean;
+};
+
 type Tab = "shifts" | "leave";
 
 function nextRequestId(): string {
@@ -83,6 +90,11 @@ const ERROR_TEXT: Record<string, string> = {
   WORKFORCE_DATA_INVALID: "Workforce data invalid; Owner review প্রয়োজন।",
   SHIFT_DATE_INVALID: "সঠিক তারিখ দিন।",
   SHIFT_TIME_RANGE_INVALID: "End time অবশ্যই start time-এর পরে হতে হবে (একই দিনে)।",
+  ROSTER_MONTH_INVALID: "সঠিক roster month দিন।",
+  ROSTER_CONFLICT: "Existing shift বা Approved leave conflict আছে; roster apply হয়নি।",
+  ROSTER_STAFF_INVALID: "Roster staff list active directory-এর সাথে মিলছে না।",
+  ROSTER_STAFF_ROLE_MISMATCH: "Roster role staff directory-এর সাথে মিলছে না।",
+  ROSTER_STAFF_DEPARTMENT_MISMATCH: "Roster department access staff directory-এর সাথে মিলছে না।",
   LEAVE_OVERLAP: "এই তারিখে ইতিমধ্যে একটি active leave request আছে।",
   LEAVE_DATE_RANGE_INVALID: "সঠিক তারিখ range দিন।",
   LEAVE_INVALID_TRANSITION: "এই leave request এই action-এর জন্য প্রস্তুত নয়।",
@@ -96,6 +108,7 @@ function friendlyError(code: string): string {
 
 export default function WorkforceClient({
   currentStaffId,
+  canApplyMonthlyRoster,
   canReadShifts,
   canReadLeave,
   canManageShifts,
@@ -110,6 +123,7 @@ export default function WorkforceClient({
   staffOptionsUnavailable,
 }: {
   currentStaffId: string;
+  canApplyMonthlyRoster: boolean;
   canReadShifts: boolean;
   canReadLeave: boolean;
   canManageShifts: boolean;
@@ -142,6 +156,8 @@ export default function WorkforceClient({
   }
 
   const [showShiftForm, setShowShiftForm] = useState(false);
+  const [rosterMonth, setRosterMonth] = useState("");
+  const [rosterPreview, setRosterPreview] = useState<MonthlyRosterPreview | null>(null);
   const [editingShiftId, setEditingShiftId] = useState("");
   const [shiftDraft, setShiftDraft] = useState({
     staffId: staffOptions[0]?.staffId || "",
@@ -229,6 +245,45 @@ export default function WorkforceClient({
       });
       announce(result.duplicate ? "✓ Already up to date" : `✓ Shift ${action}ed`, true);
       clearActionRequestId(actionKey);
+      router.refresh();
+    } catch (error) {
+      announceMutationError(error, actionKey);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function previewRoster() {
+    if (!rosterMonth) return announce("Roster month দিন।", false);
+    setBusy("roster-preview");
+    try {
+      const response = await fetch(`/api/workforce/shifts/monthly-roster?month=${encodeURIComponent(rosterMonth)}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "ROSTER_ACTION_FAILED");
+      setRosterPreview(payload.preview as MonthlyRosterPreview);
+      announce(payload.preview.canApply ? "✓ Roster preview ready" : "✕ Preview-তে conflict আছে", payload.preview.canApply);
+    } catch (error) {
+      announce(`✕ ${friendlyError(error instanceof Error ? error.message : "")}`, false);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function applyRoster() {
+    if (!rosterPreview?.canApply || rosterPreview.month !== rosterMonth) return;
+    const actionKey = `roster-apply:${rosterMonth}`;
+    setBusy(actionKey);
+    try {
+      const result = await mutate("/api/workforce/shifts/monthly-roster", "POST", {
+        month: rosterMonth,
+        requestId: actionRequestId(actionKey),
+      });
+      announce(
+        result.duplicate ? "✓ Monthly roster was already applied" : `✓ ${result.shiftCount} Published shifts added`,
+        true
+      );
+      clearActionRequestId(actionKey);
+      setRosterPreview(null);
       router.refresh();
     } catch (error) {
       announceMutationError(error, actionKey);
@@ -415,6 +470,52 @@ export default function WorkforceClient({
                     {busy === (editingShiftId ? `update-shift:${editingShiftId}` : "create-shift")
                       ? "Saving…"
                       : editingShiftId ? "Update Draft" : "Save as Draft"}
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+
+          {canApplyMonthlyRoster && (
+            <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+              <h2 className="text-sm font-semibold text-slate-900">Monthly roster</h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Role hours, Avro 12:00–18:00, এবং staggered weekly half-day দিয়ে Published roster তৈরি হবে।
+              </p>
+              <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                <input
+                  type="month"
+                  value={rosterMonth}
+                  onChange={(event) => {
+                    setRosterMonth(event.target.value);
+                    setRosterPreview(null);
+                  }}
+                  className={inputClass}
+                />
+                <button
+                  type="button"
+                  disabled={!rosterMonth || busy === "roster-preview"}
+                  onClick={previewRoster}
+                  className="min-h-11 rounded-lg border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-800 disabled:opacity-50"
+                >
+                  Preview
+                </button>
+              </div>
+              {rosterPreview && (
+                <div className="mt-3 rounded-xl bg-white p-3 text-xs text-slate-700 ring-1 ring-blue-100">
+                  <p>
+                    {new Set(rosterPreview.entries.map((entry) => entry.staffId)).size} staff · {rosterPreview.entries.length} shift rows · {rosterPreview.entries.filter((entry) => entry.weeklyHalfDay).length} half-day rows
+                  </p>
+                  {rosterPreview.conflicts.length > 0 && (
+                    <p className="mt-2 text-red-700">{rosterPreview.conflicts.slice(0, 5).join(" · ")}</p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!rosterPreview.canApply || busy === `roster-apply:${rosterMonth}`}
+                    onClick={applyRoster}
+                    className="mt-3 min-h-11 w-full rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {busy === `roster-apply:${rosterMonth}` ? "Applying…" : "Apply Published roster"}
                   </button>
                 </div>
               )}

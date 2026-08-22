@@ -5,7 +5,17 @@ import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { dhakaClockParts } from "@/lib/config/relifeSystem";
 import { getActiveWebStaffById, getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 import { withMutationLock } from "@/lib/webos/mutationLock";
-import { readApprovedLeaveRangesForStaff } from "./leave";
+import {
+  readApprovedLeaveRangesForStaff,
+  readApprovedLeaveRangesForStaffIds,
+} from "./leave";
+import {
+  generateMonthlyRoster,
+  isValidRosterMonth,
+  MONTHLY_ROSTER_PROFILES,
+  monthlyRosterConflictCodes,
+  type MonthlyRosterEntry,
+} from "./monthlyRoster";
 import {
   boundedNotes,
   isValidIsoDate,
@@ -124,6 +134,126 @@ export interface CreateShiftInput {
   endTime: string;
   notes?: string;
   requestId: string;
+}
+
+export interface MonthlyRosterPreview {
+  month: string;
+  entries: MonthlyRosterEntry[];
+  conflicts: string[];
+  canApply: boolean;
+}
+
+function assertOwnerRosterAccess(context: AccessContext): void {
+  if (!context.roles.includes("Owner")) throw new Error("ACCESS_DENIED");
+  assertCanPerform(context, "shift.manage", "Physio");
+  assertCanPerform(context, "shift.manage", "Dental");
+}
+
+async function validateRosterDirectory(): Promise<void> {
+  const directory = await getWebStaffDirectory();
+  const byId = new Map(directory.map((item) => [item.staffId, item]));
+  for (const profile of MONTHLY_ROSTER_PROFILES) {
+    const identity = byId.get(profile.staffId);
+    if (!identity || identity.status !== "Active") throw new Error("ROSTER_STAFF_INVALID");
+    if (!identity.roles.includes(profile.role)) throw new Error("ROSTER_STAFF_ROLE_MISMATCH");
+    if (
+      !identity.departmentAccess.includes(profile.department) &&
+      !identity.departmentAccess.includes("All")
+    ) {
+      throw new Error("ROSTER_STAFF_DEPARTMENT_MISMATCH");
+    }
+  }
+}
+
+async function buildMonthlyRosterPreview(month: string): Promise<MonthlyRosterPreview> {
+  const entries = generateMonthlyRoster(month);
+  const staffIds = MONTHLY_ROSTER_PROFILES.map((profile) => profile.staffId);
+  const [{ records }, approvedLeave] = await Promise.all([
+    readShiftRecords(),
+    readApprovedLeaveRangesForStaffIds(staffIds),
+  ]);
+  const conflicts = monthlyRosterConflictCodes({ entries, existing: records, approvedLeave });
+  return { month, entries, conflicts, canApply: conflicts.length === 0 };
+}
+
+export async function previewMonthlyRoster(
+  context: AccessContext,
+  month: string
+): Promise<MonthlyRosterPreview> {
+  assertOwnerRosterAccess(context);
+  if (!isValidRosterMonth(month)) throw new Error("ROSTER_MONTH_INVALID");
+  await validateRosterDirectory();
+  return buildMonthlyRosterPreview(month);
+}
+
+export async function applyMonthlyRoster(
+  context: AccessContext,
+  input: { month: string; requestId: string }
+): Promise<{ month: string; shiftCount: number; duplicate: boolean }> {
+  assertOwnerRosterAccess(context);
+  if (!isValidRosterMonth(input.month)) throw new Error("ROSTER_MONTH_INVALID");
+  const requestId = validateWorkforceRequestId(input.requestId);
+  await validateRosterDirectory();
+
+  return withMutationLock(`workforce-roster:${input.month}`, async () => {
+    const audit = await readDataAuditSheet();
+    const requestUse = findWorkforceRequest(
+      workforceRequestLedger(audit.headers, audit.dataRows),
+      requestId
+    );
+    const entries = generateMonthlyRoster(input.month);
+    if (requestUse) {
+      if (
+        requestUse.action === "shift.roster.apply" &&
+        requestUse.entityId === input.month &&
+        requestUse.actorId === context.staffId
+      ) {
+        return { month: input.month, shiftCount: entries.length, duplicate: true };
+      }
+      throw new Error("WORKFORCE_REQUEST_ID_CONFLICT");
+    }
+
+    const preview = await buildMonthlyRosterPreview(input.month);
+    if (!preview.canApply) throw new Error("ROSTER_CONFLICT");
+    const { headers } = await readWorkforceSheet(STAFF_SHIFTS_SHEET, STAFF_SHIFTS_HEADERS);
+    const ids = await workforceSheetIdMap();
+    const shiftSheetId = requireSheetId(ids, STAFF_SHIFTS_SHEET);
+    const auditSheetId = requireSheetId(ids, DATA_AUDIT_SHEET);
+    const now = dhakaClockParts();
+    const requests = preview.entries.map((entry, index) => appendRowRequest(shiftSheetId, rowForHeaders(headers, {
+      Shift_ID: newEntityId("SHF"),
+      Staff_ID: entry.staffId,
+      Department: entry.department,
+      Shift_Date: entry.shiftDate,
+      Start_Time: entry.startTime,
+      End_Time: entry.endTime,
+      Status: "Published",
+      Notes: entry.weeklyHalfDay ? "Monthly roster · weekly half-day" : "Monthly roster",
+      Request_ID: `${requestId.slice(0, 88)}_R${String(index).padStart(3, "0")}`,
+      Created_By: context.staffId,
+      Created_At: now.timestamp,
+      Updated_By: context.staffId,
+      Updated_At: now.timestamp,
+    })));
+    const auditRow = buildWorkforceAuditRow(audit.headers, {
+      context,
+      action: "shift.roster.apply",
+      entityType: "Shift",
+      entityId: input.month,
+      department: "All",
+      requestId,
+      afterValue: {
+        month: input.month,
+        shiftCount: preview.entries.length,
+        status: "Published",
+        staffIds: MONTHLY_ROSTER_PROFILES.map((profile) => profile.staffId),
+      },
+      reason: "Owner applied deterministic monthly roster",
+      now,
+    });
+    await commitWorkforceBatch([...requests, appendRowRequest(auditSheetId, auditRow)]);
+    return { month: input.month, shiftCount: preview.entries.length, duplicate: false };
+  });
 }
 
 /** Owner/Manager only, department-scoped (issue #153: "read/manage department shifts"). */
