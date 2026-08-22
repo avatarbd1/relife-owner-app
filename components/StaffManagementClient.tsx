@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { InlineNotice, Spinner, StatusBadge } from "@/components/FeedbackUI";
 import { haptic } from "@/lib/interactions";
 
@@ -90,6 +90,7 @@ function friendlyError(value: unknown): string {
     OWNER_PROFILE_IMMUTABLE: "Owner profile cannot be changed here.",
     STAFF_NOT_FOUND: "Staff profile was not found.",
     STAFF_SCHEMA_MISMATCH: "Staff sheet schema is unavailable. No change was saved.",
+    STAFF_UNDO_CONFLICT: "Staff profile changed after deactivation. Undo was not applied.",
   };
   return messages[code] || code || "Staff change failed.";
 }
@@ -101,10 +102,17 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState<{ text: string; good: boolean } | null>(null);
+  const [deactivateUndo, setDeactivateUndo] = useState<StaffItem | null>(null);
   const sorted = useMemo(
     () => [...staff].sort((a, b) => Number(b.status === "Active") - Number(a.status === "Active") || a.fullName.localeCompare(b.fullName)),
     [staff]
   );
+
+  useEffect(() => {
+    if (!deactivateUndo) return;
+    const timer = window.setTimeout(() => setDeactivateUndo(null), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [deactivateUndo]);
 
   function startCreate() {
     setEditingId(null);
@@ -193,16 +201,55 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
     if (!window.confirm(`Deactivate ${item.fullName}? Existing records will remain; new access will be blocked.`)) return;
     setBusy(`deactivate:${item.staffId}`);
     setMessage(null);
+    setDeactivateUndo(null);
     try {
       const response = await fetch(`/api/staff/${encodeURIComponent(item.staffId)}/deactivate`, { method: "POST" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(friendlyError(payload?.error));
       setMessage({ text: `${item.fullName} deactivated. Historical records were preserved.`, good: true });
+      if (payload.changed !== false) setDeactivateUndo(item);
       haptic("success");
       router.refresh();
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : "Deactivate failed.", good: false });
       haptic("error");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function undoDeactivate() {
+    if (!deactivateUndo || busy) return;
+    const item = deactivateUndo;
+    setBusy(`undo-deactivate:${item.staffId}`);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/staff/${encodeURIComponent(item.staffId)}/undo-deactivate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedProfile: {
+            fullName: item.fullName,
+            phone: item.phone,
+            role: item.role,
+            primaryDepartment: item.primaryDepartment,
+            salary: item.salary,
+            clinicalWriteScope: item.clinicalWriteScope,
+            departmentAccess: item.departmentAccess,
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) throw new Error(friendlyError(payload?.error));
+      setDeactivateUndo(null);
+      setMessage({ text: `${item.fullName} reactivated. Deactivation was undone.`, good: true });
+      haptic("success");
+      router.refresh();
+    } catch (error) {
+      setDeactivateUndo(null);
+      setMessage({ text: error instanceof Error ? error.message : "Undo failed.", good: false });
+      haptic("error");
+      router.refresh();
     } finally {
       setBusy("");
     }
@@ -226,6 +273,20 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
       </section>
 
       {message && <InlineNotice tone={message.good ? "success" : "error"}>{message.text}</InlineNotice>}
+
+      {deactivateUndo && (
+        <section className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+          <span>{deactivateUndo.fullName} deactivated</span>
+          <button
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => void undoDeactivate()}
+            className="min-h-9 shrink-0 rounded-lg bg-white px-3 text-xs font-bold text-blue-800 ring-1 ring-blue-200 disabled:opacity-50"
+          >
+            {busy === `undo-deactivate:${deactivateUndo.staffId}` ? "Undoing…" : "UNDO"}
+          </button>
+        </section>
+      )}
 
       {showForm && (
         <section className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm">
