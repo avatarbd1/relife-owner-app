@@ -199,7 +199,7 @@ export default async function PerformancePage() {
 
       <section className="mb-4 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
-          <h2 className="text-sm font-bold text-slate-950">Leaderboard</h2>
+          <h2 className="text-sm font-bold text-slate-950">Weekly Leaderboard</h2>
           <Link href="/performance/weekly" className="text-[10px] font-bold text-blue-700">View all</Link>
         </div>
         {leaderboardPreview.length > 0 ? (
