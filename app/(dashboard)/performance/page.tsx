@@ -123,7 +123,7 @@ export default async function PerformancePage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200">Weekly Score</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200">Weekly normalized score</p>
               <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${scoreIsOfficial ? "bg-emerald-400/15 text-emerald-200" : "bg-amber-400/15 text-amber-200"}`}>
                 {scoreIsOfficial ? "Official" : "Provisional"}
               </span>
@@ -158,7 +158,11 @@ export default async function PerformancePage() {
           </div>
         </div>
 
-        {!ledger && <p className="mt-3 text-[10px] text-slate-400">XP/RC unavailable</p>}
+        {!ledger && (
+          <p className="mt-3 text-[10px] text-slate-400">
+            Ledger unavailable — XP/RC-কে 0 ধরে দেখানো হচ্ছে না।
+          </p>
+        )}
         {ledger && !rewardBalanceValid && <p className="mt-3 text-[10px] text-amber-200">RC balance unavailable</p>}
       </section>
 
@@ -312,6 +316,7 @@ export default async function PerformancePage() {
           <div>
             <p className="font-bold text-slate-900">Monthly RC tiers</p>
             <p>90+ = 22 RC · 80+ = 18 RC · 70+ = 14 RC · 60+ = 8 RC.</p>
+            <p>Published roster + complete verified score required for monthly RC.</p>
             <p>Incomplete verified data does not become a zero score.</p>
           </div>
           <div>
