@@ -184,7 +184,7 @@ export default async function PerformancePage() {
 
       <section className="mb-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-bold text-slate-950">My Missions</h2>
+          <h2 className="text-sm font-bold text-slate-950">My Missions · কী করলে XP বাড়বে</h2>
           <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">XP</span>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -312,6 +312,7 @@ export default async function PerformancePage() {
           <div>
             <p className="font-bold text-slate-900">XP · Score · RC</p>
             <p>XP = lifetime progress · Score = weekly 0–100 · RC = spendable rewards.</p>
+            <p>Spendable balance immutable RC ledger থেকে আসে.</p>
           </div>
           <div>
             <p className="font-bold text-slate-900">Monthly RC tiers</p>
