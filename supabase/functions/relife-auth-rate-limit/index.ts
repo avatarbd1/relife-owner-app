@@ -1,8 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import postgres from "npm:postgres@3.4.5";
 
-const SERVER_KEY_HASH =
-  "efbaa7cde590048b656a566db1e0a8b09c8ad4d3b251c62116949de8eabf3027";
+const SERVER_KEY_HASHES = new Set([
+  "efbaa7cde590048b656a566db1e0a8b09c8ad4d3b251c62116949de8eabf3027",
+  "dc57fe48d7ab3b3f9bb93ac6b1559baf3c29dc71ffee728c2b9c45160c748281",
+]);
 const dbUrl = Deno.env.get("SUPABASE_DB_URL");
 if (!dbUrl) throw new Error("SUPABASE_DB_URL missing");
 const sql = postgres(dbUrl, { prepare: false, max: 3, idle_timeout: 20 });
@@ -43,7 +45,7 @@ async function authorized(request: Request): Promise<boolean> {
     "SHA-256",
     new TextEncoder().encode(key)
   );
-  return hex(digest) === SERVER_KEY_HASH;
+  return SERVER_KEY_HASHES.has(hex(digest));
 }
 
 function validClientKey(value: unknown): string | null {
