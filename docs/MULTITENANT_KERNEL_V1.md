@@ -10,7 +10,7 @@ Relife remains Tenant #1 during migration. The existing `relife` / `amtali-main`
 
 This batch adds tenant/clinic membership identity, multi-role and multi-department membership mappings, canonical kernel roles and permissions, future Supabase Auth helpers, metadata RLS, consent/provenance/retention/access-audit hooks, a private analytics-ready schema, and a server-only bridge from the current signed staff session to canonical Tenant/Clinic scope.
 
-It does **not** activate Clinic #2, replace Owner PIN/staff passkey/signed-session behavior, manufacture a Supabase `auth.users` record, grant direct authenticated access to operational patient/clinical/finance/chamber tables, migrate Google Sheets operational data, or enable analytics export/licensing.
+It does **not** activate Clinic #2, replace current Owner PIN, staff passkey, or signed-session behavior, manufacture a Supabase `auth.users` record, grant direct authenticated access to operational patient/clinical/finance/chamber tables, migrate Google Sheets operational data, or enable analytics export/licensing.
 
 ## Relife Tenant #1 bridge
 
