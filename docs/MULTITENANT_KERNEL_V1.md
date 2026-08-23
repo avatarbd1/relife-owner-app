@@ -17,12 +17,14 @@ This batch adds:
 - fail-closed Supabase Auth helpers;
 - metadata RLS policies;
 - consent, provenance, retention-policy, and access-audit hooks;
-- a separate private analytics-ready schema with no direct patient identifiers.
+- a separate private analytics-ready schema with no direct patient identifiers;
+- a server-only bridge from the current signed staff session identity to canonical Tenant/Clinic scope.
 
 This batch does **not**:
 
 - activate a second clinic;
-- change current Owner login/session behavior;
+- replace current Owner PIN, staff passkey, or signed-session behavior;
+- manufacture a Supabase `auth.users` record for the current Owner;
 - grant direct authenticated access to clinical, finance, chamber, or patient operational tables;
 - migrate Google Sheets patient/clinical/finance data;
 - create an analytics export pipeline;
@@ -31,7 +33,7 @@ This batch does **not**:
 
 ## Access model
 
-The target authorization chain is:
+The long-term authorization chain is:
 
 ```text
 authenticated user
@@ -46,6 +48,26 @@ authenticated user
 Unknown role, missing membership, missing tenant scope, inactive clinic membership, or unresolved department must fail closed.
 
 The legacy `clinic_memberships.role` column remains for compatibility. `membership_roles` becomes the authoritative multi-role mapping after Auth cutover.
+
+## Relife Tenant #1 staff-session bridge
+
+The current Web/PWA session stores stable staff identity rather than a Supabase Auth user ID. Owner resolves to `ST001`; current role/department truth still comes from the live staff directory.
+
+During the gradual cutover:
+
+```text
+signed session cookie
+  -> stable staff_id (ST001 for Owner)
+  -> relife.staff_tenant_bindings
+  -> organization = relife
+  -> clinic = amtali-main
+  -> existing live staff directory
+  -> existing WebRole / Department / permission rules
+```
+
+`staff_tenant_bindings.auth_user_id` is nullable. It is a future convergence hook only; no fake Auth user is created. Exactly one active default binding is required when a session does not carry an explicit clinic choice. Missing or ambiguous bindings fail closed.
+
+The server-only `relife-tenant-context` Edge Function reads this private table using the same shared-secret boundary already used by protected Relife Edge operations. Browser clients receive no table grant. `lib/webos/currentUser.ts` exposes additive tenant-aware helpers so routes can migrate one-by-one without changing all current production routes at once.
 
 ## Role invariants imported from Relife Clinic OS
 
@@ -89,13 +111,14 @@ No secondary-use pipeline is allowed to infer research, AI-training, or commerci
 ## Rollout gates before Clinic #2
 
 1. CI must pass on the kernel branch.
-2. Review Supabase migration with security/performance advisors after applying in a controlled environment.
-3. Cut over authentication to membership-resolved tenant context, or add a reviewed server-side bridge from the current staff session.
-4. Every transactional read/write must take explicit tenant scope; compatibility defaults must not route Clinic #2.
-5. Add domain-specific permissions and policies for patient/appointment/clinical/finance tables.
-6. Add database-backed cross-tenant tests using at least two clinics with deliberately colliding local business IDs.
-7. Prove Clinic A cannot read, mutate, reserve, export, or audit Clinic B data.
-8. Only after those gates pass may a second clinic be activated.
+2. Review and merge the source before production database apply so schema never runs ahead of source control.
+3. Apply both kernel migrations under the controlled production migration process and verify the `ST001 -> relife / amtali-main` binding.
+4. Deploy `relife-tenant-context`, then verify a signed Owner session resolves exactly that Tenant #1 scope while the existing Owner access context still resolves from the live staff directory.
+5. Migrate transactional reads/writes route-by-route to `requireCurrentTenantAccessContext`; compatibility defaults must never route Clinic #2.
+6. Add domain-specific permissions and policies for patient/appointment/clinical/finance tables.
+7. Add database-backed cross-tenant tests using at least two test clinics with deliberately colliding local business IDs.
+8. Prove Clinic A cannot read, mutate, reserve, export, or audit Clinic B data.
+9. Only after those gates pass may a second clinic be activated.
 
 ## Load target
 
