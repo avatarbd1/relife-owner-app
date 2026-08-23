@@ -63,12 +63,15 @@ test("server adapter never silently falls back to Relife tenant IDs", () => {
   assert.doesNotMatch(adapter, /bc77ffb9-3379-40cc-a1eb-89b0e988fe94/i);
 });
 
-test("current owner/staff access stays intact while tenant-aware context is additive", () => {
-  assert.match(currentUser, /getCurrentAccessContext/);
-  assert.match(currentUser, /requireCurrentAccessContext/);
+test("Owner operational identity becomes tenant-bound only after explicit cutover toggle", () => {
+  assert.match(currentUser, /RELIFE_TENANT_CUTOVER_ENFORCED/);
+  assert.match(currentUser, /identity\.roles\.includes\("Owner"\)/);
+  assert.match(currentUser, /await resolveStaffTenantContext\(identity\.staffId\)/);
+  assert.match(currentUser, /await enforceOwnerTenantBinding\(identity\)/);
   assert.match(currentUser, /getCurrentTenantContext/);
   assert.match(currentUser, /requireCurrentTenantAccessContext/);
-  assert.match(currentUser, /resolveStaffTenantContext\(identity\.staffId\)/);
+  assert.doesNotMatch(currentUser, /organizationSlug\s*:\s*["']relife["']/);
+  assert.doesNotMatch(currentUser, /clinicSlug\s*:\s*["']amtali-main["']/);
 
   assert.match(auth, /const OWNER_STAFF_ID = "ST001"/);
   assert.match(auth, /createSessionToken\(staffId: string = OWNER_STAFF_ID\)/);
