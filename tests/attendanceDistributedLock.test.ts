@@ -33,3 +33,13 @@ test("distributed lock core remains fail-closed in production", () => {
   assert.match(lock, /ENABLE_PROCESS_LOCAL_LOCK_FALLBACK === "true"/);
   assert.match(lock, /DISTRIBUTED_LOCK_MODE === "compatibility"/);
 });
+
+test("compatibility fallback never replays a business callback error", () => {
+  const lock = source("lib/webos/mutationLock.ts");
+  assert.match(lock, /class MutationCallbackError extends Error/);
+  assert.match(lock, /throw new MutationCallbackError\(error\)/);
+  assert.match(lock, /if \(error instanceof MutationCallbackError\) \{\s*throw error\.original;\s*\}/s);
+  const businessRethrow = lock.indexOf("if (error instanceof MutationCallbackError)");
+  const compatibilityFallback = lock.indexOf('DISTRIBUTED_LOCK_MODE === "compatibility"', businessRethrow);
+  assert.ok(businessRethrow >= 0 && compatibilityFallback > businessRethrow);
+});
