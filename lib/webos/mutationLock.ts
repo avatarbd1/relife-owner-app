@@ -24,6 +24,16 @@ type EdgePayload = {
   error?: { message?: unknown } | null;
 };
 
+class MutationCallbackError extends Error {
+  readonly original: unknown;
+
+  constructor(original: unknown) {
+    super("MUTATION_CALLBACK_ERROR");
+    this.name = "MutationCallbackError";
+    this.original = original;
+  }
+}
+
 function getInstanceId(): string {
   return process.env.INSTANCE_ID || `render-${randomUUID()}`;
 }
@@ -85,6 +95,12 @@ function getLockRpcClient(): DistributedLockRpcClient | null {
  * Edge Function is mandatory and failures fail closed. compatibility:
  * process-local fallback is available only when explicitly enabled for
  * local/test/single-instance operation.
+ *
+ * A callback/business error must never be treated as lock-infrastructure
+ * failure. In compatibility mode only acquisition/transport failures may
+ * fall back to the process-local lock; replaying a failed callback could
+ * duplicate a mutation or turn an intentional ACCESS_DENIED/409 into a
+ * second write attempt.
  */
 export async function withMutationLock<T>(
   key: string,
@@ -102,19 +118,33 @@ export async function withMutationLock<T>(
 
   if (strategy === "distributed" && client) {
     try {
-      return await withDistributedLeaseLock(normalizedKey, fn, client, {
-        instanceId: getInstanceId(),
-        leaseSeconds: LOCK_LEASE_SECONDS,
-        acquisitionTimeoutMs: LOCK_ACQUISITION_TIMEOUT_MS,
-        randomId: randomUUID,
-        onRenewalError: (error) => {
-          console.error("Distributed mutation lock renewal warning:", error);
+      return await withDistributedLeaseLock(
+        normalizedKey,
+        async () => {
+          try {
+            return await fn();
+          } catch (error) {
+            throw new MutationCallbackError(error);
+          }
         },
-        onReleaseError: (error) => {
-          console.error("Distributed mutation lock release warning:", error);
-        },
-      });
+        client,
+        {
+          instanceId: getInstanceId(),
+          leaseSeconds: LOCK_LEASE_SECONDS,
+          acquisitionTimeoutMs: LOCK_ACQUISITION_TIMEOUT_MS,
+          randomId: randomUUID,
+          onRenewalError: (error) => {
+            console.error("Distributed mutation lock renewal warning:", error);
+          },
+          onReleaseError: (error) => {
+            console.error("Distributed mutation lock release warning:", error);
+          },
+        }
+      );
     } catch (error) {
+      if (error instanceof MutationCallbackError) {
+        throw error.original;
+      }
       if (
         DISTRIBUTED_LOCK_MODE === "compatibility" &&
         PROCESS_LOCAL_FALLBACK_ENABLED
