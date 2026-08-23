@@ -4,13 +4,15 @@
 
 `relife.organizations` is the canonical SaaS **Tenant** table. We do not add a second `tenants` table. `relife.clinics` represents a tenant-owned clinic/branch/chamber container.
 
-Relife remains Tenant #1 during migration. The existing `relife` / `amtali-main` compatibility defaults remain temporarily so current server-side writers continue to work, but every new tenant-aware writer must pass `organization_id` and `clinic_id` explicitly.
+Relife is Tenant #1. The existing `relife` / `amtali-main` compatibility defaults remain temporarily only inside verified legacy Relife writers while operational data authority is still Google Sheets. Every new tenant-aware writer must pass `organization_id` and `clinic_id` explicitly; Clinic #2 is not allowed to use Relife compatibility defaults.
 
 ## Kernel scope
 
-This batch adds tenant/clinic membership identity, multi-role and multi-department membership mappings, canonical kernel roles and permissions, future Supabase Auth helpers, metadata RLS, consent/provenance/retention/access-audit hooks, a private analytics-ready schema, and a server-only bridge from the current signed staff session to canonical Tenant/Clinic scope.
+This batch adds tenant/clinic membership identity, multi-role and multi-department membership mappings, canonical kernel roles and permissions, future Supabase Auth helpers, metadata RLS, consent/provenance/retention/access-audit hooks, a private analytics-ready schema, and a server-only bridge from the current signed Owner session to canonical Tenant/Clinic scope.
 
-It does **not** activate Clinic #2, replace current Owner PIN, staff passkey, or signed-session behavior, manufacture a Supabase `auth.users` record, grant direct authenticated access to operational patient/clinical/finance/chamber tables, migrate Google Sheets operational data, or enable analytics export/licensing.
+It does **not** activate Clinic #2, replace the current Owner PIN/signed-session behavior, manufacture a Supabase `auth.users` record, grant direct authenticated access to operational patient/clinical/finance/chamber tables, silently change the verified Google Sheets writer authority, or enable analytics export/licensing.
+
+Owner approval for the full Tenant #1 cutover is tracked in GitHub issue #166.
 
 ## Relife Tenant #1 bridge
 
@@ -26,9 +28,13 @@ signed session cookie
   -> existing WebRole / Department / permission rules
 ```
 
-`staff_tenant_bindings.auth_user_id` is nullable for future Auth convergence. No fake Auth user is created. Exactly one active default binding is required when a session does not carry an explicit clinic choice; missing or ambiguous bindings fail closed.
+`staff_tenant_bindings.auth_user_id` is nullable for future Auth convergence. No fake Auth user is created. Exactly one active default binding is required when an Owner session does not carry an explicit clinic choice; missing or ambiguous bindings fail closed.
 
-The server-only `relife-tenant-context` Edge Function reads this private table behind the same shared-secret server boundary used by protected Relife Edge operations. Browser clients receive no table grant. `lib/webos/currentUser.ts` keeps `getCurrentAccessContext()` intact and adds `requireCurrentTenantAccessContext()` as the route-by-route migration target.
+The server-only `relife-tenant-context` Edge Function reads this private table behind the same shared-secret server boundary used by protected Relife Edge operations. Browser clients receive no table grant.
+
+The Owner cutover is **not** implemented as dozens of independent route switches. `lib/webos/currentUser.ts` is the shared server authorization boundary. When `RELIFE_TENANT_CUTOVER_ENFORCED=true`, every Owner identity/access resolution first requires a valid canonical Tenant/Clinic binding. That makes the existing Owner workspace and its server-side operational API paths Tenant #1-bound in one controlled activation while leaving non-Owner staff sessions unchanged until their own membership migration is approved.
+
+The cutover flag defaults off so source can be merged and production schema/Edge infrastructure prepared without creating a deployment race. It is enabled only after the production migrations and tenant-context Edge Function are verified.
 
 ## Access invariants
 
@@ -36,8 +42,10 @@ The server-only `relife-tenant-context` Edge Function reads this private table b
 - Owner may receive explicit cross-department scope.
 - System Admin gets no implicit clinical access.
 - Menu visibility is never an authorization boundary.
-- Direct record IDs and stale client state must be re-authorized.
+- Direct record IDs and stale client state must still be re-authorized.
+- Missing/inactive/ambiguous Owner Tenant #1 binding fails closed when cutover enforcement is enabled.
 - New tenant-aware paths must never silently default to Relife.
+- Existing legacy Relife writers remain Relife-only compatibility paths; they cannot be reused for Clinic #2 unless explicitly tenantized.
 
 ## SaaS Phase-1 operating guardrails
 
@@ -62,16 +70,16 @@ These are architecture constraints for the first 20-clinic pilot, not optional o
 
 The kernel includes private service-owned hooks for purpose-specific patient consent, data provenance, configurable retention policies, and data-access/export/denial audit evidence. Routine care data never automatically implies research, AI-training, or commercial-use permission.
 
-## Rollout gates before Clinic #2
+## Full Owner Tenant #1 cutover gates
 
-1. CI passes on the kernel branch.
-2. Source is reviewed and merged before production DB apply, so deployed schema is always represented in source control.
+1. CI passes on the kernel/cutover branch.
+2. Source is reviewed and merged while `RELIFE_TENANT_CUTOVER_ENFORCED` remains off by default.
 3. Kernel + Tenant #1 bridge migrations are applied and `ST001 -> relife / amtali-main` is verified.
-4. `relife-tenant-context` is deployed and a signed Owner session resolves exactly Tenant #1 while existing Owner access still resolves from the live staff directory.
-5. Transactional routes migrate one-by-one to `requireCurrentTenantAccessContext()`.
-6. Patient/appointment/clinical/finance reads and writes become explicit-tenant scoped.
-7. Two-clinic collision/isolation tests prove zero cross-tenant read/write/reserve/export/audit leakage.
-8. Only then may Clinic #2 be activated.
+4. `relife-tenant-context` is deployed and server-authenticated resolution returns exactly Tenant #1 for `ST001`.
+5. Existing Owner role/department access still resolves from the live staff directory.
+6. The production cutover flag is enabled on the existing shared Render service; no new service is created.
+7. Owner dashboard and Owner operational server actions fail closed if tenant resolution is unavailable, while normal Relife flows remain intact when resolution succeeds.
+8. Clinic #2 remains disabled until operational storage is explicitly tenant-scoped and two-clinic collision/isolation tests prove zero cross-tenant read/write/reserve/export/audit leakage.
 
 ## Load target
 
