@@ -50,7 +50,7 @@ The kernel includes private service-owned hooks for purpose-specific patient con
 ## Rollout gates before Clinic #2
 
 1. CI passes on the kernel branch.
-2. Source is reviewed and merged before production DB apply.
+2. Source is reviewed and merged before production DB apply, so deployed schema is always represented in source control.
 3. Kernel + Tenant #1 bridge migrations are applied and `ST001 -> relife / amtali-main` is verified.
 4. `relife-tenant-context` is deployed and a signed Owner session resolves exactly Tenant #1 while existing Owner access still resolves from the live staff directory.
 5. Transactional routes migrate one-by-one to `requireCurrentTenantAccessContext()`.
