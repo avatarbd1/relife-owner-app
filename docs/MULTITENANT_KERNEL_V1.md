@@ -14,7 +14,7 @@ This batch adds:
 - multi-role membership mapping;
 - multi-department membership mapping;
 - canonical kernel roles and permissions;
-- fail-closed Supabase Auth helpers;
+- fail-closed Supabase Auth helpers for the future Auth convergence path;
 - metadata RLS policies;
 - consent, provenance, retention-policy, and access-audit hooks;
 - a separate private analytics-ready schema with no direct patient identifiers;
@@ -68,6 +68,8 @@ signed session cookie
 `staff_tenant_bindings.auth_user_id` is nullable. It is a future convergence hook only; no fake Auth user is created. Exactly one active default binding is required when a session does not carry an explicit clinic choice. Missing or ambiguous bindings fail closed.
 
 The server-only `relife-tenant-context` Edge Function reads this private table using the same shared-secret boundary already used by protected Relife Edge operations. Browser clients receive no table grant. `lib/webos/currentUser.ts` exposes additive tenant-aware helpers so routes can migrate one-by-one without changing all current production routes at once.
+
+The existing `getCurrentAccessContext()` and Owner login behavior are intentionally preserved. New tenant-aware routes should migrate to `requireCurrentTenantAccessContext()`, which combines the existing live staff authorization context with the resolved organization/clinic scope.
 
 ## Role invariants imported from Relife Clinic OS
 
