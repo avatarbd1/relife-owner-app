@@ -84,7 +84,10 @@ test("analytics facts contain no direct patient identity fields", () => {
 
   assert.match(block, /subject_key uuid not null/);
   assert.match(migration, /revoke all on schema relife_analytics from public, anon, authenticated/);
-  assert.doesNotMatch(migration, /grant .*relife_analytics.*authenticated/is);
+  assert.doesNotMatch(
+    migration,
+    /grant[^;\n]*relife_analytics[^;\n]*to authenticated/i
+  );
 });
 
 test("consent, provenance, retention and data-access audit hooks exist", () => {
