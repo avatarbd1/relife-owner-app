@@ -39,6 +39,21 @@ The server-only `relife-tenant-context` Edge Function reads this private table b
 - Direct record IDs and stale client state must be re-authorized.
 - New tenant-aware paths must never silently default to Relife.
 
+## SaaS Phase-1 operating guardrails
+
+These are architecture constraints for the first 20-clinic pilot, not optional optimizations:
+
+1. Structured/text clinical data first. Image/PDF upload is used only when clinically or operationally necessary.
+2. A patient master is created once. Follow-up visits create encounter/session records; they must not create duplicate patient masters.
+3. Essential operational fields are normalized. Large JSON blobs are reserved for bounded, versioned payloads where a normalized model would be worse.
+4. Reports and history endpoints are paginated; the browser must not receive unbounded row sets.
+5. Realtime is enabled only for workflows that materially benefit from it, rather than globally.
+6. Audit logs capture meaningful security, clinical, financial, consent, export, and administrative events; routine UI noise is excluded.
+7. Operational indexes must lead with tenant/clinic scope where appropriate, for example `(organization_id, clinic_id, session_date)` on tenant-scoped time-series access paths.
+8. Binary files are not stored inside PostgreSQL table rows. File metadata belongs in the database; file bytes belong in managed object/file storage.
+9. The product uses one shared deployment/runtime for multiple clinics. We do not provision one application server per clinic for the pilot.
+10. Tenant/clinic onboarding is an application-level operation against the shared platform; it must not require new project/server provisioning for every clinic.
+
 ## Analytics-ready boundary
 
 `relife_analytics.outcome_facts` contains derived/pseudonymous data only, using an opaque `subject_key`. It intentionally excludes direct patient identifiers such as patient ID, name, phone, DOB, address, and NID. Re-identification linkage stays private in `relife.analytics_subject_links`; therefore analytics facts are treated as pseudonymous, not automatically anonymous/shareable.
