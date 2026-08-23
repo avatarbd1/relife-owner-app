@@ -37,9 +37,6 @@ export async function requireCurrentAccessContext(): Promise<AccessContext> {
 
 /**
  * Resolve the canonical Tenant/Clinic for the existing signed staff session.
- *
- * This is additive during the Relife Tenant #1 cutover: legacy routes may keep
- * using getCurrentAccessContext while migrated routes opt into this resolver.
  * Missing or ambiguous tenant bindings fail closed; there is no implicit
  * fallback to Relife.
  */
@@ -61,14 +58,16 @@ export type CurrentTenantAccessContext = {
   tenant: StaffTenantContext;
 };
 
-/** Canonical migration target for tenant-aware server routes. */
+/** Canonical server context for tenant-aware operational routes. */
 export async function getCurrentTenantAccessContext(): Promise<CurrentTenantAccessContext | null> {
   const identity = await getCurrentStaffIdentity();
   if (!identity) return null;
+  const access = toAccessContext(identity);
+  if (!access) return null;
   const tenant = await resolveStaffTenantContext(identity.staffId);
   return {
     identity,
-    access: toAccessContext(identity),
+    access,
     tenant,
   };
 }
