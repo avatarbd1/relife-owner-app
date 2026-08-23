@@ -18,10 +18,24 @@ async function currentSessionStaffId(): Promise<string | null> {
   return getSessionStaffId(cookieStore.get(SESSION_COOKIE)?.value);
 }
 
+export function isOwnerTenantCutoverEnforced(): boolean {
+  return process.env.RELIFE_TENANT_CUTOVER_ENFORCED?.trim().toLowerCase() === "true";
+}
+
+async function enforceOwnerTenantBinding(identity: WebStaffIdentity): Promise<void> {
+  if (!isOwnerTenantCutoverEnforced() || !identity.roles.includes("Owner")) return;
+  // The resolver is fail-closed: missing, inactive, or ambiguous Tenant/Clinic
+  // bindings reject the Owner session before any downstream operational action.
+  await resolveStaffTenantContext(identity.staffId);
+}
+
 export async function getCurrentStaffIdentity(): Promise<WebStaffIdentity | null> {
   const staffId = await currentSessionStaffId();
   if (!staffId) return null;
-  return getActiveWebStaffById(staffId);
+  const identity = await getActiveWebStaffById(staffId);
+  if (!identity) return null;
+  await enforceOwnerTenantBinding(identity);
+  return identity;
 }
 
 export async function getCurrentAccessContext(): Promise<AccessContext | null> {
