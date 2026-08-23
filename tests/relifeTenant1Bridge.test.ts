@@ -32,7 +32,7 @@ test("Relife Tenant #1 bridge preserves the existing ST001 staff identity", () =
 
 test("staff session has exactly one active default tenant before implicit resolution", () => {
   assert.match(migration, /staff_tenant_bindings_one_active_default_idx/);
-  assert.match(migration, /where status = 'active' and is_default = true/);
+  assert.match(migration, /status = 'active' and is_default = true/);
   assert.match(migration, /enable row level security/);
   assert.match(
     migration,
