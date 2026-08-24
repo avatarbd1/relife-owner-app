@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import {
   finishMachineUse,
@@ -22,8 +23,12 @@ function statusFor(message: string): number {
 
 export async function GET() {
   try {
-    const context = await requireCurrentAccessContext();
-    const snapshot = await getMachineOperationSnapshot(context);
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.machines.read");
+    const snapshot = await getMachineOperationSnapshot(access);
     return NextResponse.json({ ok: true, snapshot });
   } catch (error) {
     const message = error instanceof Error ? error.message : "MACHINE_READ_FAILED";
@@ -38,7 +43,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.machines.run");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -51,7 +60,7 @@ export async function POST(request: NextRequest) {
     if (action === "start") {
       const resourceId = String(record.resourceId || "").trim();
       const result = await withMutationLock(`machine-runtime:${sessionId}`, async () => {
-        const snapshot = await getMachineOperationSnapshot(context);
+        const snapshot = await getMachineOperationSnapshot(access);
         const session = snapshot.sessions.find((item) => item.sessionId === sessionId);
         const machine = snapshot.machines.find((item) => item.resourceId === resourceId);
         if (!session) throw new Error("CHAMBER_SESSION_NOT_FOUND");
@@ -59,7 +68,7 @@ export async function POST(request: NextRequest) {
         if (session.status === "Waiting" && !machine.traction) {
           throw new Error("MACHINE_REQUIRES_TREATMENT");
         }
-        return startMachineUse(context, {
+        return startMachineUse(access, {
           sessionId,
           resourceId,
           durationMin: Number(record.durationMin || 0),
@@ -69,7 +78,7 @@ export async function POST(request: NextRequest) {
     }
     if (action === "finish") {
       const result = await withMutationLock(`machine-runtime:${sessionId}`, () =>
-        finishMachineUse(context, {
+        finishMachineUse(access, {
           sessionId,
           resourceId: String(record.resourceId || "").trim(),
         })
