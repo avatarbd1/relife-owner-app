@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requestExpense } from "@/lib/domain/finance/production";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "EXPENSE_REQUEST_FAILED";
@@ -23,12 +24,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for finance operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "expense.request");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await requestExpense(context, {
+    const department = String(body.department || "");
+    if (department === "Physio" || department === "Dental") {
+      validateDepartmentAccess(access, department);
+    }
+    const result = await requestExpense(access, {
       department: body.department,
       category: body.category,
       amount: Number(body.amount),

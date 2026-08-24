@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkOwnerPin } from "@/lib/auth";
 import { paySalary } from "@/lib/domain/finance/production";
+import { validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "SALARY_PAY_FAILED";
@@ -34,7 +35,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for finance operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "salary.pay");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -46,7 +50,7 @@ export async function POST(request: NextRequest) {
     if (!["Salary", "Advance"].includes(body.type)) {
       return NextResponse.json({ ok: false, error: "INVALID_PAYMENT_TYPE" }, { status: 400 });
     }
-    const result = await paySalary(context, {
+    const result = await paySalary(access, {
       staffId: body.staffId,
       amount: Number(body.amount),
       type: body.type,

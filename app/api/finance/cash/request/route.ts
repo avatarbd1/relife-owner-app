@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requestCashMovement } from "@/lib/domain/finance/production";
 import { getScopedCashPosition } from "@/lib/scopedCash";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "CASH_REQUEST_FAILED";
@@ -34,7 +35,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for finance operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "cash.request");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -43,6 +47,7 @@ export async function POST(request: NextRequest) {
     const department = String(body.department || "");
     const amount = Number(body.amount);
     if (department === "Physio" || department === "Dental") {
+      validateDepartmentAccess(access, department);
       const cash = await getScopedCashPosition(
         department === "Dental" ? "dental" : "physio"
       );
@@ -51,7 +56,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = await requestCashMovement(context, {
+    const result = await requestCashMovement(access, {
       department: body.department,
       amount,
       toCustodian: body.toCustodian,
