@@ -1,34 +1,17 @@
-# Relife Engine Lite — mandatory workflow
+# Relife Owner App — local agent entrypoint
 
-`docs/RELIFE_ENGINE_LITE.md` is the execution contract.
+Cross-repo AI/process/release-control rules are centralized in `avatarbd1/multi-ai-commander` under `docs/RELIFE_PROGRAM_CONTROL.md` and the active Program Control issue.
 
-## Roles
+This repository keeps only product-local safety boundaries:
 
-- Claude is an artifact builder. It may inspect, edit, and test in its sandbox, then returns one validated handoff artifact. It must not push, open a PR, merge, deploy, use credentials, or mutate production data.
-- Codex is the integrator. It writes the task prompt, verifies the artifact against fresh `main`, reviews the diff, reruns checks, commits, opens a Draft PR, and reports exact CI state.
-- The Owner decides when a PR becomes ready and when it merges or deploys.
-
-## Before runtime code
-
-1. Start from latest `main` and read the relevant source before editing.
-2. Search for the existing route, action, writer, reader, lock, audit, and tests.
-3. Reuse `docs/CANONICAL_PATH_REGISTRY.md`; never add a parallel business path.
-4. Verify `WebAction` values in `lib/webos/access.ts`; never invent permissions.
-5. Preserve Sheets/Supabase authority unless an Owner-approved issue explicitly changes it.
-6. Keep production writes on durable locking, idempotency, authorization, department scope, and audit paths. Process-local state is not production persistence.
-
-## Risk gate
-
-- **Standard:** UI, read-only behavior, bounded bug fixes, tests, and documentation. Record concise search evidence in the PR.
-- **High:** finance semantics, authentication/authorization, a writer, schema/RLS, authority, migration/cutover, or production mutation. Review `CLAUDE.md`, `MIGRATION_AUDIT.md`, and the canonical registry; update durable audit evidence when the decision changes.
-- If authority or the canonical path is uncertain, stop with a blocker artifact. Do not code speculatively.
-
-## Publication gate
-
-- One task produces one artifact, one branch, and one Draft PR.
-- Claude claims are evidence only; Codex independently reruns applicable tests, lint, and build.
-- Draft PRs may defer manual user-flow evidence. Ready-for-review runtime PRs may not.
-- Never claim merged, deployed, live, or production-verified from sandbox tests.
+1. Read current `main`, relevant product docs, active issue/PR, and source before editing.
+2. Reuse the existing canonical route/domain/reader/writer; do not create a parallel business path.
+3. Use `docs/CANONICAL_PATH_REGISTRY.md` for product path ownership and `MIGRATION_AUDIT.md` for authority/cutover risk.
+4. Verify permissions from `lib/webos/access.ts`; do not invent role capabilities.
+5. Preserve current Sheets/Supabase authority unless an Owner-approved product issue explicitly changes it.
+6. Financial, clinical, security, tenancy, schema/RLS, writer, migration and cutover changes fail closed when authority is uncertain.
+7. Application changes use a fresh branch and Draft PR; Builder does not self-approve.
+8. Product-specific acceptance criteria and live evidence stay in this repository.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
