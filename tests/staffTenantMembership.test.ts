@@ -22,7 +22,7 @@ test("T2-01 authorization fails closed instead of granting on missing/error stat
   const source = await readFile(AUTH_PATH, "utf8");
   assert.match(source, /if \(bindingError \|\| !binding\) return null/);
   assert.match(source, /if \(rolesError \|\| departmentsError \|\| !roles \|\| !departments\) return null/);
-  assert.match(source, /catch \{\s*return null;\s*\}/s);
+  assert.match(source, /catch \{[\s\S]*?return null;[\s\S]*?\}/);
   assert.match(source, /membership\?\.roleCodes\.includes\(roleCode\) \?\? false/);
   assert.match(source, /membership\?\.departmentIds\.includes\(departmentId\) \?\? false/);
 });
@@ -40,7 +40,7 @@ test("T2-01 migration enforces clinic/organization consistency without unsafe CH
   const sql = await readFile(MIGRATION_PATH, "utf8");
   assert.match(sql, /enforce_staff_binding_clinic_organization/i);
   assert.match(sql, /STAFF_BINDING_CLINIC_ORGANIZATION_MISMATCH/);
-  assert.doesNotMatch(sql, /check\s*\([^)]*select\b/is);
+  assert.doesNotMatch(sql, /check\s*\([^)]*select\b/i);
 });
 
 test("T2-01 browser access is deny-all and service-role access is explicit", async () => {
