@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateCapacityBooking } from "@/lib/domain/appointments/capacityBooking";
+import { validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "APPOINTMENT_VALIDATE_FAILED";
@@ -27,7 +28,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for appointment operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "appointment.validate");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -53,7 +57,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const validation = await validateCapacityBooking(context, {
+    const validation = await validateCapacityBooking(access, {
       patientId,
       date: String(body.date || ""),
       time: String(body.time || ""),
