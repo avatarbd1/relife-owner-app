@@ -4,11 +4,12 @@ import {
   type CapacityBookingValidation,
 } from "@/lib/domain/appointments/capacityBooking";
 import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { createAppointment, getPatientForContext } from "@/lib/webos/reception";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
   const typed = error as Error & { validation?: CapacityBookingValidation };
@@ -60,17 +61,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for appointment operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const patient = await getPatientForContext(context, String(body.patientId || ""));
+    const patient = await getPatientForContext(access, String(body.patientId || ""));
     if (!patient || patient.department === "All") {
       return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
     }
 
-    assertCanPerform(context, "appointment.create", patient.department);
+    // Validate staff has access to this patient's department
+    validateDepartmentAccess(access, patient.department);
+    validateTenantScope(access, tenant, "appointment.create");
+
+    assertCanPerform(access, "appointment.create", patient.department);
 
     const isPhysio = patient.department === "Physio";
     const lockKey = isPhysio
@@ -79,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     const result = await withMutationLock(lockKey, () => {
       if (isPhysio) {
-        return createCapacityBooking(context, {
+        return createCapacityBooking(access, {
           patientId: patient.patientId,
           date: String(body.date || ""),
           time: String(body.time || ""),
@@ -87,7 +94,7 @@ export async function POST(request: NextRequest) {
           remarks: String(body.remarks || ""),
         });
       }
-      return createAppointment(context, {
+      return createAppointment(access, {
         patientId: patient.patientId,
         date: body.date,
         time: body.time,
@@ -97,7 +104,7 @@ export async function POST(request: NextRequest) {
     });
 
     await recordActorWorkGamification({
-      context,
+      context: access,
       department: patient.department,
       purpose: "reception",
       eventType: "appointment_booked",
