@@ -13,157 +13,115 @@ export interface StaffMembership {
   isDefault: boolean;
 }
 
+interface StaffBindingRow {
+  id: string;
+  status: "active" | "inactive";
+  is_default: boolean;
+}
+
+interface StaffRoleRow {
+  role_code: string;
+}
+
+interface StaffDepartmentRow {
+  department_id: string;
+}
+
 /**
- * Load staff membership and authorization info.
- * Fails closed: returns null if staff has no active binding or missing required data.
+ * Loads the active staff binding for one exact organization + clinic scope.
+ * Any missing/ambiguous/error state fails closed.
  */
 export async function loadStaffMembership(
   client: SupabaseClient,
   scope: TenantScope,
-  staffId: string
+  staffId: string,
 ): Promise<StaffMembership | null> {
+  const normalizedStaffId = staffId.trim();
+  if (!normalizedStaffId) return null;
+
   try {
-    // Get staff binding
-    const { data: bindings, error: bindingError } = await client
+    const relife = client.schema("relife");
+    const { data: binding, error: bindingError } = await relife
       .from("staff_tenant_bindings")
-      .select("*")
+      .select("id,status,is_default")
       .eq("organization_id", scope.organizationId)
       .eq("clinic_id", scope.clinicId)
-      .eq("staff_id", staffId)
+      .eq("staff_id", normalizedStaffId)
       .eq("status", "active")
-      .single();
+      .maybeSingle<StaffBindingRow>();
 
-    if (bindingError || !bindings) {
-      // No active binding found
-      return null;
-    }
+    if (bindingError || !binding) return null;
 
-    // Get staff roles
-    const { data: roles, error: rolesError } = await client
-      .from("staff_tenant_roles")
-      .select("role_code")
-      .eq("organization_id", scope.organizationId)
-      .eq("clinic_id", scope.clinicId)
-      .eq("staff_id", staffId);
+    const [{ data: roles, error: rolesError }, { data: departments, error: departmentsError }] = await Promise.all([
+      relife.from("staff_tenant_roles").select("role_code").eq("binding_id", binding.id),
+      relife.from("staff_tenant_departments").select("department_id").eq("binding_id", binding.id),
+    ]);
 
-    if (rolesError) {
-      console.error("Failed to load staff roles:", rolesError);
-      return null; // Fail closed
-    }
-
-    // Get staff departments
-    const { data: departments, error: deptsError } = await client
-      .from("staff_tenant_departments")
-      .select("department_id")
-      .eq("organization_id", scope.organizationId)
-      .eq("clinic_id", scope.clinicId)
-      .eq("staff_id", staffId);
-
-    if (deptsError) {
-      console.error("Failed to load staff departments:", deptsError);
-      return null; // Fail closed
-    }
+    if (rolesError || departmentsError || !roles || !departments) return null;
 
     return {
-      staffId,
+      staffId: normalizedStaffId,
       organizationId: scope.organizationId,
       clinicId: scope.clinicId,
-      roleCodes: roles.map((r) => r.role_code),
-      departmentIds: departments.map((d) => d.department_id),
-      status: bindings.status,
-      isDefault: bindings.is_default,
+      roleCodes: (roles as StaffRoleRow[]).map((row) => row.role_code),
+      departmentIds: (departments as StaffDepartmentRow[]).map((row) => row.department_id),
+      status: binding.status,
+      isDefault: binding.is_default,
     };
-  } catch (error) {
-    console.error("Error loading staff membership:", error);
-    return null; // Fail closed
+  } catch {
+    return null;
   }
 }
 
-/**
- * Verify staff has required role.
- * Fails closed: returns false if membership not found or role not assigned.
- */
 export async function staffHasRole(
   client: SupabaseClient,
   scope: TenantScope,
   staffId: string,
-  roleCode: string
+  roleCode: string,
 ): Promise<boolean> {
   const membership = await loadStaffMembership(client, scope, staffId);
-  if (!membership) return false;
-  return membership.roleCodes.includes(roleCode);
+  return membership?.roleCodes.includes(roleCode) ?? false;
 }
 
-/**
- * Verify staff has required department access.
- * Fails closed: returns false if membership not found or department not assigned.
- */
 export async function staffHasDepartmentAccess(
   client: SupabaseClient,
   scope: TenantScope,
   staffId: string,
-  departmentId: string
+  departmentId: string,
 ): Promise<boolean> {
   const membership = await loadStaffMembership(client, scope, staffId);
-  if (!membership) return false;
-  return membership.departmentIds.includes(departmentId);
+  return membership?.departmentIds.includes(departmentId) ?? false;
 }
 
-/**
- * Verify staff can access any department.
- * Fails closed: returns false if membership not found or no departments assigned.
- */
 export async function staffHasAnyDepartment(
   client: SupabaseClient,
   scope: TenantScope,
-  staffId: string
+  staffId: string,
 ): Promise<boolean> {
   const membership = await loadStaffMembership(client, scope, staffId);
-  if (!membership) return false;
-  return membership.departmentIds.length > 0;
+  return (membership?.departmentIds.length ?? 0) > 0;
 }
 
-/**
- * Require staff membership, fail closed.
- * Throws error if staff has no active membership or missing role/department.
- */
 export async function requireStaffMembership(
   client: SupabaseClient,
   scope: TenantScope,
   staffId: string,
-  options?: {
-    requireRole?: string;
-    requireDepartment?: string;
-  }
+  options?: { requireRole?: string; requireDepartment?: string },
 ): Promise<StaffMembership> {
   const membership = await loadStaffMembership(client, scope, staffId);
-  if (!membership) {
-    throw new Error("STAFF_MEMBERSHIP_NOT_FOUND");
-  }
-
+  if (!membership) throw new Error("STAFF_MEMBERSHIP_NOT_FOUND");
   if (options?.requireRole && !membership.roleCodes.includes(options.requireRole)) {
     throw new Error("STAFF_ROLE_NOT_ASSIGNED");
   }
-
   if (options?.requireDepartment && !membership.departmentIds.includes(options.requireDepartment)) {
     throw new Error("STAFF_DEPARTMENT_NOT_ASSIGNED");
   }
-
   return membership;
 }
 
-/**
- * Cross-department denial: verify both staff and patient belong to same department.
- * Fails closed: denies access if either has no department or departments don't intersect.
- */
-export function checkCrossDepartmentAccess(
-  staffDepartments: string[],
-  patientDepartments: string[]
-): boolean {
-  if (staffDepartments.length === 0 || patientDepartments.length === 0) {
-    return false; // Fail closed
-  }
-  // Check if there's any intersection
-  const staffDeptSet = new Set(staffDepartments);
-  return patientDepartments.some((dept) => staffDeptSet.has(dept));
+/** Department access is denied unless both sides have at least one matching department. */
+export function checkCrossDepartmentAccess(staffDepartments: string[], patientDepartments: string[]): boolean {
+  if (staffDepartments.length === 0 || patientDepartments.length === 0) return false;
+  const staffDepartmentSet = new Set(staffDepartments);
+  return patientDepartments.some((department) => staffDepartmentSet.has(department));
 }
