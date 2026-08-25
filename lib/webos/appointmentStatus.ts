@@ -106,6 +106,7 @@ async function projectCompletedAppointment(
 
 export async function updateAppointmentStatus(
   context: AccessContext,
+  organizationId: string,
   clinicId: string,
   input: {
     appointmentId: string;
@@ -203,7 +204,7 @@ export async function updateAppointmentStatus(
       previous,
       status,
       "Telegram → Web today appointment status parity",
-      "RELIFE",
+      organizationId,
       clinicId,
       "AMTALI-01",
       `${clinicId}:${appointmentId}`,

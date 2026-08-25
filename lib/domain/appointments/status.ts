@@ -25,6 +25,7 @@ function normalize(value: unknown): string {
  */
 export async function updateUnifiedAppointmentStatus(
   context: AccessContext,
+  organizationId: string,
   clinicId: string,
   input: {
     appointmentId: string;
@@ -45,7 +46,7 @@ export async function updateUnifiedAppointmentStatus(
   }
 
   try {
-    return await updateAppointmentStatus(context, clinicId, {
+    return await updateAppointmentStatus(context, organizationId, clinicId, {
       appointmentId,
       department,
       status,
