@@ -4,8 +4,6 @@ import { randomUUID } from "node:crypto";
 import {
   RELIFE_SYSTEM,
   dhakaClockParts,
-  ledgerClinicId,
-  relifeRecordId,
   workbookForDepartment,
 } from "@/lib/config/relifeSystem";
 import {
@@ -146,6 +144,8 @@ function requireSheetId(map: Map<string, number>, title: string): number {
 
 export async function createPayment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: PaymentCreateInput
 ): Promise<{ receiptNo: string; due: number; duplicate: boolean }> {
   const patientId = normalize(input.patientId).toUpperCase();
@@ -292,6 +292,7 @@ export async function createPayment(
     .filter(Boolean)
     .join(" | ");
 
+  const recordId = `${clinicId}:${receiptNo}`;
   const paymentRow = rowForHeaders(paymentHeaders, {
     Receipt_No: receiptNo,
     Date: now.date,
@@ -307,10 +308,10 @@ export async function createPayment(
     Remarks: remarks,
     Time: now.time,
     Session_Type: normalize(input.sessionType),
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: ledgerClinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(department, receiptNo),
+    Record_ID: recordId,
     Provider_ID: context.staffId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
     Source_Type: RELIFE_SYSTEM.sourceType,
@@ -335,10 +336,10 @@ export async function createPayment(
       paymentMethod: method,
     }),
     Reason: "Finance domain action",
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: ledgerClinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(department, receiptNo),
+    Record_ID: recordId,
     Encounter_ID: "",
     Provider_ID: context.staffId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
