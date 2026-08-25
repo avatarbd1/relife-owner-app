@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { uploadPatientReportToPrivateStorage } from "@/lib/webos/reportStorage";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 export const runtime = "nodejs";
 
@@ -10,7 +10,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
     const form = await request.formData();
     const patientId = String(form.get("patientId") || "").trim();
     const file = form.get("file");
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "REPORT_FILE_REQUIRED" }, { status: 400 });
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const result = await uploadPatientReportToPrivateStorage(context, {
+    const result = await uploadPatientReportToPrivateStorage(access, tenant.organizationId, tenant.clinicId, {
       patientId,
       fileName: file.name,
       mimeType: file.type,

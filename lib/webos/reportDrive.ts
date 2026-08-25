@@ -220,6 +220,8 @@ export async function downloadReportFromDrive(
 
 export async function uploadPatientReport(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     patientId: string;
     fileName: string;
@@ -271,7 +273,6 @@ export async function uploadPatientReport(
 
   const uploaded = await uploadToDrive(input.bytes, fileName, mimeType);
   const now = dhakaNow();
-  const clinic = clinicId(department);
   await appendSheetValues(workbook, "'14_Reports'!A:Z", [
     rowForHeaders(headers, {
       Report_ID: reportId,
@@ -283,10 +284,10 @@ export async function uploadPatientReport(
       Upload_Date: now.date,
       Uploaded_By: context.staffId,
       File_Drive_Link: uploaded.webViewLink,
-      Organization_ID: "RELIFE",
-      Clinic_ID: clinic,
+      Organization_ID: organizationId,
+      Clinic_ID: clinicId,
       Branch_ID: "AMTALI-01",
-      Record_ID: `${clinic}:${reportId}`,
+      Record_ID: `${clinicId}:${reportId}`,
       Encounter_ID: "",
       Provider_ID: context.staffId,
       Source_System: "web_pwa",
@@ -310,10 +311,10 @@ export async function uploadPatientReport(
       "",
       JSON.stringify({ fileName, mimeType, driveFileId: uploaded.id }),
       "Web PWA patient report upload",
-      "RELIFE",
-      clinic,
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `${clinic}:${reportId}`,
+      `${clinicId}:${reportId}`,
       "",
       context.staffId,
       "web_pwa",

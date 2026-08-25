@@ -165,6 +165,8 @@ export async function getPendingCashMovements(
 
 export async function finalizeCashMovement(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     movementId: string;
     department: ClinicDepartment | string;
@@ -242,7 +244,6 @@ export async function finalizeCashMovement(
   await batchUpdateSpreadsheet(workbook, requests);
 
   try {
-    const clinic = clinicId(department);
     await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [[
       `AUD-${randomUUID()}`,
       now.timestamp,
@@ -254,10 +255,10 @@ export async function finalizeCashMovement(
       currentStatus,
       decision,
       `Requested ${requestedAmount}; received ${receivedAmount}; difference ${difference}`,
-      "RELIFE",
-      clinic,
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `${clinic}:${movementId}`,
+      `${clinicId}:${movementId}`,
       "",
       context.staffId,
       "web_pwa",
