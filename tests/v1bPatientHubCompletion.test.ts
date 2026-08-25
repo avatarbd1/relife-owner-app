@@ -128,7 +128,7 @@ test("Direct patient and clinical pages resolve patients through server-side acc
   const updateApi = source("app/api/patients/[patientId]/route.ts");
 
   assert.match(patientPage, /getPatientForContext\(context,/);
-  assert.match(clinicalPage, /getPatientForContext\(context,/);
+  assert.match(clinicalPage, /getPatientForContext\(access,/);
   assert.match(updateApi, /getPatientForContext\(access,/);
   assert.match(patientPage, /if \(!patient \|\| patient\.department === "All"\) notFound\(\)/);
   assert.match(clinicalPage, /if \(!patient \|\| patient\.department === "All"\) notFound\(\)/);

@@ -115,6 +115,8 @@ function webId(prefix: "AS" | "PL" | "TR"): string {
 
 function auditRow(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   action: string,
   entityType: string,
   entityId: string,
@@ -133,10 +135,10 @@ function auditRow(
     "",
     afterValue,
     "Web OS W5 clinical action",
-    "RELIFE",
-    "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-PHYSIO:${entityId}`,
+    `${clinicId}:${entityId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -188,12 +190,15 @@ async function assertClinicalWrite(context: AccessContext, patient: PatientRecor
   assertCanPerform(context, "clinical.write", "Physio", conditions);
 }
 
-function parseAssessments(rows: string[][], patientId: string): ClinicalAssessment[] {
+function parseAssessments(rows: string[][], patientId: string, clinicId: string): ClinicalAssessment[] {
   if (rows.length < 2) return [];
   const h = rows[0];
   const idx = (name: string) => headerIndex(h, name);
+  const clinicIdIdx = idx("Clinic_ID");
   return rows.slice(1).flatMap((row) => {
     if (at(row, idx("Patient_ID")) !== patientId) return [];
+    const rowClinicId = at(row, clinicIdIdx);
+    if (rowClinicId && rowClinicId !== clinicId) return [];
     const assessmentId = at(row, idx("Assessment_ID"));
     if (!assessmentId) return [];
     return [{
@@ -206,12 +211,15 @@ function parseAssessments(rows: string[][], patientId: string): ClinicalAssessme
   }).reverse();
 }
 
-function parsePlans(rows: string[][], patientId: string): TreatmentPlanRecord[] {
+function parsePlans(rows: string[][], patientId: string, clinicId: string): TreatmentPlanRecord[] {
   if (rows.length < 2) return [];
   const h = rows[0];
   const idx = (name: string) => headerIndex(h, name);
+  const clinicIdIdx = idx("Clinic_ID");
   return rows.slice(1).flatMap((row) => {
     if (at(row, idx("Patient_ID")) !== patientId) return [];
+    const rowClinicId = at(row, clinicIdIdx);
+    if (rowClinicId && rowClinicId !== clinicId) return [];
     const planId = at(row, idx("Plan_ID"));
     if (!planId) return [];
     return [{
@@ -231,12 +239,15 @@ function parsePlans(rows: string[][], patientId: string): TreatmentPlanRecord[] 
   }).reverse();
 }
 
-function parseTreatments(rows: string[][], patientId: string): TreatmentSessionRecord[] {
+function parseTreatments(rows: string[][], patientId: string, clinicId: string): TreatmentSessionRecord[] {
   if (rows.length < 2) return [];
   const h = rows[0];
   const idx = (name: string) => headerIndex(h, name);
+  const clinicIdIdx = idx("Clinic_ID");
   return rows.slice(1).flatMap((row) => {
     if (at(row, idx("Patient_ID")) !== patientId) return [];
+    const rowClinicId = at(row, clinicIdIdx);
+    if (rowClinicId && rowClinicId !== clinicId) return [];
     const treatmentId = at(row, idx("Treatment_ID"));
     if (!treatmentId) return [];
     return [{
@@ -260,13 +271,14 @@ function parseTreatments(rows: string[][], patientId: string): TreatmentSessionR
 
 export async function getClinicalWorkspace(
   context: AccessContext,
+  clinicId: string,
   patientId: string
 ): Promise<ClinicalWorkspace> {
   const patient = await requirePhysioPatient(context, patientId);
   const snapshot = await fetchSheetRanges("physio", ["10_Assessments", "12_Treatment_Plans", "05_Treatments"]);
-  const assessments = parseAssessments(snapshot["10_Assessments"] || [], patient.patientId);
-  const plans = parsePlans(snapshot["12_Treatment_Plans"] || [], patient.patientId);
-  const sessions = parseTreatments(snapshot["05_Treatments"] || [], patient.patientId);
+  const assessments = parseAssessments(snapshot["10_Assessments"] || [], patient.patientId, clinicId);
+  const plans = parsePlans(snapshot["12_Treatment_Plans"] || [], patient.patientId, clinicId);
+  const sessions = parseTreatments(snapshot["05_Treatments"] || [], patient.patientId, clinicId);
   const conditions = await clinicalConditions(context, patient);
   const canWrite = canPerform(context, "clinical.write", "Physio", conditions);
   return {
@@ -287,6 +299,8 @@ export async function getClinicalWorkspace(
 
 export async function addQuickAssessment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: { patientId: string; category: string; findings: string }
 ): Promise<{ assessmentId: string }> {
   const patient = await requirePhysioPatient(context, normalize(input.patientId));
@@ -307,10 +321,10 @@ export async function addQuickAssessment(
     Test_Data: JSON.stringify({ Mode: "Quick", Findings: findings }),
     Created_By: context.staffId,
     Created_At: now.timestamp,
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${assessmentId}`,
+    Record_ID: `${clinicId}:${assessmentId}`,
     Encounter_ID: `ENC-${assessmentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
@@ -325,13 +339,15 @@ export async function addQuickAssessment(
     "physio",
     "10_Assessments",
     assessmentRow,
-    auditRow(context, "clinical.assessment.create", "Assessment", assessmentId, patient.patientId, findings, now)
+    auditRow(context, organizationId, clinicId, "clinical.assessment.create", "Assessment", assessmentId, patient.patientId, findings, now)
   );
   return { assessmentId };
 }
 
 export async function createTreatmentPlan(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     patientId: string;
     diagnosis?: string;
@@ -364,10 +380,10 @@ export async function createTreatmentPlan(
     Created_By: context.staffId,
     Created_Date: now.date,
     Status: "Active",
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${planId}`,
+    Record_ID: `${clinicId}:${planId}`,
     Encounter_ID: `ENC-${planId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
@@ -405,6 +421,8 @@ export async function createTreatmentPlan(
     updates,
     auditRow(
       context,
+      organizationId,
+      clinicId,
       "clinical.plan.create",
       "TreatmentPlan",
       planId,
@@ -418,6 +436,8 @@ export async function createTreatmentPlan(
 
 export async function recordTreatmentSession(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     patientId: string;
     painBefore?: string;
@@ -458,10 +478,10 @@ export async function recordTreatmentSession(
     }
   }
 
-  const plans = parsePlans(planRows, patient.patientId);
+  const plans = parsePlans(planRows, patient.patientId, clinicId);
   const activePlan = plans.find((plan) => plan.status.toLowerCase() === "active");
   if (!activePlan) throw new Error("ACTIVE_PLAN_REQUIRED");
-  const sessions = parseTreatments(treatmentRows, patient.patientId);
+  const sessions = parseTreatments(treatmentRows, patient.patientId, clinicId);
   const sessionNo = sessions.filter((row) => row.planId === activePlan.planId).length + 1;
   const now = dhakaNow();
   const treatmentId = webId("TR");
@@ -485,10 +505,10 @@ export async function recordTreatmentSession(
     Remarks: [normalize(input.remarks), marker].filter(Boolean).join(" | "),
     Plan_ID: activePlan.planId,
     Pain: normalize(input.painAfter) || normalize(input.painBefore),
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${treatmentId}`,
+    Record_ID: `${clinicId}:${treatmentId}`,
     Encounter_ID: `ENC-${treatmentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
@@ -525,6 +545,8 @@ export async function recordTreatmentSession(
     updates,
     auditRow(
       context,
+      organizationId,
+      clinicId,
       "clinical.session.create",
       "Treatment",
       treatmentId,

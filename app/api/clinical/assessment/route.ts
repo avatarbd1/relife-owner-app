@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     const patientId = String(body.patientId || "").trim();
     const result = await withMutationLock(`patient:Physio:${patientId}`, () =>
-      addQuickAssessment(access, {
+      addQuickAssessment(access, tenant.organizationId, tenant.clinicId, {
         patientId,
         category: body.category,
         findings: body.findings,

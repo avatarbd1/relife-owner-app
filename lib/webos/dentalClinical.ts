@@ -172,14 +172,17 @@ function chargeFromRemarks(remarks: string): number {
   return match ? money(match[1]) : 0;
 }
 
-function parseTreatments(rows: string[][], patientId: string): DentalTreatmentRecord[] {
+function parseTreatments(rows: string[][], patientId: string, clinicId: string): DentalTreatmentRecord[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const idx = (...names: string[]) => headerIndex(headers, ...names);
+  const clinicIdIdx = idx("Clinic_ID");
   return rows
     .slice(1)
     .flatMap((row) => {
       if (at(row, idx("Patient_ID")) !== patientId) return [];
+      const rowClinicId = at(row, clinicIdIdx);
+      if (rowClinicId && rowClinicId !== clinicId) return [];
       const treatmentId = at(row, idx("Treatment_ID"));
       if (!treatmentId) return [];
       const remarks = at(row, idx("Remarks"));
@@ -210,6 +213,8 @@ function parseTreatments(rows: string[][], patientId: string): DentalTreatmentRe
 
 function auditRow(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   treatmentId: string,
   patientId: string,
   beforeValue: string,
@@ -227,10 +232,10 @@ function auditRow(
     beforeValue,
     afterValue,
     "Dental clinical + billing atomic write",
-    "RELIFE",
-    "RELIFE-DENTAL",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-DENTAL:${treatmentId}`,
+    `${clinicId}:${treatmentId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -245,6 +250,7 @@ function auditRow(
 
 export async function getDentalClinicalWorkspace(
   context: AccessContext,
+  clinicId: string,
   patientId: string
 ): Promise<DentalClinicalWorkspace> {
   const patient = await requireDentalPatient(context, normalize(patientId));
@@ -260,12 +266,14 @@ export async function getDentalClinicalWorkspace(
       due: patient.due,
     },
     canWrite: canPerform(context, "clinical.write", "Dental", conditions),
-    treatments: parseTreatments(snapshot["05_Treatments"] || [], patient.patientId),
+    treatments: parseTreatments(snapshot["05_Treatments"] || [], patient.patientId, clinicId),
   };
 }
 
 export async function addDentalTreatmentNote(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     patientId: string;
     procedure: string;
@@ -398,10 +406,10 @@ export async function addDentalTreatmentNote(
     Dentist: context.staffId,
     Created_By: context.staffId,
     Created_At: now.timestamp,
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-DENTAL",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-DENTAL:${treatmentId}`,
+    Record_ID: `${clinicId}:${treatmentId}`,
     Encounter_ID: `ENC-${treatmentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
@@ -470,7 +478,7 @@ export async function addDentalTreatmentNote(
     "05_Treatments",
     rowForHeaders(headers, values),
     updates,
-    auditRow(context, treatmentId, patient.patientId, beforeValue, afterValue, now)
+    auditRow(context, organizationId, clinicId, treatmentId, patient.patientId, beforeValue, afterValue, now)
   );
   invalidatePatientsCache();
 

@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
     const patientId = String(body.patientId || "").trim();
     const result = await withMutationLock(`patient:Dental:${patientId}`, () =>
-      addDentalTreatmentNote(access, {
+      addDentalTreatmentNote(access, tenant.organizationId, tenant.clinicId, {
         patientId,
         procedure: body.procedure,
         toothArea: body.toothArea,

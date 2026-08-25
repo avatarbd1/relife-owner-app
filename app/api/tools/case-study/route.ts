@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { generateCaseStudyLesson } from "@/lib/webos/ai";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await generateCaseStudyLesson(context, {
+    const result = await generateCaseStudyLesson(access, tenant.clinicId, {
       patientId: body.patientId,
       lessonTitle: body.lessonTitle,
     });
