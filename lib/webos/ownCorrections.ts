@@ -239,6 +239,8 @@ export async function listOwnTodayCorrectionEntries(
 
 export async function deleteOwnLatestTodayPayment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: { department: ClinicDepartment | string; receiptNo: string }
 ): Promise<{
   receiptNo: string;
@@ -439,7 +441,6 @@ export async function deleteOwnLatestTodayPayment(
     }
   }
 
-  const clinic = clinicId(department);
   const rawData = JSON.stringify(
     Object.fromEntries(ph.map((header, index) => [header, paymentRow[index] ?? ""]))
   ).slice(0, 30000);
@@ -457,10 +458,10 @@ export async function deleteOwnLatestTodayPayment(
         Amount: amount,
         Sessions: sessions,
         Raw_Data_JSON: rawData,
-        Organization_ID: "RELIFE",
-        Clinic_ID: clinic,
+        Organization_ID: organizationId,
+        Clinic_ID: clinicId,
         Branch_ID: "AMTALI-01",
-        Record_ID: `${clinic}:${deleteId}`,
+        Record_ID: `${clinicId}:${deleteId}`,
         Provider_ID: context.staffId,
         Source_System: "web_pwa",
         Source_Type: "own_same_day_correction",

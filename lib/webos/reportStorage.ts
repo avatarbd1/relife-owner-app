@@ -203,6 +203,8 @@ export async function downloadPrivatePatientReport(
 
 export async function uploadPatientReportToPrivateStorage(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     patientId: string;
     fileName: string;
@@ -244,9 +246,8 @@ export async function uploadPatientReportToPrivateStorage(
   }
   if (!reportId) throw new Error("REPORT_ID_ALLOCATION_FAILED");
 
-  const clinic = clinicId(department);
   const path = objectPath({
-    clinic,
+    clinic: clinicId,
     patientId: patient.patientId,
     reportId,
     fileName,
@@ -267,10 +268,10 @@ export async function uploadPatientReportToPrivateStorage(
         Upload_Date: now.date,
         Uploaded_By: context.staffId,
         File_Drive_Link: privateLink,
-        Organization_ID: "RELIFE",
-        Clinic_ID: clinic,
+        Organization_ID: organizationId,
+        Clinic_ID: clinicId,
         Branch_ID: "AMTALI-01",
-        Record_ID: `${clinic}:${reportId}`,
+        Record_ID: `${clinicId}:${reportId}`,
         Encounter_ID: "",
         Provider_ID: context.staffId,
         Source_System: "web_pwa",
@@ -303,10 +304,10 @@ export async function uploadPatientReportToPrivateStorage(
       "",
       JSON.stringify({ storage: REPORT_BUCKET, objectPath: path, fileName, mimeType }),
       "Web PWA patient report upload",
-      "RELIFE",
-      clinic,
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `${clinic}:${reportId}`,
+      `${clinicId}:${reportId}`,
       "",
       context.staffId,
       "web_pwa",

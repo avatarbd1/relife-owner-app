@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { deleteOwnLatestTodayPayment } from "@/lib/webos/ownCorrections";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
   if (["ACCESS_DENIED", "OWN_ENTRY_REQUIRED"].includes(message)) return 403;
@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     if (!receiptNo || receiptNo !== confirmReceiptNo) {
       return NextResponse.json({ ok: false, error: "CONFIRMATION_MISMATCH" }, { status: 400 });
     }
-    const result = await deleteOwnLatestTodayPayment(context, {
+    const result = await deleteOwnLatestTodayPayment(access, tenant.organizationId, tenant.clinicId, {
       department: body.department,
       receiptNo,
     });

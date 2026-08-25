@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = await finalizeCashMovement(access, {
+    const result = await finalizeCashMovement(access, tenant.organizationId, tenant.clinicId, {
       movementId: body.movementId,
       department: body.department,
       decision: body.decision,
