@@ -48,7 +48,7 @@ test("Patient update resolves authorized department then uses the canonical pati
   const route = source("app/api/patients/[patientId]/route.ts");
   const resolve = route.indexOf("getPatientForContext(access, decodedPatientId)");
   const lock = route.indexOf("patient:${patient.department}:${decodedPatientId}");
-  const update = route.indexOf("updatePatientProfile(access, decodedPatientId");
+  const update = route.indexOf("updatePatientProfile(access, tenant.organizationId, tenant.clinicId, decodedPatientId");
   const invalidate = route.indexOf("invalidatePatientsCache()");
 
   assert.ok(resolve >= 0, "server must resolve the patient through access context");

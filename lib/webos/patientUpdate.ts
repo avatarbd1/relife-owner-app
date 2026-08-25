@@ -47,9 +47,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
 
 function normalizePhone(value: unknown): string {
   let digits = normalize(value).replace(/^'/, "").replace(/\D/g, "");
@@ -85,12 +82,12 @@ function dhakaNow(ref = new Date()) {
 
 function auditRow(
   context: AccessContext,
-  department: ClinicDepartment,
+  organizationId: string,
+  clinicId: string,
   patientId: string,
   summary: Record<string, string>,
   now: ReturnType<typeof dhakaNow>
 ): SheetCellValue[] {
-  const clinic = clinicId(department);
   return [
     `AUD-${randomUUID()}`,
     now.timestamp,
@@ -102,10 +99,10 @@ function auditRow(
     "",
     JSON.stringify(summary),
     "Web patient profile correction",
-    "RELIFE",
-    clinic,
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `${clinic}:${patientId}`,
+    `${clinicId}:${patientId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -120,6 +117,8 @@ function auditRow(
 
 export async function updatePatientProfile(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   patientId: string,
   input: PatientUpdateInput
 ): Promise<{ patientId: string }> {
@@ -187,7 +186,7 @@ export async function updatePatientProfile(
     "02_Patients",
     dataIndex + 2,
     row,
-    auditRow(context, department, patient.patientId, changed, now)
+    auditRow(context, organizationId, clinicId, patient.patientId, changed, now)
   );
   return { patientId: patient.patientId };
 }

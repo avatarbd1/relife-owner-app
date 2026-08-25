@@ -57,7 +57,7 @@ export async function PATCH(
     validateTenantScope(access, tenant, "patient.update");
 
     const result = await withMutationLock(`patient:${patient.department}:${decodedPatientId}`, () =>
-      updatePatientProfile(access, decodedPatientId, {
+      updatePatientProfile(access, tenant.organizationId, tenant.clinicId, decodedPatientId, {
         fullName: body.fullName,
         phone: body.phone,
         age: body.age,
