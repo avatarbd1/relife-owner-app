@@ -152,12 +152,13 @@ function buildSalaryAuditRow(
     paymentId: string;
     staffId: string;
     department: ClinicDepartment;
+    organizationId: string;
+    clinicId: string;
     amount: number;
     type: "Salary" | "Advance";
     paidFrom: string;
   }
 ): SheetValue[] {
-  const clinic = ledgerClinicId(input.department);
   return rowForHeaders(headers, {
     Audit_ID: `AUD-${randomUUID()}`,
     Timestamp: input.now.timestamp,
@@ -174,10 +175,10 @@ function buildSalaryAuditRow(
       paidFrom: input.paidFrom,
     }),
     Reason: "Finance domain action",
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: clinic,
+    Organization_ID: input.organizationId,
+    Clinic_ID: input.clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(input.department, input.paymentId),
+    Record_ID: `${input.clinicId}:${input.paymentId}`,
     Encounter_ID: "",
     Provider_ID: input.actorId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
@@ -192,6 +193,8 @@ function buildSalaryAuditRow(
 
 export async function paySalary(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: SalaryPayInput
 ): Promise<{ paymentId: string; duplicate: boolean }> {
   if (!context.roles.includes("Owner")) throw new Error("ACCESS_DENIED");
@@ -300,10 +303,10 @@ export async function paySalary(
     Paid_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: ledgerClinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(department, paymentId),
+    Record_ID: `${clinicId}:${paymentId}`,
     Provider_ID: context.staffId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
     Source_Type: RELIFE_SYSTEM.sourceType,
@@ -336,6 +339,8 @@ export async function paySalary(
     paymentId,
     staffId: staff.staffId,
     department,
+    organizationId,
+    clinicId,
     amount,
     type: input.type,
     paidFrom: input.paidFrom,

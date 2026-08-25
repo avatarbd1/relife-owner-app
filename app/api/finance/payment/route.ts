@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     if (department) {
       validateDepartmentAccess(access, department);
     }
-    const result = await createPayment(access, {
+    const result = await createPayment(access, tenant.organizationId, tenant.clinicId, {
       patientId: body.patientId,
       amount: Number(body.amount),
       discount: Number(body.discount || 0),

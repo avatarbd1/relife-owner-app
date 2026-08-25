@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     if (department === "Physio" || department === "Dental") {
       validateDepartmentAccess(access, department);
     }
-    const result = await requestExpense(access, {
+    const result = await requestExpense(access, tenant.organizationId, tenant.clinicId, {
       department: body.department,
       category: body.category,
       amount: Number(body.amount),

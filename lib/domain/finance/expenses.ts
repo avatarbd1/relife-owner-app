@@ -168,12 +168,13 @@ function buildExpenseAuditRow(
     action: string;
     expenseId: string;
     department: ClinicDepartment;
+    organizationId: string;
+    clinicId: string;
     beforeValue?: string;
     afterValue?: string;
     reason?: string;
   }
 ): SheetValue[] {
-  const clinic = ledgerClinicId(input.department);
   return rowForHeaders(headers, {
     Audit_ID: `AUD-${randomUUID()}`,
     Timestamp: input.now.timestamp,
@@ -185,10 +186,10 @@ function buildExpenseAuditRow(
     Before_Value: input.beforeValue || "",
     After_Value: input.afterValue || "",
     Reason: input.reason || "Finance domain action",
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: clinic,
+    Organization_ID: input.organizationId,
+    Clinic_ID: input.clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(input.department, input.expenseId),
+    Record_ID: `${input.clinicId}:${input.expenseId}`,
     Encounter_ID: "",
     Provider_ID: input.actorId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
@@ -203,6 +204,8 @@ function buildExpenseAuditRow(
 
 export async function requestExpense(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ExpenseRequestInput
 ): Promise<{ expenseId: string; duplicate: boolean }> {
   const department = input.department;
@@ -291,10 +294,10 @@ export async function requestExpense(
     Added_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: ledgerClinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(department, expenseId),
+    Record_ID: `${clinicId}:${expenseId}`,
     Provider_ID: context.staffId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
     Source_Type: RELIFE_SYSTEM.sourceType,
@@ -314,6 +317,8 @@ export async function requestExpense(
     action: "EXPENSE_REQUESTED",
     expenseId,
     department,
+    organizationId,
+    clinicId,
     afterValue: JSON.stringify({ category, amount, expenseType }),
   });
 
@@ -449,6 +454,8 @@ export async function decideExpense(input: {
 
 export async function payApprovedExpense(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ExpensePayInput
 ): Promise<{ alreadyPaid: boolean }> {
   const department = input.department;
@@ -509,6 +516,8 @@ export async function payApprovedExpense(
     action: "EXPENSE_PAID",
     expenseId: input.expenseId,
     department,
+    organizationId,
+    clinicId,
     beforeValue: beforeStatus,
     afterValue: `Paid from ${input.paidFrom}`,
   });

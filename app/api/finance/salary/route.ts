@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     if (!["Salary", "Advance"].includes(body.type)) {
       return NextResponse.json({ ok: false, error: "INVALID_PAYMENT_TYPE" }, { status: 400 });
     }
-    const result = await paySalary(access, {
+    const result = await paySalary(access, tenant.organizationId, tenant.clinicId, {
       staffId: body.staffId,
       amount: Number(body.amount),
       type: body.type,

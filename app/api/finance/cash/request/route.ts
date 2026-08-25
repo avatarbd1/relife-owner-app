@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = await requestCashMovement(access, {
+    const result = await requestCashMovement(access, tenant.organizationId, tenant.clinicId, {
       department: body.department,
       amount,
       toCustodian: body.toCustodian,
