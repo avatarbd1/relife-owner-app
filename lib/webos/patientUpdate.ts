@@ -47,7 +47,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-
 function normalizePhone(value: unknown): string {
   let digits = normalize(value).replace(/^'/, "").replace(/\D/g, "");
   if (digits.startsWith("880")) digits = digits.slice(3);
@@ -84,6 +83,7 @@ function auditRow(
   context: AccessContext,
   organizationId: string,
   clinicId: string,
+  department: ClinicDepartment,
   patientId: string,
   summary: Record<string, string>,
   now: ReturnType<typeof dhakaNow>
@@ -186,7 +186,7 @@ export async function updatePatientProfile(
     "02_Patients",
     dataIndex + 2,
     row,
-    auditRow(context, organizationId, clinicId, patient.patientId, changed, now)
+    auditRow(context, organizationId, clinicId, department, patient.patientId, changed, now)
   );
   return { patientId: patient.patientId };
 }
