@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { getPatientReportForContext } from "@/lib/webos/reports";
 import { downloadReportFromDrive } from "@/lib/webos/reportDrive";
@@ -45,21 +46,24 @@ export async function GET(
   { params }: { params: Promise<{ patientId: string; reportId: string }> }
 ) {
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for patient operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "patient.report.read");
     const { patientId, reportId } = await params;
     const patient = await getPatientForContext(
-      context,
+      access,
       decodeURIComponent(patientId)
     );
     if (!patient || patient.department === "All") {
       return new NextResponse("Not found", { status: 404 });
     }
-    if (!canPerform(context, "patient.report.read", patient.department)) {
+    if (!canPerform(access, "patient.report.read", patient.department)) {
       return new NextResponse("Not found", { status: 404 });
     }
 
     const report = await getPatientReportForContext(
-      context,
+      access,
       patient,
       decodeURIComponent(reportId)
     );

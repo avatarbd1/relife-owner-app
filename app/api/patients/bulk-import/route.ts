@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseCsv } from "@/lib/csv";
 import { invalidatePatientsCache } from "@/lib/patients";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { registerPatient } from "@/lib/webos/reception";
@@ -45,7 +46,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for patient operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "patient.bulk.import");
     const formData = await request.formData();
     const value = formData.get("file");
     if (!(value instanceof File)) {
@@ -115,7 +119,14 @@ export async function POST(request: NextRequest) {
         errors.push({ row: csvRowNumber, error: "Department must be Physio or Dental" });
         continue;
       }
-      if (!canPerform(context, "patient.create", department)) {
+      try {
+        validateDepartmentAccess(access, department);
+      } catch (error) {
+        failed += 1;
+        errors.push({ row: csvRowNumber, error: `No patient.create access for ${department}` });
+        continue;
+      }
+      if (!canPerform(access, "patient.create", department)) {
         failed += 1;
         errors.push({ row: csvRowNumber, error: `No patient.create access for ${department}` });
         continue;
@@ -135,7 +146,7 @@ export async function POST(request: NextRequest) {
 
       try {
         await withMutationLock(`patient-register:${department}`, () =>
-          registerPatient(context, {
+          registerPatient(access, {
             department,
             fullName,
             fatherHusbandName: at(fatherHusbandIdx) || undefined,
@@ -154,7 +165,7 @@ export async function POST(request: NextRequest) {
 
         if (department === "Physio") {
           try {
-            await consumePhysioInventorySystem(["Patient Card"], context.staffId, "Auto-Registration");
+            await consumePhysioInventorySystem(["Patient Card"], access.staffId, "Auto-Registration");
           } catch (inventoryError) {
             console.error("Bulk-import patient saved but inventory consumption failed", inventoryError);
           }
