@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     invalidatePatientsCache();
     if (body.department === "Physio") {
       try {
-        await consumePhysioInventorySystem(["Patient Card"], access.staffId, "Auto-Registration");
+        await consumePhysioInventorySystem(["Patient Card"], access.staffId, tenant.organizationId, tenant.clinicId, "Auto-Registration");
       } catch (error) {
         console.error("Patient saved but automatic inventory consumption failed", error);
       }
