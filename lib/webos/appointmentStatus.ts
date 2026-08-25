@@ -59,10 +59,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
 function dhakaNow(ref = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Dhaka",
@@ -110,6 +106,7 @@ async function projectCompletedAppointment(
 
 export async function updateAppointmentStatus(
   context: AccessContext,
+  clinicId: string,
   input: {
     appointmentId: string;
     department: ClinicDepartment | string;
@@ -134,6 +131,7 @@ export async function updateAppointmentStatus(
   const idIdx = headerIndex(headers, "Appointment_ID");
   const statusIdx = headerIndex(headers, "Status");
   const departmentIdx = headerIndex(headers, "Department");
+  const clinicIdIdx = headerIndex(headers, "Clinic_ID");
   const patientIdx = headerIndex(headers, "Patient_ID");
   const therapistIdx = headerIndex(headers, "Therapist");
   const dateIdx = headerIndex(headers, "Date");
@@ -141,7 +139,12 @@ export async function updateAppointmentStatus(
   const updatedIdx = headerIndex(headers, "Last_Updated", "Updated_At");
   if (idIdx < 0 || statusIdx < 0) throw new Error("SCHEMA_MISMATCH");
 
-  const rowOffset = rows.slice(1).findIndex((row) => at(row, idIdx) === appointmentId);
+  const rowOffset = rows.slice(1).findIndex((row) => {
+    if (at(row, idIdx) !== appointmentId) return false;
+    const rowClinicId = at(row, clinicIdIdx);
+    if (rowClinicId && rowClinicId !== clinicId) return false;
+    return true;
+  });
   if (rowOffset < 0) throw new Error("APPOINTMENT_NOT_FOUND");
   const row = rows[rowOffset + 1];
   const rowDepartment = at(row, departmentIdx);
@@ -189,7 +192,6 @@ export async function updateAppointmentStatus(
   await Promise.all(updates);
 
   try {
-    const clinic = clinicId(department);
     await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [[
       `AUD-${randomUUID()}`,
       now.timestamp,
@@ -202,9 +204,9 @@ export async function updateAppointmentStatus(
       status,
       "Telegram → Web today appointment status parity",
       "RELIFE",
-      clinic,
+      clinicId,
       "AMTALI-01",
-      `${clinic}:${appointmentId}`,
+      `${clinicId}:${appointmentId}`,
       "",
       context.staffId,
       "web_pwa",

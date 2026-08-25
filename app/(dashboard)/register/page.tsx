@@ -4,7 +4,7 @@ import { StatusBadge } from "@/components/FeedbackUI";
 import { formatBDT } from "@/lib/format";
 import type { Scope } from "@/lib/types";
 import { getDailyRegisterSnapshot } from "@/lib/webos/dailyRegister";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 const SCOPE_LABEL: Record<Scope, string> = {
@@ -25,13 +25,14 @@ export default async function RegisterPage({
 }: {
   searchParams?: Promise<{ date?: string }>;
 }) {
-  const [context, cookieStore, params] = await Promise.all([
-    requireCurrentAccessContext(),
+  const [tenantContext, cookieStore, params] = await Promise.all([
+    requireCurrentTenantAccessContext(),
     cookies(),
     searchParams ? searchParams : Promise.resolve({} as { date?: string }),
   ]);
-  const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
-  const snapshot = await getDailyRegisterSnapshot(context, scope, params.date);
+  const { access, tenant } = tenantContext;
+  const scope = resolveAuthorizedScope(access, cookieStore.get("relife_scope")?.value);
+  const snapshot = await getDailyRegisterSnapshot(access, scope, tenant.clinicId, params.date);
 
   return (
     <div className="space-y-4">
