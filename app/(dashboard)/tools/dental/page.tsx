@@ -2,7 +2,7 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/FeedbackUI";
 import { formatBDT } from "@/lib/format";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getDailyRegisterSnapshot } from "@/lib/webos/dailyRegister";
 
 export default async function DentalToolsPage({
@@ -10,21 +10,22 @@ export default async function DentalToolsPage({
 }: {
   searchParams?: Promise<{ date?: string }>;
 }) {
-  const [context, params] = await Promise.all([
-    requireCurrentAccessContext(),
+  const [tenantContext, params] = await Promise.all([
+    requireCurrentTenantAccessContext(),
     searchParams ? searchParams : Promise.resolve({} as { date?: string }),
   ]);
-  const hasDentalAccess = context.departmentAccess.includes("Dental") || context.departmentAccess.includes("All");
+  const { access, tenant } = tenantContext;
+  const hasDentalAccess = access.departmentAccess.includes("Dental") || access.departmentAccess.includes("All");
   if (!hasDentalAccess) {
     return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">Dental access is not available for this account.</div>;
   }
 
-  const register = await getDailyRegisterSnapshot(context, "dental", params.date);
-  const canReadPatients = canPerform(context, "patient.read", "Dental");
-  const canReadClinical = canPerform(context, "clinical.read", "Dental");
-  const canBook = canPerform(context, "appointment.create", "Dental");
-  const canTakePayment = canPerform(context, "payment.create", "Dental");
-  const canReadFinance = canPerform(context, "report.read_financial", "Dental");
+  const register = await getDailyRegisterSnapshot(access, "dental", tenant.clinicId, params.date);
+  const canReadPatients = canPerform(access, "patient.read", "Dental");
+  const canReadClinical = canPerform(access, "clinical.read", "Dental");
+  const canBook = canPerform(access, "appointment.create", "Dental");
+  const canTakePayment = canPerform(access, "payment.create", "Dental");
+  const canReadFinance = canPerform(access, "report.read_financial", "Dental");
 
   return (
     <div className="space-y-4">

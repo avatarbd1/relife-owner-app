@@ -16,6 +16,7 @@ import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 type ClinicDepartment = "Physio" | "Dental";
+
 type SheetValue = string | number | boolean;
 
 export interface PatientCreateInput {
@@ -152,7 +153,10 @@ function sheetTimeFromInput(value: string): string {
   if (hour > 23 || minute > 59) throw new Error("INVALID_TIME");
   const suffix = hour >= 12 ? "PM" : "AM";
   const hour12 = hour % 12 || 12;
-  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
+  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(
+    2,
+    "0"
+  )} ${suffix}`;
 }
 
 function rowForHeaders(
@@ -379,18 +383,20 @@ function parseAppointments(
   return rows.slice(1).flatMap((row) => {
     const appointmentId = at(row, idIdx);
     if (!appointmentId) return [];
-    return [{
-      appointmentId,
-      date: at(row, dateIdx),
-      time: at(row, timeIdx),
-      patientId: at(row, patientIdIdx),
-      patientName: at(row, patientNameIdx),
-      department: parseDepartment(at(row, departmentIdx), fallback),
-      therapist: at(row, therapistIdx),
-      status: at(row, statusIdx) || "Scheduled",
-      remarks: at(row, remarksIdx),
-      receivedBy: at(row, receivedByIdx),
-    }];
+    return [
+      {
+        appointmentId,
+        date: at(row, dateIdx),
+        time: at(row, timeIdx),
+        patientId: at(row, patientIdIdx),
+        patientName: at(row, patientNameIdx),
+        department: parseDepartment(at(row, departmentIdx), fallback),
+        therapist: at(row, therapistIdx),
+        status: at(row, statusIdx) || "Scheduled",
+        remarks: at(row, remarksIdx),
+        receivedBy: at(row, receivedByIdx),
+      },
+    ];
   });
 }
 
@@ -464,7 +470,9 @@ export async function getClinicianOptions(
 function normalizeGender(value: unknown): "Male" | "Female" | "" {
   const text = normalize(value).toLowerCase();
   if (["male", "m", "পুরুষ", "ছেলে"].includes(text)) return "Male";
-  if (["female", "f", "মহিলা", "নারী", "মেয়ে", "মেয়ে"].includes(text)) return "Female";
+  if (["female", "f", "মহিলা", "নারী", "মেয়ে", "মেয়ে"].includes(text)) {
+    return "Female";
+  }
   return "";
 }
 
@@ -505,7 +513,9 @@ function allocatePhysioResource(
   needsTraction: boolean
 ): FlowFields {
   const gender = normalizeGender(genderValue);
-  if (!gender) return { Gender: "", Room: "Waiting", Bed: "", Station: "Waiting" };
+  if (!gender) {
+    return { Gender: "", Room: "Waiting", Bed: "", Station: "Waiting" };
+  }
 
   const slot = appointments.filter(
     (row) =>

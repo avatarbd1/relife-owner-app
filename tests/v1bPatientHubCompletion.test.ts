@@ -48,7 +48,7 @@ test("Patient update resolves authorized department then uses the canonical pati
   const route = source("app/api/patients/[patientId]/route.ts");
   const resolve = route.indexOf("getPatientForContext(access, decodedPatientId)");
   const lock = route.indexOf("patient:${patient.department}:${decodedPatientId}");
-  const update = route.indexOf("updatePatientProfile(access, decodedPatientId");
+  const update = route.indexOf("updatePatientProfile(access, tenant.organizationId, tenant.clinicId, decodedPatientId");
   const invalidate = route.indexOf("invalidatePatientsCache()");
 
   assert.ok(resolve >= 0, "server must resolve the patient through access context");
@@ -128,7 +128,7 @@ test("Direct patient and clinical pages resolve patients through server-side acc
   const updateApi = source("app/api/patients/[patientId]/route.ts");
 
   assert.match(patientPage, /getPatientForContext\(context,/);
-  assert.match(clinicalPage, /getPatientForContext\(context,/);
+  assert.match(clinicalPage, /getPatientForContext\(access,/);
   assert.match(updateApi, /getPatientForContext\(access,/);
   assert.match(patientPage, /if \(!patient \|\| patient\.department === "All"\) notFound\(\)/);
   assert.match(clinicalPage, /if \(!patient \|\| patient\.department === "All"\) notFound\(\)/);

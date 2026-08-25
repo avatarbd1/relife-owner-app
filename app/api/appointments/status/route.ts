@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     const appointmentId = String(body.appointmentId || "").trim();
     const lockKey = `appointment-update:${appointmentId}`;
     const result = await withMutationLock(lockKey, () =>
-      updateUnifiedAppointmentStatus(access, {
+      updateUnifiedAppointmentStatus(access, tenant.clinicId, {
         appointmentId,
         department: body.department,
         status: body.status,

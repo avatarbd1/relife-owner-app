@@ -5,7 +5,7 @@ import DentalClinicalWorkspaceClient from "@/components/DentalClinicalWorkspaceC
 import { StatusBadge } from "@/components/FeedbackUI";
 import { getClinicalWorkspace } from "@/lib/webos/clinical";
 import { getDentalClinicalWorkspace } from "@/lib/webos/dentalClinical";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getPatientForContext } from "@/lib/webos/reception";
 
 export default async function ClinicalPage({
@@ -13,19 +13,20 @@ export default async function ClinicalPage({
 }: {
   params: Promise<{ patientId: string }>;
 }) {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const { access, tenant } = tenantContext;
   const { patientId } = await params;
   const decodedId = decodeURIComponent(patientId);
-  const patient = await getPatientForContext(context, decodedId);
+  const patient = await getPatientForContext(access, decodedId);
   if (!patient || patient.department === "All") notFound();
 
   const ownerOnlyClinicalView =
-    context.roles.includes("Owner") &&
-    !context.roles.includes("Therapist") &&
-    !context.roles.includes("Dentist");
+    access.roles.includes("Owner") &&
+    !access.roles.includes("Therapist") &&
+    !access.roles.includes("Dentist");
 
   if (patient.department === "Dental") {
-    const workspace = await getDentalClinicalWorkspace(context, patient.patientId);
+    const workspace = await getDentalClinicalWorkspace(access, tenant.clinicId, patient.patientId);
     const dentalWorkspace = {
       ...workspace,
       patient: { ...workspace.patient, department: "Dental" as const },
@@ -49,7 +50,7 @@ export default async function ClinicalPage({
 
   let workspace;
   try {
-    workspace = await getClinicalWorkspace(context, patient.patientId);
+    workspace = await getClinicalWorkspace(access, tenant.clinicId, patient.patientId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message === "PATIENT_NOT_FOUND") notFound();

@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     validateTenantScope(access, tenant, "clinical.ai.query");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await answerClinicalAi(access, {
+    const result = await answerClinicalAi(access, tenant.clinicId, {
       question: body.question,
       patientId: body.patientId,
     });

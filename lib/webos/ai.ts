@@ -113,6 +113,7 @@ async function callAi(system: string, prompt: string, maxTokens = 1000): Promise
 
 export async function answerClinicalAi(
   context: AccessContext,
+  clinicId: string,
   input: { question: string; patientId?: string }
 ): Promise<{ answer: string; contextUsed: string }> {
   if (!canPerform(context, "clinical.read", "Physio")) throw new Error("ACCESS_DENIED");
@@ -122,7 +123,7 @@ export async function answerClinicalAi(
   let clinicalContext: Record<string, unknown> = {};
   let contextUsed = "General Physio question";
   if (normalize(input.patientId)) {
-    const workspace = await getClinicalWorkspace(context, normalize(input.patientId));
+    const workspace = await getClinicalWorkspace(context, clinicId, normalize(input.patientId));
     clinicalContext = {
       diagnosis: workspace.patient.diagnosis,
       activePlan: workspace.activePlan
@@ -223,11 +224,12 @@ export async function answerStaffAi(
 
 export async function generateCaseStudyLesson(
   context: AccessContext,
+  clinicId: string,
   input: { patientId: string; lessonTitle?: string }
 ): Promise<{ caseStudyId: string; lessonNumber: number; content: string }> {
   const patientId = normalize(input.patientId);
   if (!patientId) throw new Error("PATIENT_REQUIRED");
-  const workspace = await getClinicalWorkspace(context, patientId);
+  const workspace = await getClinicalWorkspace(context, clinicId, patientId);
   if (!workspace.canWrite) throw new Error("ACCESS_DENIED");
   const snapshot = await fetchSheetRanges("physio", ["15_Case_Studies"]);
   const rows = snapshot["15_Case_Studies"] || [];

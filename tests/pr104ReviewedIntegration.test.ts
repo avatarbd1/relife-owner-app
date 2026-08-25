@@ -61,6 +61,6 @@ test("new workspaces are discoverable from More and Dental tools use canonical r
   assert.match(more, /\/finance\/expense-request/);
   assert.match(more, /\/finance\/cash-movement/);
   assert.match(more, /\/tools\/dental/);
-  assert.match(dental, /getDailyRegisterSnapshot\(context, "dental"/);
+  assert.match(dental, /getDailyRegisterSnapshot\(access, "dental"/);
   assert.doesNotMatch(dental, /getDentalParitySnapshot/);
 });

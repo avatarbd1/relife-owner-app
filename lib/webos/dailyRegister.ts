@@ -73,17 +73,21 @@ function scopeAllows(scope: Scope, department: ClinicDepartment): boolean {
 function parseRows(
   rows: string[][],
   department: ClinicDepartment,
-  date: string
+  date: string,
+  clinicId: string
 ): WebDailyRegisterRow[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const idx = (...names: string[]) => headerIndex(headers, ...names);
   const departmentIdx = idx("Department");
+  const clinicIdIdx = idx("Clinic_ID");
 
   return rows.slice(1).flatMap((row) => {
     if (at(row, idx("Date")) !== date) return [];
     const rowDepartment = at(row, departmentIdx);
     if (rowDepartment && normalized(rowDepartment) !== normalized(department)) return [];
+    const rowClinicId = at(row, clinicIdIdx);
+    if (rowClinicId && rowClinicId !== clinicId) return [];
     const receiptNo = at(row, idx("Receipt_No", "Receipt"));
     if (!receiptNo) return [];
     const remarks = at(row, idx("Remarks"));
@@ -118,17 +122,19 @@ function parseRows(
 async function readDepartment(
   context: AccessContext,
   department: ClinicDepartment,
-  date: string
+  date: string,
+  clinicId: string
 ): Promise<WebDailyRegisterRow[]> {
   if (!canPerform(context, "register.read", department)) return [];
   const workbook: Workbook = department === "Dental" ? "dental" : "physio";
   const snapshot = await fetchSheetRanges(workbook, ["06_Payments"]);
-  return parseRows(snapshot["06_Payments"] || [], department, date);
+  return parseRows(snapshot["06_Payments"] || [], department, date, clinicId);
 }
 
 export async function getDailyRegisterSnapshot(
   context: AccessContext,
   scope: Scope,
+  clinicId: string,
   requestedDate?: string
 ) {
   const date = registerDate(requestedDate);
@@ -139,7 +145,7 @@ export async function getDailyRegisterSnapshot(
   );
 
   const groups = await Promise.all(
-    departments.map((department) => readDepartment(context, department, date))
+    departments.map((department) => readDepartment(context, department, date, clinicId))
   );
   const rows = groups
     .flat()
