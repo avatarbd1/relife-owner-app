@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateUnifiedAppointmentStatus } from "@/lib/domain/appointments/status";
+import { validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { withMutationLock } from "@/lib/webos/mutationLock";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function code(message: string): number {
   if (message === "ACCESS_DENIED") return 403;
@@ -21,7 +22,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for appointment operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "appointment.status");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -29,7 +33,7 @@ export async function POST(request: NextRequest) {
     const appointmentId = String(body.appointmentId || "").trim();
     const lockKey = `appointment-update:${appointmentId}`;
     const result = await withMutationLock(lockKey, () =>
-      updateUnifiedAppointmentStatus(context, {
+      updateUnifiedAppointmentStatus(access, {
         appointmentId,
         department: body.department,
         status: body.status,

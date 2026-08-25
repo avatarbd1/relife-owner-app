@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import {
   acceptChamberCall,
@@ -35,8 +36,12 @@ function errorResponse(error: unknown): NextResponse {
 
 export async function GET() {
   try {
-    const context = await requireCurrentAccessContext();
-    const snapshot = await getChamberCommsSnapshot(context);
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.comms.read");
+    const snapshot = await getChamberCommsSnapshot(access);
     return NextResponse.json({ ok: true, ...snapshot });
   } catch (error) {
     return errorResponse(error);
@@ -48,7 +53,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.comms.run");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -56,14 +65,14 @@ export async function POST(request: NextRequest) {
     const action = String(body.action || "");
     if (action === "send_message") {
       const result = await withMutationLock("chamber-chat-write", () =>
-        sendChamberMessage(context, body)
+        sendChamberMessage(access, body)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "broadcast_emergency") {
       const message = String(body.body || "").trim() || "Emergency assistance required in Physio Chamber";
       const result = await withMutationLock("chamber-emergency-broadcast", () =>
-        sendChamberMessage(context, {
+        sendChamberMessage(access, {
           body: message,
           priority: "Urgent",
           roomId: PHYSIO_EMERGENCY_MARKER,
@@ -73,25 +82,25 @@ export async function POST(request: NextRequest) {
     }
     if (action === "accept_call") {
       const messageId = String(body.messageId || "");
-      const snapshot = await getChamberCommsSnapshot(context);
+      const snapshot = await getChamberCommsSnapshot(access);
       const call = snapshot.messages.find((item) => item.messageId === messageId);
       if (!call) throw new Error("CALL_NOT_FOUND");
-      if (call.senderId === context.staffId) throw new Error("CALL_TARGET_MISMATCH");
+      if (call.senderId === access.staffId) throw new Error("CALL_TARGET_MISMATCH");
       const result = await withMutationLock(`chamber-call:${messageId}`, () =>
-        acceptChamberCall(context, messageId)
+        acceptChamberCall(access, messageId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "request_equipment") {
       const result = await withMutationLock("chamber-equipment-request", () =>
-        createEquipmentRequest(context, body)
+        createEquipmentRequest(access, body)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "equipment_status") {
       const requestId = String(body.requestId || "");
       const result = await withMutationLock(`chamber-equipment:${requestId}`, () =>
-        updateEquipmentRequestStatus(context, requestId, body.status)
+        updateEquipmentRequestStatus(access, requestId, body.status)
       );
       return NextResponse.json({ ok: true, ...result });
     }

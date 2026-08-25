@@ -41,7 +41,7 @@ describe("App-primary A1-A5 architecture", () => {
   it("A4 extracts only an AI draft and leaves final registration on the existing patient API", () => {
     ok(extractionDomain.includes('assertCanPerform(context, "patient.create", input.department)'));
     ok(extractionDomain.includes("openrouter.ai/api/v1/chat/completions"));
-    ok(extractionRoute.includes("requireCurrentAccessContext"));
+    ok(extractionRoute.includes("requireCurrentTenantAccessContext"));
     ok(photo.includes('fetch("/api/patients/extract-registration"'));
     equal(photo.includes('fetch("/api/patients"'), false);
     ok(registrationForm.includes('fetch("/api/patients"'));

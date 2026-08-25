@@ -130,9 +130,10 @@ function auditRow(
   patientId: string,
   fullName: string,
   department: ClinicDepartment,
-  now: ReturnType<typeof dhakaParts>
+  now: ReturnType<typeof dhakaParts>,
+  organizationId: string,
+  clinicId_param: string
 ): SheetValue[] {
-  const clinic = clinicId(department);
   return [
     `AUD-${randomUUID()}`,
     now.timestamp,
@@ -144,10 +145,10 @@ function auditRow(
     "",
     JSON.stringify({ patientId, fullName, department }),
     "Web OS W2 reception action",
-    "RELIFE",
-    clinic,
+    organizationId,
+    clinicId_param,
     "AMTALI-01",
-    `${clinic}:${patientId}`,
+    `${clinicId_param}:${patientId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -162,6 +163,8 @@ function auditRow(
 
 export async function registerPatientSerial(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: SerialPatientCreateInput
 ): Promise<{ patientId: string }> {
   const department = input.department;
@@ -222,10 +225,10 @@ export async function registerPatientSerial(
     Created_By: context.staffId,
     Created_At: now.timestamp,
     Last_Updated: now.timestamp,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${patientId}`,
+    Record_ID: `${clinicId}:${patientId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -239,7 +242,7 @@ export async function registerPatientSerial(
     workbook,
     "02_Patients",
     rowForHeaders(headers, values),
-    auditRow(context, patientId, fullName, department, now)
+    auditRow(context, patientId, fullName, department, now, organizationId, clinicId)
   );
 
   return { patientId };

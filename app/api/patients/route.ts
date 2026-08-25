@@ -5,7 +5,8 @@ import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { registerPatientSerial } from "@/lib/webos/registerPatientSerial";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { validateDepartmentAccess } from "@/lib/domain/tenancy/validators";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "PATIENT_CREATE_FAILED";
@@ -38,7 +39,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for patient operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -46,13 +49,17 @@ export async function POST(request: NextRequest) {
 
     const department = String(body.department || "").trim();
     const gender = normalizeGender(body.gender);
+
+    // Validate staff has access to this department
+    validateDepartmentAccess(access, department as "Physio" | "Dental");
+
     if (department === "Physio" && !["Male", "Female"].includes(gender)) {
       throw new Error("INVALID_PATIENT_GENDER");
     }
 
     const lockKey = `patient-register:${department || "unknown"}`;
     const result = await withMutationLock(lockKey, () =>
-      registerPatientSerial(context, {
+      registerPatientSerial(access, tenant.organizationId, tenant.clinicId, {
         department: body.department,
         fullName: body.fullName,
         fatherHusbandName: body.fatherHusbandName,
@@ -70,7 +77,7 @@ export async function POST(request: NextRequest) {
     invalidatePatientsCache();
     if (body.department === "Physio") {
       try {
-        await consumePhysioInventorySystem(["Patient Card"], context.staffId, "Auto-Registration");
+        await consumePhysioInventorySystem(["Patient Card"], access.staffId, "Auto-Registration");
       } catch (error) {
         console.error("Patient saved but automatic inventory consumption failed", error);
       }
@@ -78,7 +85,7 @@ export async function POST(request: NextRequest) {
 
     if (department === "Physio" || department === "Dental") {
       await recordActorWorkGamification({
-        context,
+        context: access,
         department,
         purpose: "reception",
         eventType: "patient_registered",

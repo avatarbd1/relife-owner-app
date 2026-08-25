@@ -7,6 +7,7 @@ const MIGRATION_PATH = new URL(
   "../supabase/migrations/20260824_staff_tenant_membership_v1.sql",
   import.meta.url,
 );
+const VALIDATORS_PATH = new URL("../lib/domain/tenancy/validators.ts", import.meta.url);
 
 test("T2-01 authorization is scoped to the relife schema and exact tenant binding", async () => {
   const source = await readFile(AUTH_PATH, "utf8");
@@ -60,4 +61,21 @@ test("cross-department access is fail-closed for empty scopes", async () => {
     /if \(staffDepartments\.length === 0 \|\| patientDepartments\.length === 0\) return false/,
   );
   assert.match(source, /patientDepartments\.some\(\(department\) => staffDepartmentSet\.has\(department\)\)/);
+});
+
+test("T2-02 tenant validator has no Owner/non-Owner bypass and requires matching canonical staff scope", async () => {
+  const source = await readFile(VALIDATORS_PATH, "utf8");
+  const validatorStart = source.indexOf("export function validateTenantScope");
+  const validatorEnd = source.indexOf("export function canAccessDepartment");
+  assert.notEqual(validatorStart, -1);
+  assert.notEqual(validatorEnd, -1);
+  assert.ok(validatorEnd > validatorStart);
+  const tenantValidator = source.slice(validatorStart, validatorEnd);
+
+  assert.doesNotMatch(tenantValidator, /roles\.includes\("Owner"\)/);
+  assert.doesNotMatch(tenantValidator, /staffId\s*!==\s*"ST001"/);
+  assert.match(tenantValidator, /accessStaffId !== tenantStaffId/);
+  assert.match(tenantValidator, /tenant\.organizationId\?\.trim\(\)/);
+  assert.match(tenantValidator, /tenant\.clinicId\?\.trim\(\)/);
+  assert.match(tenantValidator, /TENANT_SCOPE_DENIED/);
 });

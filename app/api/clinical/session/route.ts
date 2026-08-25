@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { recordTreatmentSession } from "@/lib/webos/clinical";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
@@ -17,12 +18,16 @@ function code(message: string) {
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for clinical operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "clinical.session.create");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     const patientId = String(body.patientId || "").trim();
     const result = await withMutationLock(`patient:Physio:${patientId}`, () =>
-      recordTreatmentSession(context, {
+      recordTreatmentSession(access, {
         patientId,
         painBefore: body.painBefore,
         painAfter: body.painAfter,
@@ -34,7 +39,7 @@ export async function POST(request: NextRequest) {
     );
     if (!result.duplicate) {
       try {
-        await consumePhysioInventorySystem(["Hand Gloves", "Tissue"], context.staffId, "Auto-Session");
+        await consumePhysioInventorySystem(["Hand Gloves", "Tissue"], access.staffId, "Auto-Session");
       } catch (error) {
         console.error("Session saved but automatic inventory consumption failed", error);
       }

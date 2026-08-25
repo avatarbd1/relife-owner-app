@@ -4,9 +4,10 @@ import {
   validateCapacityBooking,
   type CapacityBookingInput,
 } from "@/lib/domain/appointments/capacityBooking";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function parseInput(body: Record<string, unknown>): CapacityBookingInput {
@@ -50,8 +51,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
-    assertCanPerform(context, "appointment.create", "Physio");
+    // T2-02: Require full tenant-aware context for capacity booking operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "appointment.create");
+    assertCanPerform(access, "appointment.create", "Physio");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -60,12 +65,12 @@ export async function POST(request: NextRequest) {
     const action = String(record.action || "validate");
     const input = parseInput(record);
     if (action === "validate") {
-      const validation = await validateCapacityBooking(context, input);
+      const validation = await validateCapacityBooking(access, input);
       return NextResponse.json({ ok: true, validation });
     }
     if (action === "create") {
       const result = await withMutationLock(`capacity-booking:${input.date}`, () =>
-        createCapacityBooking(context, input)
+        createCapacityBooking(access, input)
       );
       return NextResponse.json({ ok: true, ...result });
     }

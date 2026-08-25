@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invalidatePatientsCache } from "@/lib/patients";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 import { updatePatientProfile } from "@/lib/webos/patientUpdate";
 import { syncActiveChamberPatientProfile } from "@/lib/webos/chamberPatientProfile";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getPatientForContext } from "@/lib/webos/reception";
 
 function errorResponse(error: unknown): NextResponse {
@@ -37,7 +38,9 @@ export async function PATCH(
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for patient operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
     const { patientId } = await params;
     const decodedPatientId = decodeURIComponent(patientId);
     const body = await request.json().catch(() => null);
@@ -45,13 +48,16 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
-    const patient = await getPatientForContext(context, decodedPatientId);
+    const patient = await getPatientForContext(access, decodedPatientId);
     if (!patient || patient.department === "All") {
       return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
     }
 
+    validateDepartmentAccess(access, patient.department);
+    validateTenantScope(access, tenant, "patient.update");
+
     const result = await withMutationLock(`patient:${patient.department}:${decodedPatientId}`, () =>
-      updatePatientProfile(context, decodedPatientId, {
+      updatePatientProfile(access, decodedPatientId, {
         fullName: body.fullName,
         phone: body.phone,
         age: body.age,
@@ -66,7 +72,7 @@ export async function PATCH(
 
     let chamberSynced = true;
     try {
-      chamberSynced = await syncActiveChamberPatientProfile(context.staffId, decodedPatientId, {
+      chamberSynced = await syncActiveChamberPatientProfile(access.staffId, decodedPatientId, {
         fullName: body.fullName,
         gender: body.gender,
       });

@@ -36,7 +36,7 @@ test("Dental registration explicitly keeps phone optional and blank phones bypas
 test("Patient registration serializes the full department create path and invalidates read cache", () => {
   const route = source("app/api/patients/route.ts");
   const lock = route.indexOf("patient-register:${department || \"unknown\"}");
-  const register = route.indexOf("registerPatientSerial(context");
+  const register = route.indexOf("registerPatientSerial(access");
   const invalidate = route.indexOf("invalidatePatientsCache()");
 
   assert.ok(lock >= 0, "department registration lock must exist");
@@ -46,9 +46,9 @@ test("Patient registration serializes the full department create path and invali
 
 test("Patient update resolves authorized department then uses the canonical patient lock", () => {
   const route = source("app/api/patients/[patientId]/route.ts");
-  const resolve = route.indexOf("getPatientForContext(context, decodedPatientId)");
+  const resolve = route.indexOf("getPatientForContext(access, decodedPatientId)");
   const lock = route.indexOf("patient:${patient.department}:${decodedPatientId}");
-  const update = route.indexOf("updatePatientProfile(context, decodedPatientId");
+  const update = route.indexOf("updatePatientProfile(access, decodedPatientId");
   const invalidate = route.indexOf("invalidatePatientsCache()");
 
   assert.ok(resolve >= 0, "server must resolve the patient through access context");
@@ -127,9 +127,9 @@ test("Direct patient and clinical pages resolve patients through server-side acc
   const clinicalPage = source("app/(dashboard)/patients/[patientId]/clinical/page.tsx");
   const updateApi = source("app/api/patients/[patientId]/route.ts");
 
-  for (const file of [patientPage, clinicalPage, updateApi]) {
-    assert.match(file, /getPatientForContext\(context,/);
-  }
+  assert.match(patientPage, /getPatientForContext\(context,/);
+  assert.match(clinicalPage, /getPatientForContext\(context,/);
+  assert.match(updateApi, /getPatientForContext\(access,/);
   assert.match(patientPage, /if \(!patient \|\| patient\.department === "All"\) notFound\(\)/);
   assert.match(clinicalPage, /if \(!patient \|\| patient\.department === "All"\) notFound\(\)/);
 });

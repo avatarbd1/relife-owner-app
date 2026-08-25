@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { extractRegistrationDraftFromImage } from "@/lib/webos/registrationAi";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
   if (message === "ACCESS_DENIED") return 403;
@@ -17,7 +18,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for patient operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "patient.extract.registration");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -26,7 +30,8 @@ export async function POST(request: NextRequest) {
     if (department !== "Physio" && department !== "Dental") {
       return NextResponse.json({ ok: false, error: "INVALID_DEPARTMENT" }, { status: 400 });
     }
-    const result = await extractRegistrationDraftFromImage(context, {
+    validateDepartmentAccess(access, department);
+    const result = await extractRegistrationDraftFromImage(access, {
       department,
       imageDataUrl: String(body.imageDataUrl || ""),
     });

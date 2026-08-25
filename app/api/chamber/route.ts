@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findActivePatientConflict } from "@/lib/domain/chamber/patientConcurrency";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
 import {
@@ -16,7 +17,7 @@ import {
 } from "@/lib/webos/chamberClinicalNote";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
 import { setChamberBedPreference } from "@/lib/webos/chamberPreference";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { startGeneralTreatment } from "@/lib/webos/generalTreatmentRuntime";
 import { getMachineOperationSnapshot } from "@/lib/webos/machineRuntime";
 import { withMutationLock } from "@/lib/webos/mutationLock";
@@ -39,9 +40,13 @@ function statusFor(message: string): number {
 
 export async function GET() {
   try {
-    const context = await requireCurrentAccessContext();
-    const snapshot = await getChamberRuntimeSnapshot(context);
-    const enriched = await enrichChamberSnapshotWithPatientProfiles(context, snapshot);
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.read");
+    const snapshot = await getChamberRuntimeSnapshot(access);
+    const enriched = await enrichChamberSnapshotWithPatientProfiles(access, snapshot);
     return NextResponse.json({ ok: true, snapshot: enriched });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CHAMBER_READ_FAILED";
@@ -56,7 +61,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.run");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -64,10 +73,10 @@ export async function POST(request: NextRequest) {
 
     const action = String(body.action || "");
     if (action === "receive") {
-      assertCanPerform(context, "chamber.receive", "Physio");
+      assertCanPerform(access, "chamber.receive", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
       const result = await withMutationLock("chamber-receive", async () => {
-        const snapshot = await getChamberRuntimeSnapshot(context);
+        const snapshot = await getChamberRuntimeSnapshot(access);
         const target = snapshot.queue.find((item) => item.appointmentId === appointmentId);
         if (target) {
           const activity = [
@@ -96,43 +105,43 @@ export async function POST(request: NextRequest) {
           );
           if (conflict) throw new Error(`CHAMBER_PATIENT_ALREADY_ACTIVE:${conflict.appointmentId}`);
         }
-        return receiveChamberRuntimePatient(context, appointmentId);
+        return receiveChamberRuntimePatient(access, appointmentId);
       });
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "assign_therapist") {
-      assertCanPerform(context, "chamber.run", "Physio");
+      assertCanPerform(access, "chamber.run", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
       const result = await withMutationLock(`chamber-therapist:${appointmentId}`, () =>
-        assignChamberTherapist(context, appointmentId, body.staffId)
+        assignChamberTherapist(access, appointmentId, body.staffId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "prefer_station") {
       // Legacy compatibility only. New Physio booking does not pre-assign beds.
-      assertCanPerform(context, "chamber.run", "Physio");
+      assertCanPerform(access, "chamber.run", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
       const result = await withMutationLock(`chamber-station:${appointmentId}`, () =>
-        setChamberBedPreference(context, appointmentId, body.stationId)
+        setChamberBedPreference(access, appointmentId, body.stationId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "start") {
-      assertCanPerform(context, "chamber.run", "Physio");
+      assertCanPerform(access, "chamber.run", "Physio");
       const sessionId = String(body.sessionId || "").trim();
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
         sessionId.startsWith("CHW")
-          ? startGeneralTreatment(context, sessionId)
-          : startChamberRuntimeSession(context, sessionId)
+          ? startGeneralTreatment(access, sessionId)
+          : startChamberRuntimeSession(access, sessionId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "step") {
       // Legacy clinical-step API. Routine machine use now goes through /api/chamber/machines.
-      assertCanPerform(context, "chamber.run", "Physio");
+      assertCanPerform(access, "chamber.run", "Physio");
       const sessionId = String(body.sessionId || "").trim();
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
-        updateChamberRuntimeStep(context, {
+        updateChamberRuntimeStep(access, {
           sessionId,
           step: body.step,
           resourceId: body.resourceId,
@@ -143,19 +152,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "complete") {
-      assertCanPerform(context, "chamber.run", "Physio");
+      assertCanPerform(access, "chamber.run", "Physio");
       const sessionId = String(body.sessionId || "").trim();
       if (sessionId.startsWith("CHW")) {
-        const machines = await getMachineOperationSnapshot(context);
+        const machines = await getMachineOperationSnapshot(access);
         const active = machines.sessions.find((item) => item.sessionId === sessionId);
         if (active?.currentResourceId) throw new Error("MACHINE_STILL_RUNNING");
       }
-      const capture = await captureChamberTreatmentForCompletion(context, sessionId);
+      const capture = await captureChamberTreatmentForCompletion(access, sessionId);
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
-        completeChamberRuntimeSession(context, sessionId)
+        completeChamberRuntimeSession(access, sessionId)
       );
       try {
-        const treatmentNote = await recordChamberCompletionTreatmentNote(context, capture);
+        const treatmentNote = await recordChamberCompletionTreatmentNote(access, capture);
         return NextResponse.json({
           ok: true,
           ...result,

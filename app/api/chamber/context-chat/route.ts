@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { getChamberChatWorkspace } from "@/lib/webos/chamberChat";
 import { sendChamberMessage } from "@/lib/webos/chamberComms";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
 const PRESET_MESSAGES = new Set([
@@ -131,8 +132,12 @@ function errorResponse(error: unknown): NextResponse {
 
 export async function GET() {
   try {
-    const context = await requireCurrentAccessContext();
-    const workspace = await getChamberChatWorkspace(context);
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.context-chat.read");
+    const workspace = await getChamberChatWorkspace(access);
     return NextResponse.json({ ok: true, ...workspace });
   } catch (error) {
     return errorResponse(error);
@@ -148,7 +153,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for chamber operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "chamber.context-chat.run");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json(
@@ -170,7 +179,7 @@ export async function POST(request: NextRequest) {
     );
     if (!appointmentId) throw new Error("CHAT_CONTEXT_REQUIRED");
 
-    const workspace = await getChamberChatWorkspace(context);
+    const workspace = await getChamberChatWorkspace(access);
     const chatContext = workspace.contexts.find(
       (item) => item.appointmentId === appointmentId
     );
@@ -191,7 +200,7 @@ export async function POST(request: NextRequest) {
     const result = await withMutationLock(
       `chamber-context-chat:${appointmentId}`,
       () =>
-        sendChamberMessage(context, {
+        sendChamberMessage(access, {
           body: message,
           priority,
           patientId: chatContext.patientId,

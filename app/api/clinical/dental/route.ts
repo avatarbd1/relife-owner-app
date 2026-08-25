@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { addDentalTreatmentNote } from "@/lib/webos/dentalClinical";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function statusFor(message: string): number {
@@ -29,14 +30,18 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for clinical operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Dental");
+    validateTenantScope(access, tenant, "clinical.dental.create");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
     const patientId = String(body.patientId || "").trim();
     const result = await withMutationLock(`patient:Dental:${patientId}`, () =>
-      addDentalTreatmentNote(context, {
+      addDentalTreatmentNote(access, {
         patientId,
         procedure: body.procedure,
         toothArea: body.toothArea,

@@ -16,9 +16,9 @@ test("legacy single-date AppointmentForm is removed while multi-date booking rem
 test("bulk import keeps canonical patient registration safety", () => {
   const route = source("app/api/patients/bulk-import/route.ts");
   assert.match(route, /isAllowedRequestOrigin/);
-  assert.match(route, /canPerform\(context, "patient\.create", department\)/);
+  assert.match(route, /canPerform\(access, "patient\.create", department\)/);
   assert.match(route, /withMutationLock\(`patient-register:\$\{department\}`/);
-  assert.match(route, /registerPatient\(context/);
+  assert.match(route, /registerPatient\(access/);
   assert.match(route, /consumePhysioInventorySystem/);
   assert.match(route, /Physio gender must be Male or Female/);
   assert.doesNotMatch(route, /split\(","\)/);

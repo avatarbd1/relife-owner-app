@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { answerClinicalAi } from "@/lib/webos/ai";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
-    const context = await requireCurrentAccessContext();
+    // T2-02: Require full tenant-aware context for tool operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateTenantScope(access, tenant, "clinical.ai.query");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await answerClinicalAi(context, {
+    const result = await answerClinicalAi(access, {
       question: body.question,
       patientId: body.patientId,
     });
