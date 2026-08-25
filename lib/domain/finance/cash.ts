@@ -6,7 +6,6 @@ import {
   departmentForWorkbook,
   dhakaClockParts,
   ledgerClinicId,
-  relifeRecordId,
   workbookForDepartment,
 } from "@/lib/config/relifeSystem";
 import {
@@ -171,11 +170,14 @@ function buildCashAuditRow(
     action: string;
     movementId: string;
     department: ClinicDepartment;
+    organizationId?: string;
+    clinicId?: string;
     beforeValue?: string;
     afterValue?: string;
   }
 ): SheetValue[] {
-  const clinic = ledgerClinicId(input.department);
+  const organizationId = input.organizationId || RELIFE_SYSTEM.organizationId;
+  const clinicId = input.clinicId || ledgerClinicId(input.department);
   return rowForHeaders(headers, {
     Audit_ID: `AUD-${randomUUID()}`,
     Timestamp: input.now.timestamp,
@@ -187,10 +189,10 @@ function buildCashAuditRow(
     Before_Value: input.beforeValue || "",
     After_Value: input.afterValue || "",
     Reason: "Finance domain action",
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: clinic,
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(input.department, input.movementId),
+    Record_ID: `${clinicId}:${input.movementId}`,
     Encounter_ID: "",
     Provider_ID: input.actorId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
@@ -205,6 +207,8 @@ function buildCashAuditRow(
 
 export async function requestCashMovement(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: CashRequestInput
 ): Promise<{ movementId: string; duplicate: boolean }> {
   const department = input.department;
@@ -289,10 +293,10 @@ export async function requestCashMovement(
     Moved_By: context.staffId,
     Note: note,
     Timestamp: now.timestamp,
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: ledgerClinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(department, movementId),
+    Record_ID: `${clinicId}:${movementId}`,
     Provider_ID: context.staffId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
     Source_Type: RELIFE_SYSTEM.sourceType,
@@ -316,6 +320,8 @@ export async function requestCashMovement(
     action: "CASH_MOVEMENT_REQUESTED",
     movementId,
     department,
+    organizationId,
+    clinicId,
     afterValue: JSON.stringify({ from: "Reception", to: input.toCustodian, amount }),
   });
 
