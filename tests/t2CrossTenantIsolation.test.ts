@@ -1,5 +1,5 @@
 import { describe, it } from "node:test";
-import { ok, equal, match } from "node:assert";
+import { ok, equal } from "node:assert";
 import { readFileSync } from "node:fs";
 
 function source(path: string): string {
@@ -15,31 +15,16 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
     const financeRoute = source("app/api/finance/payment/route.ts");
 
     it("appointment creation requires tenant context validation", () => {
-      ok(
-        appointmentRoute.includes("requireCurrentTenantAccessContext"),
-        "Missing requireCurrentTenantAccessContext"
-      );
-      ok(
-        appointmentRoute.includes("validateTenantScope"),
-        "Missing validateTenantScope validation"
-      );
-      ok(
-        appointmentRoute.includes("validateDepartmentAccess"),
-        "Missing department access validation"
-      );
+      ok(appointmentRoute.includes("requireCurrentTenantAccessContext"), "Missing requireCurrentTenantAccessContext");
+      ok(appointmentRoute.includes("validateTenantScope"), "Missing validateTenantScope validation");
+      ok(appointmentRoute.includes("validateDepartmentAccess"), "Missing department access validation");
     });
 
     it("patient registration requires tenant context and organizational scope", () => {
       ok(patientRoute.includes("requireCurrentTenantAccessContext"));
       ok(patientRoute.includes("validateDepartmentAccess") || patientRoute.includes("validate"));
-      ok(
-        patientRoute.includes("organizationId") || patientRoute.includes("tenant"),
-        "Should reference organization"
-      );
-      ok(
-        patientRoute.includes("clinicId") || patientRoute.includes("tenant"),
-        "Should reference clinic"
-      );
+      ok(patientRoute.includes("organizationId") || patientRoute.includes("tenant"), "Should reference organization");
+      ok(patientRoute.includes("clinicId") || patientRoute.includes("tenant"), "Should reference clinic");
     });
 
     it("chamber operations require tenant context", () => {
@@ -61,7 +46,6 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
   describe("Explicit tenant parameters in critical writers", () => {
     const registerPatientSerial = source("lib/webos/registerPatientSerial.ts");
     const reception = source("lib/webos/reception.ts");
-    const chamberComms = source("app/api/chamber/comms/route.ts");
 
     it("registerPatientSerial accepts explicit organizationId and clinicId", () => {
       ok(registerPatientSerial.includes("organizationId: string"));
@@ -70,9 +54,12 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
       ok(registerPatientSerial.includes("Clinic_ID: clinicId"));
     });
 
-    it("reception registerPatient accepts explicit tenant parameters", () => {
-      ok(reception.includes("organizationId"));
-      ok(reception.includes("clinicId_param"));
+    it("reception registerPatient accepts and persists explicit tenant parameters", () => {
+      ok(reception.includes("organizationId: string"));
+      ok(reception.includes("clinicId: string"));
+      ok(reception.includes("Organization_ID: organizationId"));
+      ok(reception.includes("Clinic_ID: clinicId"));
+      ok(reception.includes("Record_ID: `${clinicId}:${patientId}`"));
     });
 
     it("domain writers reject implicit clinic defaults", () => {
@@ -95,10 +82,7 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
     const financeHistory = source("lib/webos/financeHistory.ts");
 
     it("daily register snapshots filter by clinic scope", () => {
-      ok(
-        dailyRegister.length > 0,
-        "Daily register should exist"
-      );
+      ok(dailyRegister.length > 0, "Daily register should exist");
     });
 
     it("appointment status lookups include tenant scope", () => {
@@ -109,10 +93,7 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
     });
 
     it("finance history module exists", () => {
-      ok(
-        financeHistory.length > 0,
-        "Finance history should exist"
-      );
+      ok(financeHistory.length > 0, "Finance history should exist");
     });
   });
 
@@ -135,20 +116,19 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
 
   describe("Audit trail captures tenant scope", () => {
     const registerPatientSerial = source("lib/webos/registerPatientSerial.ts");
+    const reception = source("lib/webos/reception.ts");
 
     it("patient registration audit rows include organization_id and clinic_id", () => {
       ok(registerPatientSerial.includes("organizationId"));
       ok(registerPatientSerial.includes("clinicId") || registerPatientSerial.includes("clinic_id"));
     });
 
-    it("audit function receives explicit tenant parameters", () => {
-      ok(
-        registerPatientSerial.includes(
-          "auditRow(context, patientId, fullName, department, now, organizationId, clinicId)"
-        ) ||
-          registerPatientSerial.includes("organizationId") ||
-          registerPatientSerial.includes("clinicId_param")
-      );
+    it("audit functions receive explicit tenant parameters", () => {
+      ok(registerPatientSerial.includes("organizationId"));
+      ok(registerPatientSerial.includes("clinicId"));
+      ok(reception.includes("organizationId"));
+      ok(reception.includes("clinicId"));
+      ok(reception.includes("auditRow("));
     });
   });
 
@@ -181,9 +161,7 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
 
     it("validators check RELIFE_TENANT_CUTOVER_ENFORCED or fail safe", () => {
       ok(
-        tenantMiddleware.includes("RELIFE_TENANT_CUTOVER_ENFORCED") ||
-          validators.includes("TENANT_CUTOVER") ||
-          true,
+        tenantMiddleware.includes("RELIFE_TENANT_CUTOVER_ENFORCED") || validators.includes("TENANT_CUTOVER") || true,
         "Tenant enforcement should be feature-gated"
       );
     });
@@ -200,10 +178,7 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
     const bulkImport = source("app/api/patients/bulk-import/route.ts");
 
     it("clinical-ai route passes explicit tenant to domain functions", () => {
-      ok(
-        clinicalAi.includes("access") && clinicalAi.includes("tenant"),
-        "Missing explicit tenant parameter passing"
-      );
+      ok(clinicalAi.includes("access") && clinicalAi.includes("tenant"), "Missing explicit tenant parameter passing");
     });
 
     it("registration extraction uses tenant context", () => {
@@ -219,10 +194,7 @@ describe("T2-05: Cross-tenant isolation regression suite", () => {
     const migrations = source("supabase/migrations/20260816155917_tenant_ready_foundation.sql");
 
     it("clinic foreign key references both organization_id and clinic_id", () => {
-      ok(
-        migrations.includes("relife.clinics (organization_id, id)"),
-        "Clinic FK should enforce organization + clinic tuple"
-      );
+      ok(migrations.includes("relife.clinics (organization_id, id)"), "Clinic FK should enforce organization + clinic tuple");
     });
 
     it("tenant tables have not-null organization_id and clinic_id", () => {
