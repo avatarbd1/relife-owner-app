@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
       }
       try {
         validateDepartmentAccess(access, department);
-      } catch (error) {
+      } catch {
         failed += 1;
         errors.push({ row: csvRowNumber, error: `No patient.create access for ${department}` });
         continue;
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
 
       try {
         await withMutationLock(`patient-register:${department}`, () =>
-          registerPatient(access, {
+          registerPatient(access, tenant.organizationId, tenant.clinicId, {
             department,
             fullName,
             fatherHusbandName: at(fatherHusbandIdx) || undefined,
