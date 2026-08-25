@@ -16,7 +16,6 @@ import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 type ClinicDepartment = "Physio" | "Dental";
-
 type SheetValue = string | number | boolean;
 
 export interface PatientCreateInput {
@@ -100,10 +99,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
 function normalizePhone(value: unknown): string {
   let digits = normalize(value).replace(/^'/, "").replace(/\D/g, "");
   if (digits.startsWith("880")) digits = digits.slice(3);
@@ -157,10 +152,7 @@ function sheetTimeFromInput(value: string): string {
   if (hour > 23 || minute > 59) throw new Error("INVALID_TIME");
   const suffix = hour >= 12 ? "PM" : "AM";
   const hour12 = hour % 12 || 12;
-  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(
-    2,
-    "0"
-  )} ${suffix}`;
+  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 function rowForHeaders(
@@ -198,7 +190,7 @@ function auditRow(
   afterValue: string,
   now: ReturnType<typeof dhakaParts>,
   organizationId: string,
-  clinicId_param: string
+  clinicId: string
 ): SheetValue[] {
   return [
     `AUD-${randomUUID()}`,
@@ -212,9 +204,9 @@ function auditRow(
     afterValue,
     "Web OS W2 reception action",
     organizationId,
-    clinicId_param,
+    clinicId,
     "AMTALI-01",
-    `${clinicId_param}:${entityId}`,
+    `${clinicId}:${entityId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -268,7 +260,7 @@ export async function allowedPatientCreateDepartments(
 export async function registerPatient(
   context: AccessContext,
   organizationId: string,
-  clinicId_param: string,
+  clinicId: string,
   input: PatientCreateInput
 ): Promise<{ patientId: string }> {
   const department = input.department;
@@ -330,10 +322,10 @@ export async function registerPatient(
     Created_By: context.staffId,
     Created_At: now.timestamp,
     Last_Updated: now.timestamp,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${patientId}`,
+    Record_ID: `${clinicId}:${patientId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -357,7 +349,7 @@ export async function registerPatient(
       JSON.stringify({ patientId, fullName, department }),
       now,
       organizationId,
-      clinicId_param
+      clinicId
     )
   );
   return { patientId };
@@ -387,20 +379,18 @@ function parseAppointments(
   return rows.slice(1).flatMap((row) => {
     const appointmentId = at(row, idIdx);
     if (!appointmentId) return [];
-    return [
-      {
-        appointmentId,
-        date: at(row, dateIdx),
-        time: at(row, timeIdx),
-        patientId: at(row, patientIdIdx),
-        patientName: at(row, patientNameIdx),
-        department: parseDepartment(at(row, departmentIdx), fallback),
-        therapist: at(row, therapistIdx),
-        status: at(row, statusIdx) || "Scheduled",
-        remarks: at(row, remarksIdx),
-        receivedBy: at(row, receivedByIdx),
-      },
-    ];
+    return [{
+      appointmentId,
+      date: at(row, dateIdx),
+      time: at(row, timeIdx),
+      patientId: at(row, patientIdIdx),
+      patientName: at(row, patientNameIdx),
+      department: parseDepartment(at(row, departmentIdx), fallback),
+      therapist: at(row, therapistIdx),
+      status: at(row, statusIdx) || "Scheduled",
+      remarks: at(row, remarksIdx),
+      receivedBy: at(row, receivedByIdx),
+    }];
   });
 }
 
@@ -474,9 +464,7 @@ export async function getClinicianOptions(
 function normalizeGender(value: unknown): "Male" | "Female" | "" {
   const text = normalize(value).toLowerCase();
   if (["male", "m", "পুরুষ", "ছেলে"].includes(text)) return "Male";
-  if (["female", "f", "মহিলা", "নারী", "মেয়ে", "মেয়ে"].includes(text)) {
-    return "Female";
-  }
+  if (["female", "f", "মহিলা", "নারী", "মেয়ে", "মেয়ে"].includes(text)) return "Female";
   return "";
 }
 
@@ -517,9 +505,7 @@ function allocatePhysioResource(
   needsTraction: boolean
 ): FlowFields {
   const gender = normalizeGender(genderValue);
-  if (!gender) {
-    return { Gender: "", Room: "Waiting", Bed: "", Station: "Waiting" };
-  }
+  if (!gender) return { Gender: "", Room: "Waiting", Bed: "", Station: "Waiting" };
 
   const slot = appointments.filter(
     (row) =>
@@ -591,7 +577,7 @@ function activePlanNeedsTraction(rows: string[][], patientId: string): boolean {
 export async function createAppointment(
   context: AccessContext,
   organizationId: string,
-  clinicId_param: string,
+  clinicId: string,
   input: AppointmentCreateInput
 ): Promise<{ appointmentId: string }> {
   const patient = await getPatientForContext(context, input.patientId);
@@ -662,10 +648,10 @@ export async function createAppointment(
     Therapist: therapist,
     Status: "Scheduled",
     Remarks: remarks,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${appointmentId}`,
+    Record_ID: `${clinicId}:${appointmentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -690,7 +676,7 @@ export async function createAppointment(
       JSON.stringify({ appointmentId, patientId: patient.patientId, date, time, therapist }),
       now,
       organizationId,
-      clinicId_param
+      clinicId
     )
   );
   return { appointmentId };
