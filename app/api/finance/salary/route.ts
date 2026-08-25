@@ -35,7 +35,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    // T2-02: Require full tenant-aware context for finance operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateTenantScope(access, tenant, "salary.pay");
@@ -50,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (!["Salary", "Advance"].includes(body.type)) {
       return NextResponse.json({ ok: false, error: "INVALID_PAYMENT_TYPE" }, { status: 400 });
     }
-    const result = await paySalary(access, {
+    const result = await paySalary(access, tenant.organizationId, tenant.clinicId, {
       staffId: body.staffId,
       amount: Number(body.amount),
       type: body.type,
