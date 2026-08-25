@@ -457,6 +457,8 @@ export async function decideCashMovement(input: {
   const acceptedAtIdx = headerIndex(headers, "Accepted_At");
   const completedAtIdx = headerIndex(headers, "Completed_At");
   const updatedAtIdx = headerIndex(headers, "Updated_At");
+  const organizationIdIdx = headerIndex(headers, "Organization_ID");
+  const clinicIdIdx = headerIndex(headers, "Clinic_ID");
 
   const dataIndex = rows.slice(1).findIndex((row) => at(row, idIdx) === normalize(movementId));
   if (dataIndex < 0) throw new Error("CONTROL_NOT_FOUND");
@@ -472,6 +474,8 @@ export async function decideCashMovement(input: {
     departmentRaw === "Dental" || departmentRaw === "Physio"
       ? departmentRaw
       : departmentForWorkbook(workbook);
+  const organizationId = at(row, organizationIdIdx) || RELIFE_SYSTEM.organizationId;
+  const clinicId = at(row, clinicIdIdx) || ledgerClinicId(department);
 
   const requests: SpreadsheetBatchRequest[] = [
     updateCellRequest(movementSheetIdVal, rowNumber, statusIdx + 1, decision === "accept" ? "Accepted" : "Rejected"),
@@ -497,6 +501,8 @@ export async function decideCashMovement(input: {
     action: decision === "accept" ? "CASH_MOVEMENT_ACCEPTED" : "CASH_MOVEMENT_REJECTED",
     movementId,
     department,
+    organizationId,
+    clinicId,
     beforeValue: currentStatus,
     afterValue: decision === "accept"
       ? JSON.stringify({ status: "Accepted", requested, received: input.receivedAmount ?? requested })

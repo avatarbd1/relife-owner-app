@@ -414,6 +414,8 @@ export async function decideExpense(input: {
   const approvedByIdx = headerIndex(headers, "Approved_By");
   const approvedAtIdx = headerIndex(headers, "Approved_At");
   const departmentIdx = headerIndex(headers, "Department");
+  const organizationIdIdx = headerIndex(headers, "Organization_ID");
+  const clinicIdIdx = headerIndex(headers, "Clinic_ID");
 
   const dataIndex = expenseRows.slice(1).findIndex((row) => at(row, idIdx) === normalize(expenseId));
   if (dataIndex < 0) throw new Error("CONTROL_NOT_FOUND");
@@ -430,6 +432,8 @@ export async function decideExpense(input: {
     departmentRaw === "Dental" || departmentRaw === "Physio"
       ? departmentRaw
       : departmentForWorkbook(workbook);
+  const organizationId = at(row, organizationIdIdx) || RELIFE_SYSTEM.organizationId;
+  const clinicId = at(row, clinicIdIdx) || ledgerClinicId(department);
 
   const auditRow = buildExpenseAuditRow(auditHeaders, {
     now,
@@ -437,6 +441,8 @@ export async function decideExpense(input: {
     action: decision === "approve" ? "EXPENSE_APPROVED" : "EXPENSE_REJECTED",
     expenseId,
     department,
+    organizationId,
+    clinicId,
     beforeValue: currentStatus,
     afterValue: nextStatus,
     reason: decision === "reject" ? reason : undefined,
