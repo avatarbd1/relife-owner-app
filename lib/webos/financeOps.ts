@@ -163,10 +163,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
 function departmentFromPatientId(patientId: string): ClinicDepartment {
   const id = normalize(patientId).toUpperCase();
   if (id.startsWith("DT")) return "Dental";
@@ -336,6 +332,8 @@ async function appendAudit(
 
 export async function createPayment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: PaymentCreateInput
 ): Promise<{ receiptNo: string; due: number; duplicate: boolean }> {
   const patientId = normalize(input.patientId).toUpperCase();
@@ -462,10 +460,10 @@ export async function createPayment(
     Remarks: remarks,
     Time: now.time,
     Session_Type: normalize(input.sessionType),
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${receiptNo}`,
+    Record_ID: `${clinicId}:${receiptNo}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -505,6 +503,8 @@ export async function createPayment(
 
 export async function requestExpense(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ExpenseRequestInput
 ): Promise<{ expenseId: string; duplicate: boolean }> {
   const department = input.department;
@@ -543,10 +543,10 @@ export async function requestExpense(
     Added_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${expenseId}`,
+    Record_ID: `${clinicId}:${expenseId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -574,6 +574,8 @@ export async function requestExpense(
 
 export async function payApprovedExpense(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ExpensePayInput
 ): Promise<{ alreadyPaid: boolean }> {
   const department = input.department;
@@ -630,6 +632,8 @@ export async function payApprovedExpense(
 
 export async function requestCashMovement(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: CashRequestInput
 ): Promise<{ movementId: string; duplicate: boolean }> {
   const department = input.department;
@@ -665,10 +669,10 @@ export async function requestCashMovement(
     Moved_By: context.staffId,
     Note: note,
     Timestamp: now.timestamp,
-    Organization_ID: "RELIFE",
-    Clinic_ID: clinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId(department)}:${movementId}`,
+    Record_ID: `${clinicId}:${movementId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -700,6 +704,8 @@ export async function requestCashMovement(
 
 export async function paySalary(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: SalaryPayInput
 ): Promise<{ paymentId: string; duplicate: boolean }> {
   if (!context.roles.includes("Owner")) throw new Error("ACCESS_DENIED");
@@ -743,10 +749,10 @@ export async function paySalary(
     Paid_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
-    Organization_ID: "RELIFE",
-    Clinic_ID: department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO"}:${paymentId}`,
+    Record_ID: `${clinicId}:${paymentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
