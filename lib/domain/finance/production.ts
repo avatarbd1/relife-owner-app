@@ -106,12 +106,14 @@ async function currentSheetStatus(input: {
 
 export async function createPayment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: PaymentCreateInput
 ): Promise<{ receiptNo: string; due: number; duplicate: boolean }> {
   const patientId = normalize(input.patientId).toUpperCase();
   const department = departmentFromPatientId(patientId);
   return withMutationLock(`finance:payment:${department}:${patientId}`, async () => {
-    const result = await createSheetsPayment(context, { ...input, patientId });
+    const result = await createSheetsPayment(context, organizationId, clinicId, { ...input, patientId });
     await syncFinance({
       requestId: input.requestId,
       action: "finance.payment.create",
@@ -123,6 +125,8 @@ export async function createPayment(
       actorId: context.staffId,
       patientId,
       payload: {
+        organizationId,
+        clinicId,
         discount: Number(input.discount || 0),
         due: result.due,
         paymentMethod: input.paymentMethod,
@@ -137,10 +141,12 @@ export async function createPayment(
 
 export async function requestExpense(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ExpenseRequestInput
 ): Promise<{ expenseId: string; duplicate: boolean }> {
   return withMutationLock(`finance:expense:${input.department}`, async () => {
-    const result = await requestSheetsExpense(context, input);
+    const result = await requestSheetsExpense(context, organizationId, clinicId, input);
     await syncFinance({
       requestId: input.requestId,
       action: "finance.expense.request",
@@ -151,6 +157,8 @@ export async function requestExpense(
       amount: Number(input.amount),
       actorId: context.staffId,
       payload: {
+        organizationId,
+        clinicId,
         category: normalize(input.category),
         expenseType: input.expenseType || "Clinic Expense",
         note: normalize(input.note),
@@ -207,10 +215,12 @@ export async function decideExpense(input: {
 
 export async function payApprovedExpense(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ExpensePayInput
 ): Promise<{ alreadyPaid: boolean }> {
   return withMutationLock(`finance:expense:${input.expenseId}`, async () => {
-    const result = await paySheetsApprovedExpense(context, input);
+    const result = await paySheetsApprovedExpense(context, organizationId, clinicId, input);
     await syncFinance({
       requestId: `FINEXPAY_${safeRequestPart(input.expenseId)}`,
       action: "finance.expense.pay",
@@ -220,6 +230,8 @@ export async function payApprovedExpense(
       status: "Paid",
       actorId: context.staffId,
       payload: {
+        organizationId,
+        clinicId,
         paidFrom: input.paidFrom,
         sheetsDuplicate: result.alreadyPaid,
       },
@@ -230,10 +242,12 @@ export async function payApprovedExpense(
 
 export async function requestCashMovement(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: CashRequestInput
 ): Promise<{ movementId: string; duplicate: boolean }> {
   return withMutationLock(`finance:cash:${input.department}`, async () => {
-    const result = await requestSheetsCashMovement(context, input);
+    const result = await requestSheetsCashMovement(context, organizationId, clinicId, input);
     await syncFinance({
       requestId: input.requestId,
       action: "finance.cash.request",
@@ -244,6 +258,8 @@ export async function requestCashMovement(
       amount: Number(input.amount),
       actorId: context.staffId,
       payload: {
+        organizationId,
+        clinicId,
         fromCustodian: "Reception",
         toCustodian: input.toCustodian,
         note: normalize(input.note),
@@ -301,6 +317,8 @@ export async function decideCashMovement(input: {
 
 export async function paySalary(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: SalaryPayInput
 ): Promise<{ paymentId: string; duplicate: boolean }> {
   const directory = await getWebStaffDirectory();
@@ -316,7 +334,7 @@ export async function paySalary(
   const department = staff.primaryDepartment;
 
   return withMutationLock(`finance:salary:${staffId}`, async () => {
-    const result = await paySheetsSalary(context, input);
+    const result = await paySheetsSalary(context, organizationId, clinicId, input);
     await syncFinance({
       requestId: input.requestId,
       action: "finance.salary.pay",
@@ -328,6 +346,8 @@ export async function paySalary(
       actorId: context.staffId,
       staffId: normalize(input.staffId),
       payload: {
+        organizationId,
+        clinicId,
         type: input.type,
         paidFrom: input.paidFrom,
         note: normalize(input.note),

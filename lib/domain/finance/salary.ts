@@ -4,8 +4,6 @@ import { randomUUID } from "node:crypto";
 import {
   RELIFE_SYSTEM,
   dhakaClockParts,
-  ledgerClinicId,
-  relifeRecordId,
   workbookForDepartment,
 } from "@/lib/config/relifeSystem";
 import {
@@ -125,9 +123,7 @@ function ensureTypeColumnRequest(
   sheetId: number,
   headers: string[]
 ): SpreadsheetBatchRequest | null {
-  if (getTypeColumnName(headers) !== null) return null; // Type or Payment_Type column already exists
-
-  // Add Type as new header at the end (neither Type nor Payment_Type exists)
+  if (getTypeColumnName(headers) !== null) return null;
   const typeColumnIndex = headers.length;
   return {
     updateCells: {
@@ -152,12 +148,13 @@ function buildSalaryAuditRow(
     paymentId: string;
     staffId: string;
     department: ClinicDepartment;
+    organizationId: string;
+    clinicId: string;
     amount: number;
     type: "Salary" | "Advance";
     paidFrom: string;
   }
 ): SheetValue[] {
-  const clinic = ledgerClinicId(input.department);
   return rowForHeaders(headers, {
     Audit_ID: `AUD-${randomUUID()}`,
     Timestamp: input.now.timestamp,
@@ -174,10 +171,10 @@ function buildSalaryAuditRow(
       paidFrom: input.paidFrom,
     }),
     Reason: "Finance domain action",
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: clinic,
+    Organization_ID: input.organizationId,
+    Clinic_ID: input.clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(input.department, input.paymentId),
+    Record_ID: `${input.clinicId}:${input.paymentId}`,
     Encounter_ID: "",
     Provider_ID: input.actorId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
@@ -192,6 +189,8 @@ function buildSalaryAuditRow(
 
 export async function paySalary(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: SalaryPayInput
 ): Promise<{ paymentId: string; duplicate: boolean }> {
   if (!context.roles.includes("Owner")) throw new Error("ACCESS_DENIED");
@@ -243,10 +242,6 @@ export async function paySalary(
     "Paid_At",
     "Note",
   ]);
-
-  // Type column may not exist in legacy 13_Salary sheets
-  // If present, rowForHeaders will map it; if absent, it becomes empty string in row
-  // Canonical audit always includes type for future records
   ensureHeaders(auditHeaders, [
     "Audit_ID",
     "Timestamp",
@@ -284,13 +279,10 @@ export async function paySalary(
   const now = dhakaClockParts();
   const month = now.date.slice(0, 7);
   const note = [normalize(input.note), marker].filter(Boolean).join(" | ");
-
-  // Detect which type column exists and use its name in values
   const typeColumnName = getTypeColumnName(headers);
   const ensureTypeReq = ensureTypeColumnRequest(salarySheetIdVal, headers);
   const needsTypeAppended = typeColumnName === null && ensureTypeReq !== null;
 
-  // Build values dict with correct type column name
   const rowValues: Record<string, SheetValue> = {
     Payment_ID: paymentId,
     Date: now.date,
@@ -300,10 +292,10 @@ export async function paySalary(
     Paid_By: context.staffId,
     Timestamp: now.timestamp,
     Note: note,
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: ledgerClinicId(department),
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: relifeRecordId(department, paymentId),
+    Record_ID: `${clinicId}:${paymentId}`,
     Provider_ID: context.staffId,
     Source_System: RELIFE_SYSTEM.sourceSystem,
     Source_Type: RELIFE_SYSTEM.sourceType,
@@ -317,17 +309,13 @@ export async function paySalary(
     Paid_At: now.timestamp,
   };
 
-  // Use the actual type column name if it exists
   if (typeColumnName) {
     rowValues[typeColumnName] = input.type;
   } else {
-    // If no type column exists yet, use "Type" (will be added by ensureTypeReq)
     rowValues.Type = input.type;
   }
 
   const row = rowForHeaders(headers, rowValues);
-
-  // If Type column was missing and we added it, append Type value to the row
   const finalRow = needsTypeAppended ? [...row, input.type] : row;
 
   const auditRow = buildSalaryAuditRow(auditHeaders, {
@@ -336,6 +324,8 @@ export async function paySalary(
     paymentId,
     staffId: staff.staffId,
     department,
+    organizationId,
+    clinicId,
     amount,
     type: input.type,
     paidFrom: input.paidFrom,

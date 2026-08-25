@@ -27,7 +27,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    // T2-02: Require full tenant-aware context for finance operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateTenantScope(access, tenant, "expense.pay");
@@ -39,7 +38,7 @@ export async function POST(request: NextRequest) {
     if (department === "Physio" || department === "Dental") {
       validateDepartmentAccess(access, department);
     }
-    const result = await payApprovedExpense(access, {
+    const result = await payApprovedExpense(access, tenant.organizationId, tenant.clinicId, {
       department: body.department,
       expenseId: body.expenseId,
       paidFrom: body.paidFrom,
