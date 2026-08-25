@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
     const result = await withMutationLock(
       `chamber-context-chat:${appointmentId}`,
       () =>
-        sendChamberMessage(access, {
+        sendChamberMessage(access, tenant.organizationId, tenant.clinicId, {
           body: message,
           priority,
           patientId: chatContext.patientId,
