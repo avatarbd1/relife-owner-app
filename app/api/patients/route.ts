@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   try {
     // T2-02: Require full tenant-aware context for patient operations
     const tenantContext = await requireCurrentTenantAccessContext();
-    const { access } = tenantContext;
+    const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     const lockKey = `patient-register:${department || "unknown"}`;
     const result = await withMutationLock(lockKey, () =>
-      registerPatientSerial(access, {
+      registerPatientSerial(access, tenant.organizationId, tenant.clinicId, {
         department: body.department,
         fullName: body.fullName,
         fatherHusbandName: body.fatherHusbandName,

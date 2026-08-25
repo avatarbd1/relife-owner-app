@@ -196,9 +196,10 @@ function auditRow(
   patientId: string,
   department: ClinicDepartment,
   afterValue: string,
-  now: ReturnType<typeof dhakaParts>
+  now: ReturnType<typeof dhakaParts>,
+  organizationId: string,
+  clinicId_param: string
 ): SheetValue[] {
-  const clinic = clinicId(department);
   return [
     `AUD-${randomUUID()}`,
     now.timestamp,
@@ -210,8 +211,8 @@ function auditRow(
     "",
     afterValue,
     "Web OS W2 reception action",
-    "RELIFE",
-    clinic,
+    organizationId,
+    clinicId_param,
     "AMTALI-01",
     `${clinic}:${entityId}`,
     "",
@@ -266,6 +267,8 @@ export async function allowedPatientCreateDepartments(
 
 export async function registerPatient(
   context: AccessContext,
+  organizationId: string,
+  clinicId_param: string,
   input: PatientCreateInput
 ): Promise<{ patientId: string }> {
   const department = input.department;
