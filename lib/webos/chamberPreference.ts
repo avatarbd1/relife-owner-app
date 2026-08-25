@@ -73,6 +73,8 @@ function flowTag(
 
 async function auditPreference(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   appointmentId: string,
   patientId: string,
   stationId: string
@@ -90,10 +92,10 @@ async function auditPreference(
       "",
       stationId,
       "Pre-start preferred bed selected from Live Chamber",
-      "RELIFE",
-      "RELIFE-PHYSIO",
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `RELIFE-PHYSIO:${appointmentId}`,
+      `${clinicId}:${appointmentId}`,
       "",
       context.staffId,
       "web_pwa",
@@ -111,6 +113,8 @@ async function auditPreference(
 
 export async function setChamberBedPreference(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   appointmentIdInput: string,
   stationIdInput: string
 ): Promise<{ appointmentId: string; stationId: string }> {
@@ -174,6 +178,6 @@ export async function setChamberBedPreference(
     `'04_Appointments'!${columnLetter(remarksIdx)}${sheetRow}`,
     [[nextRemarks]]
   );
-  await auditPreference(context, appointmentId, queueItem.patientId, stationId);
+  await auditPreference(context, organizationId, clinicId, appointmentId, queueItem.patientId, stationId);
   return { appointmentId, stationId };
 }
