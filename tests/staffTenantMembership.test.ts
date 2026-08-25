@@ -65,10 +65,17 @@ test("cross-department access is fail-closed for empty scopes", async () => {
 
 test("T2-02 tenant validator has no Owner/non-Owner bypass and requires matching canonical staff scope", async () => {
   const source = await readFile(VALIDATORS_PATH, "utf8");
-  assert.doesNotMatch(source, /roles\.includes\("Owner"\).*return/s);
-  assert.doesNotMatch(source, /staffId\s*!==\s*"ST001"[\s\S]*?return/);
-  assert.match(source, /accessStaffId !== tenantStaffId/);
-  assert.match(source, /tenant\.organizationId\?\.trim\(\)/);
-  assert.match(source, /tenant\.clinicId\?\.trim\(\)/);
-  assert.match(source, /TENANT_SCOPE_DENIED/);
+  const validatorStart = source.indexOf("export function validateTenantScope");
+  const validatorEnd = source.indexOf("export function canAccessDepartment");
+  assert.notEqual(validatorStart, -1);
+  assert.notEqual(validatorEnd, -1);
+  assert.ok(validatorEnd > validatorStart);
+  const tenantValidator = source.slice(validatorStart, validatorEnd);
+
+  assert.doesNotMatch(tenantValidator, /roles\.includes\("Owner"\)/);
+  assert.doesNotMatch(tenantValidator, /staffId\s*!==\s*"ST001"/);
+  assert.match(tenantValidator, /accessStaffId !== tenantStaffId/);
+  assert.match(tenantValidator, /tenant\.organizationId\?\.trim\(\)/);
+  assert.match(tenantValidator, /tenant\.clinicId\?\.trim\(\)/);
+  assert.match(tenantValidator, /TENANT_SCOPE_DENIED/);
 });
