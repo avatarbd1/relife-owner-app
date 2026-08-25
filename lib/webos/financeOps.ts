@@ -288,6 +288,8 @@ function departmentAllowedByContext(
 async function appendAudit(
   workbook: Workbook,
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   action: string,
   entityType: string,
   entityId: string,
@@ -297,7 +299,6 @@ async function appendAudit(
 ): Promise<void> {
   const now = dhakaParts();
   try {
-    const clinic = department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
     await appendSheetValues(workbook, "'20_Data_Audit'!A:W", [
       [
         `AUD-${randomUUID()}`,
@@ -310,10 +311,10 @@ async function appendAudit(
         "",
         afterValue,
         "Web OS W3 finance action",
-        "RELIFE",
-        clinic,
+        organizationId,
+        clinicId,
         "AMTALI-01",
-        `${clinic}:${entityId}`,
+        `${clinicId}:${entityId}`,
         "",
         context.staffId,
         "web_pwa",
@@ -491,6 +492,8 @@ export async function createPayment(
   await appendAudit(
     workbook,
     context,
+    organizationId,
+    clinicId,
     "PAYMENT_CREATED",
     "Payment",
     receiptNo,
@@ -563,6 +566,8 @@ export async function requestExpense(
   await appendAudit(
     workbook,
     context,
+    organizationId,
+    clinicId,
     "EXPENSE_REQUESTED",
     "Expense",
     expenseId,
@@ -621,6 +626,8 @@ export async function payApprovedExpense(
   await appendAudit(
     workbook,
     context,
+    organizationId,
+    clinicId,
     "EXPENSE_PAID",
     "Expense",
     normalize(input.expenseId),
@@ -693,6 +700,8 @@ export async function requestCashMovement(
   await appendAudit(
     workbook,
     context,
+    organizationId,
+    clinicId,
     "CASH_MOVEMENT_REQUESTED",
     "CashMovement",
     movementId,
@@ -769,6 +778,8 @@ export async function paySalary(
   await appendAudit(
     workbook,
     context,
+    organizationId,
+    clinicId,
     "SALARY_PAID",
     "SalaryPayment",
     paymentId,
