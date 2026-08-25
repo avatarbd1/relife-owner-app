@@ -41,12 +41,16 @@ test("correction fails closed for another staff member, stale due, or non-latest
   assert.match(corrections, /TODAY_ONLY_CORRECTION/);
 });
 
-test("Dental correction writes Dental audit/delete provenance instead of Physio identifiers", () => {
+test("correction provenance uses the authenticated tenant identifiers", () => {
   const corrections = source("lib/webos/ownCorrections.ts");
   assert.match(corrections, /department === "Dental" \? "dental" : "physio"/);
-  assert.match(corrections, /department === "Dental" \? "RELIFE-DENTAL" : "RELIFE-PHYSIO"/);
-  assert.match(corrections, /Clinic_ID: clinic/);
+  assert.match(corrections, /organizationId: string/);
+  assert.match(corrections, /clinicId: string/);
+  assert.match(corrections, /Organization_ID: organizationId/);
+  assert.match(corrections, /Clinic_ID: clinicId/);
+  assert.match(corrections, /Record_ID: `\$\{clinicId\}:/);
   assert.match(corrections, /Department: department/);
+  assert.doesNotMatch(corrections, /department === "Dental" \? "RELIFE-DENTAL" : "RELIFE-PHYSIO"/);
 });
 
 test("corrections API requires department and exact receipt confirmation", () => {
