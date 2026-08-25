@@ -4,47 +4,44 @@ import type { AccessContext } from "@/lib/webos/access";
 import type { StaffTenantContext } from "./staffTenantContext";
 
 /**
- * Validates that the staff member's access context permits operations
- * within the tenant/clinic scope. Fails closed on mismatch.
+ * Validate that the authenticated access context and canonical tenant context
+ * belong to the same staff identity. The tenant context itself is resolved
+ * server-side from the staff session and fails closed on missing/ambiguous
+ * bindings, so there is no legacy/client-supplied tenant fallback here.
  */
 export function validateTenantScope(
   access: AccessContext,
   tenant: StaffTenantContext,
   operation: string
 ): void {
-  // Owner is allowed all scope access
-  if (access.roles.includes("Owner")) return;
+  const accessStaffId = access.staffId.trim();
+  const tenantStaffId = tenant.staffId.trim();
 
-  // Non-Owner staff can only access their own organization
-  if (access.staffId !== "ST001") {
-    // Future: validate staff_tenant_bindings for non-Owner staff
-    // For now, non-Owner behavior unchanged until staff-wide membership cutover
-    return;
+  if (!accessStaffId || !tenantStaffId || accessStaffId !== tenantStaffId) {
+    throw new Error(`TENANT_SCOPE_DENIED:${operation}`);
   }
 
-  // If we reach here, staff lacks the required scope
-  throw new Error(`TENANT_SCOPE_DENIED:${operation}`);
+  if (!tenant.organizationId?.trim() || !tenant.clinicId?.trim()) {
+    throw new Error(`TENANT_SCOPE_DENIED:${operation}`);
+  }
 }
 
 /**
- * Validates that the patient's department matches staff access scope.
- * Fail-closed: missing or inaccessible department returns false.
+ * Validate department-based access using the existing server-derived
+ * AccessContext. Owner/All scope remains compatible with the current RBAC
+ * model; other staff must have the requested department explicitly assigned.
  */
 export function canAccessDepartment(
   access: AccessContext,
   department: "Physio" | "Dental"
 ): boolean {
-  // Owner can access all departments
   if (access.roles.includes("Owner")) return true;
 
-  // Scoped staff can only access their authorized departments
   const departmentAccess = access.departmentAccess || [];
   return departmentAccess.includes(department) || departmentAccess.includes("All");
 }
 
-/**
- * Validates department-based access, fail-closed.
- */
+/** Fail closed when the requested department is not in the staff scope. */
 export function validateDepartmentAccess(
   access: AccessContext,
   department: "Physio" | "Dental"
