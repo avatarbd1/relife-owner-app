@@ -100,10 +100,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
 function normalizePhone(value: unknown): string {
   let digits = normalize(value).replace(/^'/, "").replace(/\D/g, "");
   if (digits.startsWith("880")) digits = digits.slice(3);
@@ -198,7 +194,7 @@ function auditRow(
   afterValue: string,
   now: ReturnType<typeof dhakaParts>,
   organizationId: string,
-  clinicId_param: string
+  clinicId: string
 ): SheetValue[] {
   return [
     `AUD-${randomUUID()}`,
@@ -212,9 +208,9 @@ function auditRow(
     afterValue,
     "Web OS W2 reception action",
     organizationId,
-    clinicId_param,
+    clinicId,
     "AMTALI-01",
-    `${clinicId_param}:${entityId}`,
+    `${clinicId}:${entityId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -268,7 +264,7 @@ export async function allowedPatientCreateDepartments(
 export async function registerPatient(
   context: AccessContext,
   organizationId: string,
-  clinicId_param: string,
+  clinicId: string,
   input: PatientCreateInput
 ): Promise<{ patientId: string }> {
   const department = input.department;
@@ -331,9 +327,9 @@ export async function registerPatient(
     Created_At: now.timestamp,
     Last_Updated: now.timestamp,
     Organization_ID: organizationId,
-    Clinic_ID: clinicId_param,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId_param}:${patientId}`,
+    Record_ID: `${clinicId}:${patientId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -357,7 +353,7 @@ export async function registerPatient(
       JSON.stringify({ patientId, fullName, department }),
       now,
       organizationId,
-      clinicId_param
+      clinicId
     )
   );
   return { patientId };
@@ -591,7 +587,7 @@ function activePlanNeedsTraction(rows: string[][], patientId: string): boolean {
 export async function createAppointment(
   context: AccessContext,
   organizationId: string,
-  clinicId_param: string,
+  clinicId: string,
   input: AppointmentCreateInput
 ): Promise<{ appointmentId: string }> {
   const patient = await getPatientForContext(context, input.patientId);
@@ -663,9 +659,9 @@ export async function createAppointment(
     Status: "Scheduled",
     Remarks: remarks,
     Organization_ID: organizationId,
-    Clinic_ID: clinicId_param,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId_param}:${appointmentId}`,
+    Record_ID: `${clinicId}:${appointmentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -690,7 +686,7 @@ export async function createAppointment(
       JSON.stringify({ appointmentId, patientId: patient.patientId, date, time, therapist }),
       now,
       organizationId,
-      clinicId_param
+      clinicId
     )
   );
   return { appointmentId };
