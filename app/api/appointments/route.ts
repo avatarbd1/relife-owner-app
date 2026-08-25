@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
           remarks: String(body.remarks || ""),
         });
       }
-      return createAppointment(access, {
+      return createAppointment(access, tenant.organizationId, tenant.clinicId, {
         patientId: patient.patientId,
         date: body.date,
         time: body.time,

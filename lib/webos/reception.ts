@@ -214,7 +214,7 @@ function auditRow(
     organizationId,
     clinicId_param,
     "AMTALI-01",
-    `${clinic}:${entityId}`,
+    `${clinicId_param}:${entityId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -355,7 +355,9 @@ export async function registerPatient(
       patientId,
       department,
       JSON.stringify({ patientId, fullName, department }),
-      now
+      now,
+      organizationId,
+      clinicId_param
     )
   );
   return { patientId };
@@ -588,6 +590,8 @@ function activePlanNeedsTraction(rows: string[][], patientId: string): boolean {
 
 export async function createAppointment(
   context: AccessContext,
+  organizationId: string,
+  clinicId_param: string,
   input: AppointmentCreateInput
 ): Promise<{ appointmentId: string }> {
   const patient = await getPatientForContext(context, input.patientId);
@@ -684,7 +688,9 @@ export async function createAppointment(
       patient.patientId,
       department,
       JSON.stringify({ appointmentId, patientId: patient.patientId, date, time, therapist }),
-      now
+      now,
+      organizationId,
+      clinicId_param
     )
   );
   return { appointmentId };
