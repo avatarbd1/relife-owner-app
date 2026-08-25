@@ -417,6 +417,8 @@ async function assertRunAssignment(context: AccessContext, session: ChamberSessi
 
 async function appendChamberAudit(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   action: string,
   session: ChamberSession,
   after: string
@@ -434,10 +436,10 @@ async function appendChamberAudit(
       "",
       after,
       "Live Chamber resource action",
-      "RELIFE",
-      "RELIFE-PHYSIO",
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `RELIFE-PHYSIO:${session.sessionId}`,
+      `${clinicId}:${session.sessionId}`,
       "",
       context.staffId,
       "web_pwa",
@@ -580,6 +582,8 @@ export async function getChamberSnapshot(context: AccessContext): Promise<Chambe
 
 export async function receiveChamberPatient(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   appointmentIdInput: string
 ): Promise<{ sessionId: string }> {
   assertCanPerform(context, "chamber.receive", "Physio");
@@ -630,12 +634,14 @@ export async function receiveChamberPatient(
   } catch (error) {
     console.error("Chamber receive saved but appointment status sync failed", error);
   }
-  await appendChamberAudit(context, "chamber.receive", session, "Waiting");
+  await appendChamberAudit(context, organizationId, clinicId, "chamber.receive", session, "Waiting");
   return { sessionId: session.sessionId };
 }
 
 export async function startChamberSession(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionIdInput: string
 ): Promise<{ sessionId: string; stationId: string }> {
   assertCanPerform(context, "chamber.run", "Physio");
@@ -674,12 +680,14 @@ export async function startChamberSession(
   } catch (error) {
     console.error("Chamber started but appointment status sync failed", error);
   }
-  await appendChamberAudit(context, "chamber.start", next, allocation.station.resourceId);
+  await appendChamberAudit(context, organizationId, clinicId, "chamber.start", next, allocation.station.resourceId);
   return { sessionId, stationId: allocation.station.resourceId };
 }
 
 export async function updateChamberStep(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     sessionId: string;
     step: string;
@@ -742,6 +750,8 @@ export async function updateChamberStep(
   await updateSessionRow(data.sessionRows[0], stored.sheetRow, next);
   await appendChamberAudit(
     context,
+    organizationId,
+    clinicId,
     "chamber.step.update",
     next,
     JSON.stringify({ step, resourceId, stationId, durationMin })
@@ -751,6 +761,8 @@ export async function updateChamberStep(
 
 export async function completeChamberSession(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionIdInput: string
 ): Promise<{ sessionId: string }> {
   assertCanPerform(context, "chamber.run", "Physio");
@@ -777,6 +789,6 @@ export async function completeChamberSession(
   } catch (error) {
     console.error("Chamber completed but appointment status sync failed", error);
   }
-  await appendChamberAudit(context, "chamber.complete", next, `Steps: ${next.stepLog.length}`);
+  await appendChamberAudit(context, organizationId, clinicId, "chamber.complete", next, `Steps: ${next.stepLog.length}`);
   return { sessionId: next.sessionId };
 }
