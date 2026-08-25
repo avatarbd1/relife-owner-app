@@ -7,6 +7,7 @@ const MIGRATION_PATH = new URL(
   "../supabase/migrations/20260824_staff_tenant_membership_v1.sql",
   import.meta.url,
 );
+const VALIDATORS_PATH = new URL("../lib/domain/tenancy/validators.ts", import.meta.url);
 
 test("T2-01 authorization is scoped to the relife schema and exact tenant binding", async () => {
   const source = await readFile(AUTH_PATH, "utf8");
@@ -60,4 +61,14 @@ test("cross-department access is fail-closed for empty scopes", async () => {
     /if \(staffDepartments\.length === 0 \|\| patientDepartments\.length === 0\) return false/,
   );
   assert.match(source, /patientDepartments\.some\(\(department\) => staffDepartmentSet\.has\(department\)\)/);
+});
+
+test("T2-02 tenant validator has no Owner/non-Owner bypass and requires matching canonical staff scope", async () => {
+  const source = await readFile(VALIDATORS_PATH, "utf8");
+  assert.doesNotMatch(source, /roles\.includes\("Owner"\).*return/s);
+  assert.doesNotMatch(source, /staffId\s*!==\s*"ST001"[\s\S]*?return/);
+  assert.match(source, /accessStaffId !== tenantStaffId/);
+  assert.match(source, /tenant\.organizationId\?\.trim\(\)/);
+  assert.match(source, /tenant\.clinicId\?\.trim\(\)/);
+  assert.match(source, /TENANT_SCOPE_DENIED/);
 });
