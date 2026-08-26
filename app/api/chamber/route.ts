@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
           );
           if (conflict) throw new Error(`CHAMBER_PATIENT_ALREADY_ACTIVE:${conflict.appointmentId}`);
         }
-        return receiveChamberRuntimePatient(access, appointmentId);
+        return receiveChamberRuntimePatient(access, tenant.organizationId, tenant.clinicId, appointmentId);
       });
       return NextResponse.json({ ok: true, ...result });
     }
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
         sessionId.startsWith("CHW")
           ? startGeneralTreatment(access, sessionId)
-          : startChamberRuntimeSession(access, sessionId)
+          : startChamberRuntimeSession(access, tenant.organizationId, tenant.clinicId, sessionId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       assertCanPerform(access, "chamber.run", "Physio");
       const sessionId = String(body.sessionId || "").trim();
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
-        updateChamberRuntimeStep(access, {
+        updateChamberRuntimeStep(access, tenant.organizationId, tenant.clinicId, {
           sessionId,
           step: body.step,
           resourceId: body.resourceId,
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
       }
       const capture = await captureChamberTreatmentForCompletion(access, sessionId);
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
-        completeChamberRuntimeSession(access, sessionId)
+        completeChamberRuntimeSession(access, tenant.organizationId, tenant.clinicId, sessionId)
       );
       try {
         const treatmentNote = await recordChamberCompletionTreatmentNote(access, capture);
