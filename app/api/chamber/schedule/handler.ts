@@ -6,7 +6,7 @@ import {
 } from "@/lib/domain/appointments/capacityBooking";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function errorResponse(error: unknown): NextResponse {
@@ -69,8 +69,8 @@ export async function chamberSchedulePost(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
-    assertCanPerform(context, "appointment.create", "Physio");
+    const tenantContext = await requireCurrentTenantAccessContext();
+    assertCanPerform(tenantContext.access, "appointment.create", "Physio");
 
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
@@ -85,14 +85,24 @@ export async function chamberSchedulePost(request: NextRequest) {
     const input = parseInput(record);
 
     if (action === "validate") {
-      const validation = await validateCapacityBooking(context, input);
+      const validation = await validateCapacityBooking(
+        tenantContext.access,
+        tenantContext.tenant.organizationId,
+        tenantContext.tenant.clinicId,
+        input
+      );
       return NextResponse.json({ ok: true, validation });
     }
 
     if (action === "create") {
       const result = await withMutationLock(
         `capacity-booking:${input.date}`,
-        () => createCapacityBooking(context, input)
+        () => createCapacityBooking(
+          tenantContext.access,
+          tenantContext.tenant.organizationId,
+          tenantContext.tenant.clinicId,
+          input
+        )
       );
       return NextResponse.json({ ok: true, ...result });
     }
