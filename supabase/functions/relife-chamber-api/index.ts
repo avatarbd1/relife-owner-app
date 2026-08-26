@@ -154,15 +154,15 @@ Deno.serve(async (req) => {
         messages,
         equipment,
       ] = await Promise.all([
-        sql`select * from relife.patient_cache where clinic_id=${tenant.clinicId}::uuid and department='Physio' and lower(status) <> 'inactive' order by full_name`,
-        sql`select * from relife.treatment_plan_cache where clinic_id=${tenant.clinicId}::uuid and lower(status)='active'`,
-        sql`select * from relife.chamber_resources where clinic_id=${tenant.clinicId}::uuid and department='Physio' and enabled=true order by resource_id`,
-        sql`select * from relife.appointments where clinic_id=${tenant.clinicId}::uuid and date=${date}::date and department='Physio' order by start_time`,
-        sql`select * from relife.machine_reservations where clinic_id=${tenant.clinicId}::uuid and date=${date}::date order by start_minute`,
-        sql`select * from relife.treatment_timeline where clinic_id=${tenant.clinicId}::uuid and date=${date}::date order by start_minute, sequence`,
-        sql`select * from relife.chamber_sessions where clinic_id=${tenant.clinicId}::uuid and date=${date}::date order by updated_at desc`,
-        sql`select * from relife.chat_messages where clinic_id=${tenant.clinicId}::uuid and department='Physio' and created_at >= ${date}::date and created_at < (${date}::date + interval '1 day') order by created_at desc limit 200`,
-        sql`select * from relife.equipment_requests where clinic_id=${tenant.clinicId}::uuid and department='Physio' and created_at >= ${date}::date and created_at < (${date}::date + interval '1 day') order by created_at desc limit 200`,
+        sql`select * from relife.patient_cache where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and department='Physio' and lower(status) <> 'inactive' order by full_name`,
+        sql`select * from relife.treatment_plan_cache where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and lower(status)='active'`,
+        sql`select * from relife.chamber_resources where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and department='Physio' and enabled=true order by resource_id`,
+        sql`select * from relife.appointments where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${date}::date and department='Physio' order by start_time`,
+        sql`select * from relife.machine_reservations where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${date}::date order by start_minute`,
+        sql`select * from relife.treatment_timeline where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${date}::date order by start_minute, sequence`,
+        sql`select * from relife.chamber_sessions where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${date}::date order by updated_at desc`,
+        sql`select * from relife.chat_messages where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and department='Physio' and created_at >= ${date}::date and created_at < (${date}::date + interval '1 day') order by created_at desc limit 200`,
+        sql`select * from relife.equipment_requests where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and department='Physio' and created_at >= ${date}::date and created_at < (${date}::date + interval '1 day') order by created_at desc limit 200`,
       ]);
       return response({
         ok: true,
@@ -192,7 +192,8 @@ Deno.serve(async (req) => {
       if (patientId && startDate) {
         appointments = await sql`
           select * from relife.appointments
-          where clinic_id=${tenant.clinicId}::uuid
+          where organization_id=${tenant.organizationId}::uuid
+            and clinic_id=${tenant.clinicId}::uuid
             and department='Physio'
             and patient_id=${patientId}
             and date >= ${startDate}::date
@@ -203,7 +204,8 @@ Deno.serve(async (req) => {
       } else if (patientId) {
         appointments = await sql`
           select * from relife.appointments
-          where clinic_id=${tenant.clinicId}::uuid
+          where organization_id=${tenant.organizationId}::uuid
+            and clinic_id=${tenant.clinicId}::uuid
             and department='Physio'
             and patient_id=${patientId}
           order by date desc, start_time desc
@@ -212,7 +214,8 @@ Deno.serve(async (req) => {
       } else {
         appointments = await sql`
           select * from relife.appointments
-          where clinic_id=${tenant.clinicId}::uuid
+          where organization_id=${tenant.organizationId}::uuid
+            and clinic_id=${tenant.clinicId}::uuid
             and department='Physio'
             and date >= ${startDate}::date
             and date <= ${endDate}::date
@@ -242,7 +245,8 @@ Deno.serve(async (req) => {
       const rows = await sql`
         update relife.appointments
         set status=${status}, updated_by=${actorId}, updated_at=now()
-        where clinic_id=${tenant.clinicId}::uuid
+        where organization_id=${tenant.organizationId}::uuid
+          and clinic_id=${tenant.clinicId}::uuid
           and department='Physio'
           and id=${appointmentId}
         returning id, status
@@ -345,7 +349,7 @@ Deno.serve(async (req) => {
         const replay = await tx`
           select id, timeline_id, patient_name, gender
           from relife.appointments
-          where clinic_id=${tenant.clinicId}::uuid and request_id=${requestId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and request_id=${requestId}
           limit 1
         `;
         if (replay[0]) {
@@ -362,7 +366,8 @@ Deno.serve(async (req) => {
 
         const patients = await tx`
           select * from relife.patient_cache
-          where clinic_id=${tenant.clinicId}::uuid
+          where organization_id=${tenant.organizationId}::uuid
+            and clinic_id=${tenant.clinicId}::uuid
             and patient_id=${patientId}
             and department='Physio'
           limit 1
@@ -374,7 +379,8 @@ Deno.serve(async (req) => {
 
         const plans = await tx`
           select * from relife.treatment_plan_cache
-          where clinic_id=${tenant.clinicId}::uuid
+          where organization_id=${tenant.organizationId}::uuid
+            and clinic_id=${tenant.clinicId}::uuid
             and patient_id=${patientId}
             and lower(status)='active'
           limit 1
@@ -390,7 +396,8 @@ Deno.serve(async (req) => {
                  extract(hour from start_time)::int * 60 + extract(minute from start_time)::int as start_minute,
                  expected_duration_min
           from relife.appointments
-          where clinic_id=${tenant.clinicId}::uuid
+          where organization_id=${tenant.organizationId}::uuid
+            and clinic_id=${tenant.clinicId}::uuid
             and date=${date}::date
             and department='Physio'
             and lower(status)=any(${ACTIVE})
@@ -446,8 +453,9 @@ Deno.serve(async (req) => {
           select r.resource_id, r.start_minute, r.end_minute, r.patient_name
           from relife.machine_reservations r
           join relife.appointments a
-            on a.id=r.appointment_id and a.clinic_id=r.clinic_id
-          where r.clinic_id=${tenant.clinicId}::uuid
+            on a.id=r.appointment_id and a.organization_id=r.organization_id and a.clinic_id=r.clinic_id
+          where r.organization_id=${tenant.organizationId}::uuid
+            and r.clinic_id=${tenant.clinicId}::uuid
             and r.date=${date}::date
             and lower(r.status) in ('scheduled','active')
             and lower(a.status)=any(${ACTIVE})

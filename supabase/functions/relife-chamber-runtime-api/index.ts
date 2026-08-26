@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
       const result = await sql.begin(async (tx): Promise<TxResult> => {
         const appointments = await tx`
           select * from relife.appointments
-          where clinic_id=${tenant.clinicId}::uuid and department='Physio' and id=${appointmentId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and department='Physio' and id=${appointmentId}
           limit 1
         `;
         const appointment = appointments[0] as Record<string, unknown> | undefined;
@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
 
         const existing = await tx`
           select * from relife.chamber_sessions
-          where clinic_id=${tenant.clinicId}::uuid and appointment_id=${appointmentId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and appointment_id=${appointmentId}
           limit 1
         `;
         if (existing[0]) return { ok: true, session: existing[0] as Record<string, unknown>, duplicate: true };
@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
         await tx`
           update relife.appointments
           set status='Arrived', updated_by=${actorId}, updated_at=now()
-          where clinic_id=${tenant.clinicId}::uuid and id=${appointmentId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${appointmentId}
         `;
         await insertAudit(tx, tenant, actorId, "chamber.receive", sessionId, norm(appointment.patient_id), { appointmentId, status: "Waiting" });
         return { ok: true, session: rows[0] as Record<string, unknown>, duplicate: false };
@@ -187,8 +187,8 @@ Deno.serve(async (req) => {
         const sessions = await tx`
           select s.*, a.bed_id as appointment_bed_id, a.status as appointment_status
           from relife.chamber_sessions s
-          join relife.appointments a on a.id=s.appointment_id and a.clinic_id=s.clinic_id
-          where s.clinic_id=${tenant.clinicId}::uuid and s.id=${sessionId}
+          join relife.appointments a on a.id=s.appointment_id and a.organization_id=s.organization_id and a.clinic_id=s.clinic_id
+          where s.organization_id=${tenant.organizationId}::uuid and s.clinic_id=${tenant.clinicId}::uuid and s.id=${sessionId}
           limit 1 for update
         `;
         const session = sessions[0] as Record<string, unknown> | undefined;
@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
         if (!BEDS.has(bedId)) return { error: "STATION_NOT_FOUND", status: 404 };
         const resources = await tx`
           select resource_id from relife.chamber_resources
-          where clinic_id=${tenant.clinicId}::uuid and resource_type='Station'
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and resource_type='Station'
             and enabled=true and resource_id=${bedId}
           limit 1
         `;
@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
 
         const occupied = await tx`
           select patient_name from relife.chamber_sessions
-          where clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
             and status='In Treatment' and station_id=${bedId} and id<>${sessionId}
           limit 1
         `;
@@ -223,7 +223,7 @@ Deno.serve(async (req) => {
         if (bedId !== "TRACTION-BED") {
           const roomConflict = await tx`
             select gender from relife.chamber_sessions
-            where clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
+            where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
               and status='In Treatment' and room_id=${roomId} and id<>${sessionId}
               and gender<>'' and lower(gender)<>${gender.toLowerCase()}
             limit 1
@@ -237,13 +237,13 @@ Deno.serve(async (req) => {
               started_at=coalesce(started_at, now()),
               current_step=case when current_step='' then 'Treatment started' else current_step end,
               updated_by=${actorId}, updated_at=now(), version=version+1
-          where clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
           returning *
         `;
         await tx`
           update relife.appointments
           set status='In Treatment', updated_by=${actorId}, updated_at=now()
-          where clinic_id=${tenant.clinicId}::uuid and id=${norm(session.appointment_id)}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${norm(session.appointment_id)}
         `;
         await insertAudit(tx, tenant, actorId, "chamber.start", sessionId, norm(session.patient_id), { stationId: bedId });
         return { ok: true, session: rows[0] as Record<string, unknown> };
@@ -266,7 +266,7 @@ Deno.serve(async (req) => {
       const result = await sql.begin(async (tx): Promise<TxResult> => {
         const sessions = await tx`
           select * from relife.chamber_sessions
-          where clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
           limit 1 for update
         `;
         const session = sessions[0] as Record<string, unknown> | undefined;
@@ -281,7 +281,7 @@ Deno.serve(async (req) => {
         const roomId = roomForBed(stationId);
         const stationBusy = await tx`
           select patient_name from relife.chamber_sessions
-          where clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
             and status='In Treatment' and station_id=${stationId} and id<>${sessionId}
           limit 1
         `;
@@ -289,7 +289,7 @@ Deno.serve(async (req) => {
         if (stationId !== "TRACTION-BED") {
           const roomConflict = await tx`
             select gender from relife.chamber_sessions
-            where clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
+            where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
               and status='In Treatment' and room_id=${roomId} and id<>${sessionId}
               and gender<>'' and lower(gender)<>${gender.toLowerCase()}
             limit 1
@@ -300,14 +300,14 @@ Deno.serve(async (req) => {
         if (resourceId) {
           const resource = await tx`
             select resource_id from relife.chamber_resources
-            where clinic_id=${tenant.clinicId}::uuid and resource_type='Machine'
+            where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and resource_type='Machine'
               and enabled=true and resource_id=${resourceId}
             limit 1
           `;
           if (!resource[0]) return { error: "RESOURCE_NOT_FOUND", status: 404 };
           const busy = await tx`
             select patient_name from relife.chamber_sessions
-            where clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
+            where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and date=${session.date}::date
               and status='In Treatment' and current_resource_id=${resourceId} and id<>${sessionId}
             limit 1
           `;
@@ -347,7 +347,7 @@ Deno.serve(async (req) => {
       const result = await sql.begin(async (tx): Promise<TxResult> => {
         const sessions = await tx`
           select * from relife.chamber_sessions
-          where clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
           limit 1 for update
         `;
         const session = sessions[0] as Record<string, unknown> | undefined;

@@ -81,4 +81,6 @@ export interface CashMovement {
   status: string;
   department: Department;
   remarks?: string;
+  organizationId?: string;
+  clinicId?: string;
 }

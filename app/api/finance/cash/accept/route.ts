@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       );
       if (movement) {
         const amount = receivedAmount ?? movement.requestedAmount;
-        const cash = await getScopedCashPosition(scope);
+        const cash = await getScopedCashPosition(scope, new Date(), tenant.organizationId, tenant.clinicId);
         if (Number.isFinite(amount) && amount > cash.reception + 0.001) {
           throw new Error(`INSUFFICIENT_RECEPTION_CASH:${Math.max(0, cash.reception)}`);
         }
