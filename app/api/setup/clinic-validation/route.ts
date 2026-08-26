@@ -73,7 +73,11 @@ async function checkClinicExists(organizationId: string, clinicId: string): Prom
   }
 }
 
-async function checkStaffMembership(clinicId: string, staffId: string): Promise<boolean> {
+async function checkStaffMembership(
+  organizationId: string,
+  clinicId: string,
+  staffId: string
+): Promise<boolean> {
   try {
     const { createClient } = await import("@supabase/supabase-js");
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -87,6 +91,7 @@ async function checkStaffMembership(clinicId: string, staffId: string): Promise<
     const { data } = await supabase
       .from("clinic_memberships")
       .select("user_id")
+      .eq("organization_id", organizationId)
       .eq("clinic_id", clinicId)
       .eq("user_id", staffId)
       .eq("status", "active")
@@ -165,7 +170,11 @@ export async function POST(request: NextRequest) {
           `Clinic ${clinicId} not found or does not belong to organization ${organizationId}`
         );
       } else {
-        const hasMembership = await checkStaffMembership(clinicId, access.staffId);
+        const hasMembership = await checkStaffMembership(
+          organizationId,
+          clinicId,
+          access.staffId
+        );
         result.checks.staffHasClinicMembership = hasMembership;
 
         if (!hasMembership) {
