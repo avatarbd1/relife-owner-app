@@ -280,6 +280,7 @@ function parseCashMovements(
 ): CashMovement[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
+
   const idIdx = getHeaderIndex(headers, "Movement_ID", "id");
   const dateIdx = getHeaderIndex(headers, "Date");
   const fromIdx = getHeaderIndex(headers, "From_Custodian");
@@ -295,12 +296,18 @@ function parseCashMovements(
   const orgIdIdx = getHeaderIndex(headers, "Organization_ID");
   const clinicIdIdx = getHeaderIndex(headers, "Clinic_ID");
 
+  if (orgIdIdx < 0 || clinicIdIdx < 0) return [];
+
   return rows.slice(1).flatMap((row) => {
     const id = valueAt(row, idIdx);
     if (!id) return [];
-    const recordOrgId = orgIdIdx >= 0 ? valueAt(row, orgIdIdx) || organizationId : organizationId;
-    const recordClinicId = clinicIdIdx >= 0 ? valueAt(row, clinicIdIdx) || clinicId : clinicId;
+
+    const recordOrgId = valueAt(row, orgIdIdx);
+    const recordClinicId = valueAt(row, clinicIdIdx);
+
+    if (!recordOrgId || !recordClinicId) return [];
     if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
+
     const receivedText = valueAt(row, receivedIdx);
     const status = valueAt(row, statusIdx);
     const acceptedAt =
@@ -540,30 +547,32 @@ export async function getSalaryPayments(organizationId?: string, clinicId?: stri
   }
 }
 
-export async function getCashMovements(organizationId?: string, clinicId?: string): Promise<CashMovement[]> {
-  const org = organizationId || "RELIFE";
-  const clinic = clinicId || "RELIFE-PHYSIO";
+export async function getCashMovements(organizationId: string, clinicId: string): Promise<CashMovement[]> {
   if (hasPrivateSheetsCredentials()) {
     const all = await fromPrivateOrSeed(
       "cashMovements",
       cashMovementsSeed as unknown as CashMovement[]
     );
-    return all.filter((c) => c.organizationId === org && c.clinicId === clinic);
+    return all.filter((c) => c.organizationId === organizationId && c.clinicId === clinicId);
   }
   if (!process.env.SHEET_CASH_CSV) {
     const seed = cashMovementsSeed as unknown as CashMovement[];
-    return seed.filter((c) => c.organizationId === org && c.clinicId === clinic);
+    return seed.filter((c) => c.organizationId === organizationId && c.clinicId === clinicId);
   }
   try {
     return parseCashMovements(
       await fetchAndParseCSV(process.env.SHEET_CASH_CSV),
       "Physio",
-      org,
-      clinic
+      organizationId,
+      clinicId
     );
   } catch (error) {
     console.error("Error fetching cash movements:", error);
     const seed = cashMovementsSeed as unknown as CashMovement[];
-    return seed.filter((c) => c.organizationId === org && c.clinicId === clinic);
+    return seed.filter((c) => c.organizationId === organizationId && c.clinicId === clinicId);
   }
+}
+
+export async function getCashMovementsForAdminView(): Promise<CashMovement[]> {
+  return getCashMovements("RELIFE", "RELIFE-PHYSIO");
 }

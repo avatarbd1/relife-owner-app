@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getCashMovements, getExpenses, getSalaryPayments } from "@/lib/data";
+import { getCashMovements, getCashMovementsForAdminView, getExpenses, getSalaryPayments } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform, type AccessContext, type WebAction } from "@/lib/webos/access";
 
@@ -43,7 +43,7 @@ export async function getFinanceHistorySnapshot(
 
   const [expenses, cashMovements, salaryPayments] = await Promise.all([
     needsExpenses ? getExpenses() : Promise.resolve([]),
-    needsCash ? getCashMovements() : Promise.resolve([]),
+    needsCash ? getCashMovementsForAdminView() : Promise.resolve([]),
     needsSalary ? getSalaryPayments() : Promise.resolve([]),
   ]);
 
