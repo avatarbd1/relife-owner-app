@@ -108,6 +108,8 @@ function dhakaNow(ref = new Date()) {
 function auditRow(
   headers: string[],
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   beforeValue: Record<string, string>,
   afterValue: Record<string, string>,
   department: string
@@ -125,10 +127,10 @@ function auditRow(
     Before_Value: JSON.stringify(beforeValue),
     After_Value: JSON.stringify(afterValue),
     Reason: "Staff updated own profile name/phone",
-    Organization_ID: "RELIFE",
-    Clinic_ID: department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE:${auditId}`,
+    Record_ID: `${clinicId}:${auditId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -142,10 +144,14 @@ function auditRow(
 
 export async function updateOwnProfile(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ProfileSettingsInput
 ): Promise<{ fullName: string; phone: string }> {
   const staffId = normalize(context.staffId);
-  if (!staffId) throw new Error("ACCESS_DENIED");
+  if (!staffId || !normalize(organizationId) || !normalize(clinicId)) {
+    throw new Error("ACCESS_DENIED");
+  }
 
   const fullName = normalize(input.fullName).replace(/\s+/g, " ").slice(0, 120);
   if (fullName.length < 2) throw new Error("PROFILE_NAME_REQUIRED");
@@ -155,7 +161,7 @@ export async function updateOwnProfile(
     throw new Error("INVALID_PROFILE_PHONE");
   }
 
-  return withMutationLock(`staff-profile:${staffId}`, async () => {
+  return withMutationLock(`staff-profile:${organizationId}:${clinicId}:${staffId}`, async () => {
     const [snapshot, properties] = await Promise.all([
       fetchSheetRanges("physio", ["08_Staff", "20_Data_Audit"]),
       getSheetProperties("physio"),
@@ -171,16 +177,28 @@ export async function updateOwnProfile(
     const nameIdx = headerIndex(headers, "Full_Name");
     const phoneIdx = headerIndex(headers, "Phone");
     const departmentIdx = headerIndex(headers, "Primary_Department", "Department");
-    if ([staffIdIdx, nameIdx, phoneIdx].some((index) => index < 0)) {
+    const organizationIdx = headerIndex(headers, "Organization_ID");
+    const clinicIdx = headerIndex(headers, "Clinic_ID");
+    if ([staffIdIdx, nameIdx, phoneIdx, organizationIdx, clinicIdx].some((index) => index < 0)) {
       throw new Error("PROFILE_SCHEMA_MISMATCH");
     }
 
-    const dataIndex = staffRows.slice(1).findIndex((row) => at(row, staffIdIdx) === staffId);
+    const dataIndex = staffRows.slice(1).findIndex(
+      (row) =>
+        at(row, staffIdIdx) === staffId &&
+        at(row, organizationIdx) === organizationId &&
+        at(row, clinicIdx) === clinicId
+    );
     if (dataIndex < 0) throw new Error("PROFILE_NOT_FOUND");
 
     const duplicate = phone && staffRows.slice(1).some((row) => {
       const rowStaffId = at(row, staffIdIdx);
-      return rowStaffId !== staffId && normalizePhone(at(row, phoneIdx)) === phone;
+      return (
+        rowStaffId !== staffId &&
+        at(row, organizationIdx) === organizationId &&
+        at(row, clinicIdx) === clinicId &&
+        normalizePhone(at(row, phoneIdx)) === phone
+      );
     });
     if (duplicate) throw new Error("PROFILE_PHONE_DUPLICATE");
 
@@ -205,7 +223,15 @@ export async function updateOwnProfile(
       updateCellRequest(staffSheetId, rowNumber, phoneIdx + 1, phone),
       appendRowRequest(
         auditSheetId,
-        auditRow(auditRows[0], context, before, after, department)
+        auditRow(
+          auditRows[0],
+          context,
+          organizationId,
+          clinicId,
+          before,
+          after,
+          department
+        )
       ),
     ];
 

@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { answerStaffAi } from "@/lib/webos/ai";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
-    const context = await requireCurrentAccessContext();
+    const { access, tenant } = await requireCurrentTenantAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await answerStaffAi(context, body.question);
+    const result = await answerStaffAi(
+      access,
+      tenant.organizationId,
+      tenant.clinicId,
+      body.question
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "STAFF_AI_FAILED";

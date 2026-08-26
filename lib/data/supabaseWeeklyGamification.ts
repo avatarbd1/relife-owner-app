@@ -191,13 +191,16 @@ function parseFinalization(value: unknown): WeeklyGamificationFinalization | nul
 }
 
 export async function getWeeklyGamificationFinalization(
+  organizationId: string,
+  clinicId: string,
   weekStart?: string
 ): Promise<WeeklyGamificationFinalization | null> {
+  if (!organizationId.trim() || !clinicId.trim()) throw new Error("ACCESS_DENIED");
   const result = await callWeekly<Record<string, unknown>>(
     "status",
     weekStart ? { weekStart } : {},
-    undefined,
-    undefined,
+    organizationId,
+    clinicId,
     5_000
   );
   return parseFinalization(result.finalization);
@@ -206,15 +209,23 @@ export async function getWeeklyGamificationFinalization(
 export async function finalizeWeeklyGamification(input: {
   actorId: string;
   actorRoles: string[];
+  organizationId: string;
+  clinicId: string;
   weekStart?: string;
 }): Promise<WeeklyGamificationFinalizeResult> {
+  if (!input.organizationId.trim() || !input.clinicId.trim()) throw new Error("ACCESS_DENIED");
   const action = input.weekStart ? "finalize_week" : "finalize_previous_week";
-  const result = await callWeekly<Record<string, unknown>>(action, {
-    trigger: "owner_manual",
-    actorId: input.actorId,
-    actorRoles: input.actorRoles,
-    ...(input.weekStart ? { weekStart: input.weekStart } : {}),
-  });
+  const result = await callWeekly<Record<string, unknown>>(
+    action,
+    {
+      trigger: "owner_manual",
+      actorId: input.actorId,
+      actorRoles: input.actorRoles,
+      ...(input.weekStart ? { weekStart: input.weekStart } : {}),
+    },
+    input.organizationId,
+    input.clinicId
+  );
   const finalizationId = String(result.finalizationId || "").trim();
   const weekStart = String(result.weekStart || "").trim();
   const weekEnd = String(result.weekEnd || "").trim();

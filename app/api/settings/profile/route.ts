@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { getCurrentStaffIdentity, requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { getCurrentStaffIdentity, requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { updateOwnProfile } from "@/lib/webos/profileSettings";
 
 function errorResponse(error: unknown): NextResponse {
@@ -51,16 +51,21 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    const { access, tenant } = await requireCurrentTenantAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
-    const profile = await updateOwnProfile(context, {
-      fullName: String(body.fullName || ""),
-      phone: String(body.phone || ""),
-    });
+    const profile = await updateOwnProfile(
+      access,
+      tenant.organizationId,
+      tenant.clinicId,
+      {
+        fullName: String(body.fullName || ""),
+        phone: String(body.phone || ""),
+      }
+    );
     return NextResponse.json({ ok: true, profile });
   } catch (error) {
     return errorResponse(error);

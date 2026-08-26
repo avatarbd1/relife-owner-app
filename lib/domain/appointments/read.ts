@@ -6,6 +6,7 @@ import {
   querySupabaseChamberAppointments,
   type SupabaseAppointmentRow,
 } from "@/lib/data/supabaseChamber";
+import { resolveStaffTenantContext } from "@/lib/domain/tenancy/staffTenantContext";
 import type { PatientRecord } from "@/lib/patients";
 import type { Scope } from "@/lib/types";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
@@ -31,7 +32,11 @@ function sheetTime(value: string): string {
   return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
-function fromSupabase(row: SupabaseAppointmentRow): AppointmentRecord {
+function fromSupabase(
+  row: SupabaseAppointmentRow,
+  organizationId: string,
+  clinicId: string
+): AppointmentRecord {
   return {
     appointmentId: normalize(row.id),
     date: normalize(row.date).slice(0, 10),
@@ -43,19 +48,21 @@ function fromSupabase(row: SupabaseAppointmentRow): AppointmentRecord {
     status: normalize(row.status) || "Scheduled",
     remarks: normalize(row.remarks),
     receivedBy: "",
-    organizationId: "RELIFE",
-    clinicId: "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
   };
 }
 
 function mergeAppointments(
   sheets: AppointmentRecord[],
-  supabase: SupabaseAppointmentRow[]
+  supabase: SupabaseAppointmentRow[],
+  organizationId: string,
+  clinicId: string
 ): AppointmentRecord[] {
   const merged = new Map<string, AppointmentRecord>();
   for (const row of sheets) merged.set(`${row.department}:${row.appointmentId}`, row);
   for (const row of supabase) {
-    const mapped = fromSupabase(row);
+    const mapped = fromSupabase(row, organizationId, clinicId);
     if (mapped.appointmentId) merged.set(`Physio:${mapped.appointmentId}`, mapped);
   }
   return [...merged.values()];
@@ -89,6 +96,12 @@ function requireConfiguredCutover(): void {
   if (!chamberSupabaseConfigured()) throw new Error("SUPABASE_EDGE_SECRET_MISSING");
 }
 
+async function currentTenant(context: AccessContext) {
+  const tenant = await resolveStaffTenantContext(context.staffId);
+  if (!tenant?.organizationId || !tenant?.clinicId) throw new Error("ACCESS_DENIED");
+  return tenant;
+}
+
 /**
  * Transitional appointment read model used by the main appointments workspace.
  * Legacy Sheets rows remain visible; tenant-scoped Supabase Physio rows are
@@ -106,14 +119,23 @@ export async function getUnifiedAppointmentsForContext(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
     throw new Error("INVALID_DATE");
   }
-  const sheetRows = (await getAppointmentsForContext(context, scope)).filter(
-    (row) => row.date >= startDate && row.date <= endDate
-  );
+  const tenant = await currentTenant(context);
+  const sheetRows = (
+    await getAppointmentsForContext(
+      context,
+      scope,
+      undefined,
+      tenant.organizationId,
+      tenant.clinicId
+    )
+  ).filter((row) => row.date >= startDate && row.date <= endDate);
   if (!needsSupabasePhysio(context, scope)) return sortAscending(sheetRows);
   requireConfiguredCutover();
 
   const supabaseRows = await querySupabaseChamberAppointments({ startDate, endDate });
-  return sortAscending(mergeAppointments(sheetRows, supabaseRows));
+  return sortAscending(
+    mergeAppointments(sheetRows, supabaseRows, tenant.organizationId, tenant.clinicId)
+  );
 }
 
 /** Patient file history parity for Supabase-created Chamber appointments. */
@@ -121,7 +143,19 @@ export async function getUnifiedPatientAppointmentsForContext(
   context: AccessContext,
   patient: PatientRecord
 ): Promise<AppointmentRecord[]> {
-  const sheetRows = await getPatientAppointmentsForContext(context, patient);
+  const tenant = await currentTenant(context);
+  if (
+    patient.organizationId !== tenant.organizationId ||
+    patient.clinicId !== tenant.clinicId
+  ) {
+    return [];
+  }
+  const sheetRows = await getPatientAppointmentsForContext(
+    context,
+    patient,
+    tenant.organizationId,
+    tenant.clinicId
+  );
   if (
     patient.department !== "Physio" ||
     chamberDbMode() !== "supabase" ||
@@ -132,5 +166,7 @@ export async function getUnifiedPatientAppointmentsForContext(
   requireConfiguredCutover();
 
   const supabaseRows = await querySupabaseChamberAppointments({ patientId: patient.patientId });
-  return sortDescending(mergeAppointments(sheetRows, supabaseRows));
+  return sortDescending(
+    mergeAppointments(sheetRows, supabaseRows, tenant.organizationId, tenant.clinicId)
+  );
 }

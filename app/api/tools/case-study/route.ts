@@ -10,10 +10,15 @@ export async function POST(request: NextRequest) {
     const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await generateCaseStudyLesson(access, tenant.clinicId, {
-      patientId: body.patientId,
-      lessonTitle: body.lessonTitle,
-    });
+    const result = await generateCaseStudyLesson(
+      access,
+      tenant.organizationId,
+      tenant.clinicId,
+      {
+        patientId: body.patientId,
+        lessonTitle: body.lessonTitle,
+      }
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CASE_STUDY_FAILED";

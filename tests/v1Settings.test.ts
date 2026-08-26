@@ -28,15 +28,21 @@ test("minimal settings expose only real current workflows", () => {
   assert.doesNotMatch(client, /Profile picture/);
 });
 
-test("self profile endpoint is same-origin, scoped to current staff and audited", () => {
+test("self profile endpoint is same-origin, tenant-scoped to current staff and audited", () => {
   const route = source("app/api/settings/profile/route.ts");
   const writer = source("lib/webos/profileSettings.ts");
 
   assert.match(route, /isAllowedRequestOrigin/);
-  assert.match(route, /requireCurrentAccessContext/);
+  assert.match(route, /requireCurrentTenantAccessContext/);
+  assert.match(route, /tenant\.organizationId/);
+  assert.match(route, /tenant\.clinicId/);
   assert.match(route, /updateOwnProfile/);
 
-  assert.match(writer, /withMutationLock\(`staff-profile:\$\{staffId\}`/);
+  assert.match(writer, /withMutationLock\(`staff-profile:\$\{organizationId\}:\$\{clinicId\}:\$\{staffId\}`/);
+  assert.match(writer, /at\(row, organizationIdx\) === organizationId/);
+  assert.match(writer, /at\(row, clinicIdx\) === clinicId/);
+  assert.match(writer, /Organization_ID: organizationId/);
+  assert.match(writer, /Clinic_ID: clinicId/);
   assert.match(writer, /Full_Name/);
   assert.match(writer, /Phone/);
   assert.match(writer, /profile\.update_self/);

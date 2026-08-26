@@ -56,10 +56,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
 function dhakaNow(ref = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Dhaka",
@@ -107,8 +103,9 @@ function objectPath(input: {
   reportId: string;
   fileName: string;
 }): string {
+  if (!normalize(input.clinic)) throw new Error("ACCESS_DENIED");
   return [
-    safeSegment(input.clinic, "RELIFE-PHYSIO"),
+    safeSegment(input.clinic, "clinic"),
     safeSegment(input.patientId, "patient"),
     safeSegment(input.reportId, "report"),
     safeSegment(input.fileName, "report.bin"),
@@ -215,6 +212,7 @@ export async function uploadPatientReportToPrivateStorage(
   const patientId = normalize(input.patientId);
   const fileName = normalize(input.fileName).replace(/[\\/]/g, "_").slice(0, 180);
   const mimeType = normalize(input.mimeType).toLowerCase() || "application/octet-stream";
+  if (!organizationId.trim() || !clinicId.trim()) throw new Error("ACCESS_DENIED");
   if (!patientId || !fileName) throw new Error("REPORT_FIELDS_REQUIRED");
   if (input.bytes.byteLength < 1 || input.bytes.byteLength > MAX_BYTES) {
     throw new Error("REPORT_FILE_SIZE_INVALID");

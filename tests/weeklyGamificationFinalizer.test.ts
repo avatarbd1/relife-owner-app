@@ -254,16 +254,18 @@ test("accepted cash handover projects exact/mismatch fact to originating Recepti
   assert.match(cash, /reconciledAt: now\.provenance/);
 });
 
-test("manual finalization is explicit Owner-only RBAC and server-derived actor identity", () => {
+test("manual finalization is explicit Owner-only RBAC, tenant-bound, and server-derived", () => {
   assert.match(access, /"performance\.weekly\.finalize"/);
   const ownerSection = access.slice(access.indexOf("Owner: new Set"), access.indexOf("Manager: new Set"));
   assert.match(ownerSection, /"performance\.weekly\.finalize"/);
   const nonOwner = access.slice(access.indexOf("Manager: new Set"));
   assert.doesNotMatch(nonOwner, /"performance\.weekly\.finalize"/);
-  assert.match(route, /requireCurrentAccessContext/);
-  assert.match(route, /assertCanPerform\(context, "performance\.weekly\.finalize", "All"\)/);
-  assert.match(route, /actorId: context\.staffId/);
-  assert.match(route, /actorRoles: context\.roles/);
+  assert.match(route, /requireCurrentTenantAccessContext/);
+  assert.match(route, /assertCanPerform\(access, "performance\.weekly\.finalize", "All"\)/);
+  assert.match(route, /actorId: access\.staffId/);
+  assert.match(route, /actorRoles: access\.roles/);
+  assert.match(route, /organizationId: tenant\.organizationId/);
+  assert.match(route, /clinicId: tenant\.clinicId/);
   assert.match(route, /isAllowedRequestOrigin/);
 });
 

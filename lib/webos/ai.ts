@@ -181,13 +181,22 @@ function chooseStaffSheet(question: string): keyof typeof SAFE_FIELDS {
   return "06_Payments";
 }
 
-function safeRows(rows: string[][], sheetName: string): Record<string, string>[] {
+function safeRows(
+  rows: string[][],
+  sheetName: string,
+  organizationId: string,
+  clinicId: string
+): Record<string, string>[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const deptIdx = headerIndex(headers, "Department");
   const primaryDeptIdx = headerIndex(headers, "Primary_Department");
+  const organizationIdx = headerIndex(headers, "Organization_ID");
+  const clinicIdx = headerIndex(headers, "Clinic_ID");
+  if (organizationIdx < 0 || clinicIdx < 0) return [];
   const fields = SAFE_FIELDS[sheetName] || [];
   return rows.slice(1).flatMap((row) => {
+    if (at(row, organizationIdx) !== organizationId || at(row, clinicIdx) !== clinicId) return [];
     if (deptIdx >= 0 && at(row, deptIdx) !== "Physio") return [];
     if (sheetName === "08_Staff") {
       const primary = at(row, primaryDeptIdx);
@@ -204,14 +213,17 @@ function safeRows(rows: string[][], sheetName: string): Record<string, string>[]
 
 export async function answerStaffAi(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   questionInput: string
 ): Promise<{ answer: string; source: string }> {
   if (!context.roles.includes("Owner")) throw new Error("ACCESS_DENIED");
+  if (!normalize(organizationId) || !normalize(clinicId)) throw new Error("ACCESS_DENIED");
   const question = normalize(questionInput).slice(0, 2500);
   if (question.length < 3) throw new Error("QUESTION_REQUIRED");
   const source = chooseStaffSheet(question);
   const snapshot = await fetchSheetRanges("physio", [source]);
-  const records = safeRows(snapshot[source] || [], source);
+  const records = safeRows(snapshot[source] || [], source, organizationId, clinicId);
   const system = [
     "You are a clinic operations analyst answering the Relife owner in Bangla.",
     "Use only the supplied de-identified Physio operational rows. Do not infer missing people or records.",
@@ -224,9 +236,11 @@ export async function answerStaffAi(
 
 export async function generateCaseStudyLesson(
   context: AccessContext,
+  organizationId: string,
   clinicId: string,
   input: { patientId: string; lessonTitle?: string }
 ): Promise<{ caseStudyId: string; lessonNumber: number; content: string }> {
+  if (!normalize(organizationId) || !normalize(clinicId)) throw new Error("ACCESS_DENIED");
   const patientId = normalize(input.patientId);
   if (!patientId) throw new Error("PATIENT_REQUIRED");
   const workspace = await getClinicalWorkspace(context, clinicId, patientId);
@@ -291,10 +305,10 @@ export async function generateCaseStudyLesson(
       Content: content,
       Created_By: context.staffId,
       Timestamp: now.timestamp,
-      Organization_ID: "RELIFE",
-      Clinic_ID: "RELIFE-PHYSIO",
+      Organization_ID: organizationId,
+      Clinic_ID: clinicId,
       Branch_ID: "AMTALI-01",
-      Record_ID: `RELIFE-PHYSIO:${caseStudyId}`,
+      Record_ID: `${clinicId}:${caseStudyId}`,
       Encounter_ID: sessionId,
       Provider_ID: context.staffId,
       Source_System: "web_pwa",
@@ -317,10 +331,10 @@ export async function generateCaseStudyLesson(
       "",
       title,
       "AI-assisted case study; clinician review required",
-      "RELIFE",
-      "RELIFE-PHYSIO",
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `RELIFE-PHYSIO:${caseStudyId}`,
+      `${clinicId}:${caseStudyId}`,
       sessionId,
       context.staffId,
       "web_pwa",
