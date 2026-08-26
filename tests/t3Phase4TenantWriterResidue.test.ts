@@ -2,23 +2,32 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const WRITER_FILES = [
+// Canonical production writers exercised by current API/domain boundaries.
+// Historical modules chamberFixedHour.ts, appointmentScheduling.ts and financeOps.ts
+// are intentionally excluded: current Chamber/appointment routes use capacityBooking,
+// and the finance production boundary delegates to lib/domain/finance/* writers.
+const PRODUCTION_WRITER_FILES = [
+  "lib/webos/attendance.ts",
+  "lib/webos/attendanceNormal.ts",
+  "lib/webos/inventory.ts",
+  "lib/webos/chamber.ts",
   "lib/webos/chamberAssignment.ts",
   "lib/webos/chamberClinicalNote.ts",
-  "lib/webos/chamberFixedHour.ts",
-  "lib/webos/appointmentScheduling.ts",
-  "lib/webos/corrections.ts",
+  "lib/webos/chamberComms.ts",
+  "lib/webos/chamberPreference.ts",
   "lib/webos/generalTreatmentRuntime.ts",
-  "lib/webos/financeOps.ts",
+  "lib/webos/appointmentStatus.ts",
+  "lib/webos/corrections.ts",
   "lib/webos/ownCorrections.ts",
+  "lib/domain/appointments/capacityBooking.ts",
 ] as const;
 
 const HARDCODED_TENANT = /["'`]RELIFE(?:-PHYSIO|-DENTAL)?["'`]/g;
 
-test("T3 Phase 4 writer modules contain no hardcoded Relife tenant identity", () => {
+test("T3 Phase 4 canonical production writers contain no hardcoded Relife tenant identity", () => {
   const residue: string[] = [];
 
-  for (const file of WRITER_FILES) {
+  for (const file of PRODUCTION_WRITER_FILES) {
     const source = readFileSync(file, "utf8");
     const lines = source.split("\n");
     for (let index = 0; index < lines.length; index += 1) {
