@@ -84,6 +84,10 @@ function workbookFor(department: Department): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
+function storageRootFor(department: Department): string {
+  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
+}
+
 function migrationConfig() {
   const migrationKey = process.env.LEGACY_MEDIA_MIGRATION_KEY?.trim();
   const botToken = process.env.BOT_TOKEN?.trim();
@@ -204,8 +208,6 @@ async function migrateDepartment(
       const reportId = normalize(row[reportIdIdx]);
       const fileId = normalize(row[telegramIdIdx]);
       const driveLink = normalize(row[driveLinkIdx]);
-      // Never overwrite an existing external/Drive link. Blank legacy rows are
-      // migrated first; non-empty legacy links need a preservation strategy.
       return Boolean(reportId && fileId && !driveLink);
     })
     .slice(0, limit);
@@ -221,7 +223,7 @@ async function migrateDepartment(
       if (telegram.body.byteLength < 1) throw new Error("TELEGRAM_FILE_EMPTY");
       const mimeType = mimeFromFileName(fileName, telegram.contentType);
       const path = [
-        safeSegment(config.clinicId, "clinic"),
+        storageRootFor(department),
         safeSegment(patientId, "patient"),
         safeSegment(reportId, "report"),
         fileName,
