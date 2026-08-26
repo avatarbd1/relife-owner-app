@@ -300,8 +300,8 @@ export async function getClinicalWorkspace(
 ): Promise<ClinicalWorkspace> {
   const patient = await requirePhysioPatient(context, patientId);
   // The authorized patient is the compatibility boundary: Tenant #1 patients
-  // still carry the department ledger clinic ID in Sheets, while new writes use the canonical
-  // Supabase clinic UUID. Other tenants add no alternate identifier because
+  // still carry the department ledger clinic ID in Sheets, while new writes
+  // use the canonical Supabase clinic UUID. Other tenants add no alternate identifier because
   // their authorized patient already carries the canonical clinic ID.
   const allowedClinicIds = new Set(
     [clinicId, patient.clinicId].filter((value): value is string => Boolean(value))
