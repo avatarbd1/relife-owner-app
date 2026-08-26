@@ -1,16 +1,20 @@
 import { PageHeading } from "@/components/WorkspaceUI";
 import { getWeeklyGamificationFinalization } from "@/lib/data/supabaseWeeklyGamification";
 import { assertCanPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { WeeklyFinalizationClient } from "./WeeklyFinalizationClient";
 
 export default async function WeeklyGamificationPage() {
-  const context = await requireCurrentAccessContext();
-  assertCanPerform(context, "performance.weekly.finalize", "All");
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const { access, tenant } = tenantContext;
+  assertCanPerform(access, "performance.weekly.finalize", "All");
 
   let finalization = null;
   try {
-    finalization = await getWeeklyGamificationFinalization();
+    finalization = await getWeeklyGamificationFinalization(
+      tenant.organizationId,
+      tenant.clinicId
+    );
   } catch (error) {
     console.error("Weekly Gamification finalization unavailable", error);
   }
