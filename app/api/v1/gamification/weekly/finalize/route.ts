@@ -5,7 +5,7 @@ import {
   getWeeklyGamificationFinalization,
 } from "@/lib/data/supabaseWeeklyGamification";
 import { assertCanPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
   if (message === "ACCESS_DENIED" || message === "OWNER_REQUIRED") return 403;
@@ -24,10 +24,14 @@ function statusFor(message: string): number {
 
 export async function GET(request: NextRequest) {
   try {
-    const context = await requireCurrentAccessContext();
-    assertCanPerform(context, "performance.weekly.finalize", "All");
+    const { access, tenant } = await requireCurrentTenantAccessContext();
+    assertCanPerform(access, "performance.weekly.finalize", "All");
     const weekStart = request.nextUrl.searchParams.get("weekStart")?.trim() || undefined;
-    const finalization = await getWeeklyGamificationFinalization(weekStart);
+    const finalization = await getWeeklyGamificationFinalization(
+      tenant.organizationId,
+      tenant.clinicId,
+      weekStart
+    );
     return NextResponse.json({ ok: true, finalization });
   } catch (error) {
     const message = error instanceof Error ? error.message : "WEEKLY_STATUS_FAILED";
@@ -41,13 +45,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
-    assertCanPerform(context, "performance.weekly.finalize", "All");
+    const { access, tenant } = await requireCurrentTenantAccessContext();
+    assertCanPerform(access, "performance.weekly.finalize", "All");
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const weekStart = String(body.weekStart || "").trim() || undefined;
     const result = await finalizeWeeklyGamification({
-      actorId: context.staffId,
-      actorRoles: context.roles,
+      actorId: access.staffId,
+      actorRoles: access.roles,
+      organizationId: tenant.organizationId,
+      clinicId: tenant.clinicId,
       weekStart,
     });
     return NextResponse.json({ ok: true, ...result });
