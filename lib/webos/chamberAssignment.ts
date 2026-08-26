@@ -62,6 +62,8 @@ function nowDhaka(ref = new Date()): { display: string; iso: string } {
 
 async function appendAudit(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   appointmentId: string,
   patientId: string,
   before: string,
@@ -80,10 +82,10 @@ async function appendAudit(
       before,
       after,
       "Today's therapist changed from Live Chamber",
-      "RELIFE",
-      "RELIFE-PHYSIO",
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `RELIFE-PHYSIO:${appointmentId}`,
+      `${clinicId}:${appointmentId}`,
       "",
       context.staffId,
       "web_pwa",
@@ -101,6 +103,8 @@ async function appendAudit(
 
 export async function assignChamberTherapist(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   appointmentIdInput: string,
   staffIdInput: string
 ): Promise<{ appointmentId: string; therapist: string }> {
@@ -178,6 +182,8 @@ export async function assignChamberTherapist(
 
   await appendAudit(
     context,
+    organizationId,
+    clinicId,
     appointmentId,
     patientIdIdx >= 0 ? at(appointmentRow, patientIdIdx) : "",
     oldTherapist,
