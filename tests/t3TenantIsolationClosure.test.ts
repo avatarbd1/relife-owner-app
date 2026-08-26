@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+// T3 closure guard: scan tenant-sensitive production boundaries, not fixtures/config docs.
 const productionRoots = ["app/api", "lib/domain", "lib/webos"];
 
 function sourceFiles(root: string): string[] {
