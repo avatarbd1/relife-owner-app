@@ -20,8 +20,6 @@ const CHAT_SHEET = "28_Chat_Messages";
 const EQUIPMENT_SHEET = "29_Equipment_Requests";
 const RESOURCE_SHEET = "24_Chamber_Resources";
 const SCHEMA_VERSION = "relife-uda-v1";
-const ORGANIZATION_ID = "RELIFE";
-const CLINIC_ID = "RELIFE-PHYSIO";
 const BRANCH_ID = "AMTALI-01";
 const CALL_PREFIX = "CALL:";
 const BROADCAST_MARKER = "CALL:ALL:PHYSIO";
@@ -501,6 +499,8 @@ export async function sendChamberMessage(
 
 export async function acceptChamberCall(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   messageIdInput: unknown
 ): Promise<{
   messageId: string;
@@ -570,6 +570,8 @@ export async function acceptChamberCall(
       emergency
         ? `Emergency Chamber broadcast acknowledged by ${actorName}`
         : `Targeted Chamber call accepted by ${actorName}`,
+      organizationId,
+      clinicId,
       now
     )
   );
