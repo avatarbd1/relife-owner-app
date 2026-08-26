@@ -67,6 +67,8 @@ function dhakaNow(ref = new Date()) {
 
 function auditRow(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   attendanceId: string,
   checkInTime: string,
   now: ReturnType<typeof dhakaNow>
@@ -82,10 +84,10 @@ function auditRow(
     "",
     checkInTime,
     "Normal Web PWA attendance; GPS not required by clinic policy",
-    "RELIFE",
-    "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-PHYSIO:${attendanceId}`,
+    `${clinicId}:${attendanceId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -169,7 +171,7 @@ export async function performNormalAttendanceCheckIn(
       "physio",
       "03_Attendance",
       rowForHeaders(headers, values),
-      auditRow(context, attendanceId, now.displayTime, now)
+      auditRow(context, organizationId, clinicId, attendanceId, now.displayTime, now)
     );
 
     return {
