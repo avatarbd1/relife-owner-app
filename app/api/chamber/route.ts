@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       assertCanPerform(access, "chamber.run", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
       const result = await withMutationLock(`chamber-therapist:${appointmentId}`, () =>
-        assignChamberTherapist(access, appointmentId, body.staffId)
+        assignChamberTherapist(access, tenant.organizationId, tenant.clinicId, appointmentId, body.staffId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
       const sessionId = String(body.sessionId || "").trim();
       const result = await withMutationLock(`chamber-session:${sessionId}`, () =>
         sessionId.startsWith("CHW")
-          ? startGeneralTreatment(access, sessionId)
+          ? startGeneralTreatment(access, tenant.organizationId, tenant.clinicId, sessionId)
           : startChamberRuntimeSession(access, tenant.organizationId, tenant.clinicId, sessionId)
       );
       return NextResponse.json({ ok: true, ...result });
@@ -164,7 +164,12 @@ export async function POST(request: NextRequest) {
         completeChamberRuntimeSession(access, tenant.organizationId, tenant.clinicId, sessionId)
       );
       try {
-        const treatmentNote = await recordChamberCompletionTreatmentNote(access, capture);
+        const treatmentNote = await recordChamberCompletionTreatmentNote(
+          access,
+          tenant.organizationId,
+          tenant.clinicId,
+          capture
+        );
         return NextResponse.json({
           ok: true,
           ...result,
