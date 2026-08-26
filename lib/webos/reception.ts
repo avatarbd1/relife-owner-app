@@ -641,7 +641,12 @@ export async function createAppointment(
     "Status",
   ]);
 
-  const appointments = parseAppointments(rawAppointments, department);
+  const appointments = parseAppointments(
+    rawAppointments,
+    department,
+    organizationId,
+    clinicId
+  );
   const duplicate = appointments.some(
     (row) =>
       row.patientId === patient.patientId &&
