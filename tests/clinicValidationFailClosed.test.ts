@@ -21,7 +21,16 @@ test("G2 privileged validation cannot inspect a different authenticated tenant",
   );
 });
 
-test("G2 readiness fails closed unless writer and cross-tenant checks pass", () => {
+test("G2 does not manufacture readiness evidence", () => {
+  assert.match(route, /departmentDataScopedToClinic: false/);
+  assert.match(route, /tenantFiltersPresentInReaders: false/);
+  assert.match(route, /explicitTenantParametersInWriters: false/);
+  assert.match(route, /crossTenantIsolationVerified: false/);
+  assert.doesNotMatch(route, /function validateWriterPatterns/);
+  assert.doesNotMatch(route, /RELIFE_TENANT_CUTOVER_ENFORCED feature flag not set/);
+});
+
+test("G2 readiness fails closed unless every advertised check passes", () => {
   assert.match(
     route,
     /const readinessChecksPass =[\s\S]*?tenantContextResolvable[\s\S]*?departmentDataScopedToClinic[\s\S]*?tenantFiltersPresentInReaders[\s\S]*?explicitTenantParametersInWriters[\s\S]*?crossTenantIsolationVerified/
