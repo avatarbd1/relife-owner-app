@@ -204,7 +204,9 @@ async function migrateDepartment(
       const reportId = normalize(row[reportIdIdx]);
       const fileId = normalize(row[telegramIdIdx]);
       const driveLink = normalize(row[driveLinkIdx]);
-      return Boolean(reportId && fileId && !driveLink.startsWith(STORAGE_LINK_PREFIX));
+      // Never overwrite an existing external/Drive link. Blank legacy rows are
+      // migrated first; non-empty legacy links need a preservation strategy.
+      return Boolean(reportId && fileId && !driveLink);
     })
     .slice(0, limit);
 
