@@ -21,6 +21,9 @@ const kernel = source(
 const staffMembership = source(
   "supabase/migrations/20260824_staff_tenant_membership_v1.sql"
 );
+const financeEdge = source(
+  "supabase/functions/relife-finance-api/index.ts"
+);
 
 const foundationalOperationalTables = [
   "appointments",
@@ -70,15 +73,15 @@ test("T4 baseline keeps foundational operational tables tenant-keyed and RLS-ena
   for (const table of foundationalOperationalTables) {
     assert.match(
       tenantFoundation,
-      new RegExp(`alter table relife\\.%I add column if not exists organization_id uuid`, "i")
+      /alter table relife\.%I add column if not exists organization_id uuid/i
     );
     assert.match(
       tenantFoundation,
-      new RegExp(`alter table relife\\.%I add column if not exists clinic_id uuid`, "i")
+      /alter table relife\.%I add column if not exists clinic_id uuid/i
     );
     assert.match(
       tenantFoundation,
-      new RegExp(`alter table relife\\.%I enable row level security`, "i")
+      /alter table relife\.%I enable row level security/i
     );
     assert.match(tenantFoundation, new RegExp(`'${escapeRegExp(table)}'`));
   }
@@ -171,5 +174,24 @@ test("T4 baseline staff tenant tables are explicit deny-all for browser roles", 
   assert.match(
     staffMembership,
     /trusted server\/service-role path until a later, explicitly reviewed RLS slice/i
+  );
+});
+
+test("T4 privileged finance DB access always binds organization and clinic together", () => {
+  const dualKeyPredicate =
+    /organization_id = \$\{tenant\.organizationId\}::uuid\s+and clinic_id = \$\{tenant\.clinicId\}::uuid/g;
+  const matches = financeEdge.match(dualKeyPredicate) || [];
+
+  assert.ok(
+    matches.length >= 5,
+    `expected dual tenant predicate on every privileged finance read/update path, found ${matches.length}`
+  );
+  assert.match(
+    financeEdge,
+    /relife-finance:\$\{tenant\.organizationId\}:\$\{tenant\.clinicId\}/
+  );
+  assert.match(
+    financeEdge,
+    /update relife\.finance_operations[\s\S]*where id = \$\{norm\(existing\[0\]\.id\)\}::uuid\s+and organization_id = \$\{tenant\.organizationId\}::uuid\s+and clinic_id = \$\{tenant\.clinicId\}::uuid/
   );
 });
