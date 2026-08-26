@@ -190,7 +190,23 @@ async function assertClinicalWrite(context: AccessContext, patient: PatientRecor
   assertCanPerform(context, "clinical.write", "Physio", conditions);
 }
 
-function parseAssessments(rows: string[][], patientId: string, clinicId: string): ClinicalAssessment[] {
+function clinicMatches(
+  rowClinicId: string,
+  allowedClinicIds: ReadonlySet<string> | string
+): boolean {
+  return (
+    !rowClinicId ||
+    (typeof allowedClinicIds === "string"
+      ? rowClinicId === allowedClinicIds
+      : allowedClinicIds.has(rowClinicId))
+  );
+}
+
+function parseAssessments(
+  rows: string[][],
+  patientId: string,
+  allowedClinicIds: ReadonlySet<string> | string
+): ClinicalAssessment[] {
   if (rows.length < 2) return [];
   const h = rows[0];
   const idx = (name: string) => headerIndex(h, name);
@@ -198,7 +214,7 @@ function parseAssessments(rows: string[][], patientId: string, clinicId: string)
   return rows.slice(1).flatMap((row) => {
     if (at(row, idx("Patient_ID")) !== patientId) return [];
     const rowClinicId = at(row, clinicIdIdx);
-    if (rowClinicId && rowClinicId !== clinicId) return [];
+    if (!clinicMatches(rowClinicId, allowedClinicIds)) return [];
     const assessmentId = at(row, idx("Assessment_ID"));
     if (!assessmentId) return [];
     return [{
@@ -211,7 +227,11 @@ function parseAssessments(rows: string[][], patientId: string, clinicId: string)
   }).reverse();
 }
 
-function parsePlans(rows: string[][], patientId: string, clinicId: string): TreatmentPlanRecord[] {
+function parsePlans(
+  rows: string[][],
+  patientId: string,
+  allowedClinicIds: ReadonlySet<string> | string
+): TreatmentPlanRecord[] {
   if (rows.length < 2) return [];
   const h = rows[0];
   const idx = (name: string) => headerIndex(h, name);
@@ -219,7 +239,7 @@ function parsePlans(rows: string[][], patientId: string, clinicId: string): Trea
   return rows.slice(1).flatMap((row) => {
     if (at(row, idx("Patient_ID")) !== patientId) return [];
     const rowClinicId = at(row, clinicIdIdx);
-    if (rowClinicId && rowClinicId !== clinicId) return [];
+    if (!clinicMatches(rowClinicId, allowedClinicIds)) return [];
     const planId = at(row, idx("Plan_ID"));
     if (!planId) return [];
     return [{
@@ -239,7 +259,11 @@ function parsePlans(rows: string[][], patientId: string, clinicId: string): Trea
   }).reverse();
 }
 
-function parseTreatments(rows: string[][], patientId: string, clinicId: string): TreatmentSessionRecord[] {
+function parseTreatments(
+  rows: string[][],
+  patientId: string,
+  allowedClinicIds: ReadonlySet<string> | string
+): TreatmentSessionRecord[] {
   if (rows.length < 2) return [];
   const h = rows[0];
   const idx = (name: string) => headerIndex(h, name);
@@ -247,7 +271,7 @@ function parseTreatments(rows: string[][], patientId: string, clinicId: string):
   return rows.slice(1).flatMap((row) => {
     if (at(row, idx("Patient_ID")) !== patientId) return [];
     const rowClinicId = at(row, clinicIdIdx);
-    if (rowClinicId && rowClinicId !== clinicId) return [];
+    if (!clinicMatches(rowClinicId, allowedClinicIds)) return [];
     const treatmentId = at(row, idx("Treatment_ID"));
     if (!treatmentId) return [];
     return [{
@@ -275,10 +299,17 @@ export async function getClinicalWorkspace(
   patientId: string
 ): Promise<ClinicalWorkspace> {
   const patient = await requirePhysioPatient(context, patientId);
+  // The authorized patient is the compatibility boundary: Tenant #1 patients
+  // still carry the department ledger clinic ID in Sheets, while new writes use the canonical
+  // Supabase clinic UUID. Other tenants add no alternate identifier because
+  // their authorized patient already carries the canonical clinic ID.
+  const allowedClinicIds = new Set(
+    [clinicId, patient.clinicId].filter((value): value is string => Boolean(value))
+  );
   const snapshot = await fetchSheetRanges("physio", ["10_Assessments", "12_Treatment_Plans", "05_Treatments"]);
-  const assessments = parseAssessments(snapshot["10_Assessments"] || [], patient.patientId, clinicId);
-  const plans = parsePlans(snapshot["12_Treatment_Plans"] || [], patient.patientId, clinicId);
-  const sessions = parseTreatments(snapshot["05_Treatments"] || [], patient.patientId, clinicId);
+  const assessments = parseAssessments(snapshot["10_Assessments"] || [], patient.patientId, allowedClinicIds);
+  const plans = parsePlans(snapshot["12_Treatment_Plans"] || [], patient.patientId, allowedClinicIds);
+  const sessions = parseTreatments(snapshot["05_Treatments"] || [], patient.patientId, allowedClinicIds);
   const conditions = await clinicalConditions(context, patient);
   const canWrite = canPerform(context, "clinical.write", "Physio", conditions);
   return {
