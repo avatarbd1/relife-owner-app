@@ -11,5 +11,5 @@ test("legacy media bulk driver stays bounded and fail-closed", () => {
   assert.match(source, /if \(!response\.ok \|\| failed > 0\)/);
   assert.match(source, /if \(migrated === 0\)/);
   assert.match(source, /await runBulkDepartment\(POST, key, "Physio"\)/);
-  assert.match(source, /await runBulkDepartment\(POST, key, "Dental"\)/);
+  assert.doesNotMatch(source, /await runBulkDepartment\(POST, key, "Dental"\)/);
 });

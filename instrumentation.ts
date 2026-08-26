@@ -100,8 +100,8 @@ export async function register() {
       return;
     }
 
+    // Owner-approved legacy migration scope: Physio only. Dental must not run.
     await runBulkDepartment(POST, key, "Physio");
-    await runBulkDepartment(POST, key, "Dental");
   } catch (error) {
     console.error("LEGACY_MEDIA_STARTUP_MIGRATION_FAILED", error);
   }
