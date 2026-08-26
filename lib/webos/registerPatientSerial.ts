@@ -49,10 +49,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
 function normalizePhone(value: unknown): string {
   let digits = normalize(value).replace(/^'/, "").replace(/\D/g, "");
   if (digits.startsWith("880")) digits = digits.slice(3);
@@ -132,7 +128,7 @@ function auditRow(
   department: ClinicDepartment,
   now: ReturnType<typeof dhakaParts>,
   organizationId: string,
-  clinicId_param: string
+  clinicId: string
 ): SheetValue[] {
   return [
     `AUD-${randomUUID()}`,
@@ -146,9 +142,9 @@ function auditRow(
     JSON.stringify({ patientId, fullName, department }),
     "Web OS W2 reception action",
     organizationId,
-    clinicId_param,
+    clinicId,
     "AMTALI-01",
-    `${clinicId_param}:${patientId}`,
+    `${clinicId}:${patientId}`,
     "",
     context.staffId,
     "web_pwa",
