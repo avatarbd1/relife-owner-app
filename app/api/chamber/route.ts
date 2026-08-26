@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
       assertCanPerform(access, "chamber.run", "Physio");
       const appointmentId = String(body.appointmentId || "").trim();
       const result = await withMutationLock(`chamber-station:${appointmentId}`, () =>
-        setChamberBedPreference(access, appointmentId, body.stationId)
+        setChamberBedPreference(access, tenant.organizationId, tenant.clinicId, appointmentId, body.stationId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
