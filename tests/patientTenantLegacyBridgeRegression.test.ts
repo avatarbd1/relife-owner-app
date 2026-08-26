@@ -10,6 +10,7 @@ const reception = source("lib/webos/reception.ts");
 const mediaRoute = source(
   "app/api/patients/[patientId]/reports/[reportId]/media/route.ts"
 );
+const rolloutContract = source("docs/TWENTY_CLINIC_PRODUCTION_CONTRACT.md");
 
 test("legacy Relife patient bridge is bounded to the canonical Amtali tenant", () => {
   assert.match(
@@ -34,6 +35,12 @@ test("legacy tenant bridge does not replace canonical exact matching", () => {
     /patient\.organizationId === tenant\.organizationId[\s\S]*patient\.clinicId === tenant\.clinicId[\s\S]*return true/
   );
   assert.match(reception, /every other tenant remains[\s\S]*exact-match only/i);
+});
+
+test("legacy bridge remains a migration boundary, not the 20-clinic runtime contract", () => {
+  assert.match(rolloutContract, /organizationId\s*\+\s*clinicId/i);
+  assert.match(rolloutContract, /legacy|compatib/i);
+  assert.match(rolloutContract, /RELIFE/i);
 });
 
 test("legacy Photo media type gets an explicit image MIME fallback", () => {
