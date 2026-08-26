@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     );
     if (!result.duplicate) {
       try {
-        await consumePhysioInventorySystem(["Hand Gloves", "Tissue"], access.staffId, "Auto-Session");
+        await consumePhysioInventorySystem(["Hand Gloves", "Tissue"], access.staffId, tenant.organizationId, tenant.clinicId, "Auto-Session");
       } catch (error) {
         console.error("Session saved but automatic inventory consumption failed", error);
       }

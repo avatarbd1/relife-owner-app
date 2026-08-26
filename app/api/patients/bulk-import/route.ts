@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
 
         if (department === "Physio") {
           try {
-            await consumePhysioInventorySystem(["Patient Card"], access.staffId, "Auto-Registration");
+            await consumePhysioInventorySystem(["Patient Card"], access.staffId, tenant.organizationId, tenant.clinicId, "Auto-Registration");
           } catch (inventoryError) {
             console.error("Bulk-import patient saved but inventory consumption failed", inventoryError);
           }

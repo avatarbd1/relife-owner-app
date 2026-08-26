@@ -276,6 +276,8 @@ export async function getTodayAttendance(): Promise<AttendanceRecord[]> {
 
 export async function performAttendanceAction(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   action: AttendanceAction,
   location?: { latitude?: number; longitude?: number; accuracy?: number }
 ): Promise<AttendanceRecord> {
@@ -323,10 +325,10 @@ export async function performAttendanceAction(
         Overtime: 0,
         Status: status,
         Remarks: "Web PWA check-in",
-        Organization_ID: "RELIFE",
-        Clinic_ID: identity.primaryDepartment === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO",
+        Organization_ID: organizationId,
+        Clinic_ID: clinicId,
         Branch_ID: "AMTALI-01",
-        Record_ID: `RELIFE:${attendanceId}`,
+        Record_ID: `${clinicId}:${attendanceId}`,
         Provider_ID: context.staffId,
         Source_System: "web_pwa",
         Source_Type: "human_entry",
