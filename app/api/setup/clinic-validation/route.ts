@@ -131,6 +131,16 @@ export async function POST(request: NextRequest) {
     const organizationId = body?.organizationId || tenant.organizationId;
     const clinicId = body?.clinicId || tenant.clinicId;
 
+    if (
+      organizationId !== tenant.organizationId ||
+      clinicId !== tenant.clinicId
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "TENANT_SCOPE_MISMATCH" },
+        { status: 403 }
+      );
+    }
+
     const result: ValidationResult = {
       ok: false,
       isReady: false,
