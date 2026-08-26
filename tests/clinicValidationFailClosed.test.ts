@@ -14,6 +14,13 @@ test("G2 clinic validation binds membership lookup to organization, clinic, and 
   );
 });
 
+test("G2 privileged validation cannot inspect a different authenticated tenant", () => {
+  assert.match(
+    route,
+    /organizationId !== tenant\.organizationId[\s\S]*?clinicId !== tenant\.clinicId[\s\S]*?TENANT_SCOPE_MISMATCH[\s\S]*?status: 403/
+  );
+});
+
 test("G2 readiness fails closed unless writer and cross-tenant checks pass", () => {
   assert.match(
     route,
