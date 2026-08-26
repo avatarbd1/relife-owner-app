@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { applyMonthlyRoster, previewMonthlyRoster } from "@/lib/domain/workforce/shifts";
 
 function errorResponse(error: unknown): NextResponse {
@@ -30,9 +30,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const preview = await previewMonthlyRoster(
-      context,
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
       String(request.nextUrl.searchParams.get("month") || "")
     );
     return NextResponse.json({ ok: true, preview });
@@ -46,15 +48,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await applyMonthlyRoster(context, {
-      month: String(body.month || ""),
-      requestId: String(body.requestId || ""),
-    });
+    const result = await applyMonthlyRoster(
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
+      {
+        month: String(body.month || ""),
+        requestId: String(body.requestId || ""),
+      }
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);

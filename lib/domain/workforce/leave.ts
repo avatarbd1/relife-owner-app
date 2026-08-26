@@ -157,6 +157,8 @@ export interface RequestLeaveInput {
  */
 export async function requestLeave(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: RequestLeaveInput
 ): Promise<{ leaveId: string; status: LeaveStatus; duplicate: boolean }> {
   const staffId = context.staffId;
@@ -243,6 +245,8 @@ export async function requestLeave(
       },
       reason: "Staff requested leave",
       now,
+      organizationId,
+      clinicId,
     });
     await commitWorkforceBatch([
       appendRowRequest(leaveSheetId, row),
@@ -277,6 +281,8 @@ async function writeLeaveTransition(input: {
   decisionNote: string;
   action: string;
   reason: string;
+  organizationId: string;
+  clinicId: string;
 }): Promise<void> {
   const rowNumber = input.rowIndex + 2;
   const now = dhakaClockParts();
@@ -294,6 +300,8 @@ async function writeLeaveTransition(input: {
     afterValue: { staffId: input.record.staffId, status: input.status },
     reason: input.reason,
     now,
+    organizationId: input.organizationId,
+    clinicId: input.clinicId,
   });
   await commitWorkforceBatch([
     updateCellRequest(leaveSheetId, rowNumber, idx("Status") + 1, input.status),
@@ -322,6 +330,8 @@ export interface DecideLeaveInput {
  */
 export async function decideLeave(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: DecideLeaveInput
 ): Promise<{ leaveId: string; status: LeaveStatus; duplicate: boolean }> {
   if (input.decision !== "Approved" && input.decision !== "Rejected") {
@@ -364,6 +374,8 @@ export async function decideLeave(
       decisionNote,
       action,
       reason: decisionNote || `Leave ${input.decision.toLowerCase()}`,
+      organizationId,
+      clinicId,
     });
     return { leaveId: record.leaveId, status: input.decision, duplicate: false };
   });
@@ -377,6 +389,8 @@ export interface CancelLeaveInput {
 /** Staff may cancel only their own Pending request (issue #153). */
 export async function cancelLeave(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: CancelLeaveInput
 ): Promise<{ leaveId: string; status: LeaveStatus; duplicate: boolean }> {
   const requestId = validateWorkforceRequestId(input.requestId);
@@ -411,6 +425,8 @@ export async function cancelLeave(
       decisionNote: record.decisionNote,
       action: "leave.cancel",
       reason: isOwn ? "Staff cancelled own pending leave request" : "Owner cancelled pending leave request",
+      organizationId,
+      clinicId,
     });
     return { leaveId: record.leaveId, status: "Cancelled", duplicate: false };
   });
