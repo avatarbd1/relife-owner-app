@@ -93,10 +93,26 @@ function migrationConfig() {
   const edgeUrl = (
     process.env.REPORT_STORAGE_EDGE_URL?.trim() || DEFAULT_EDGE_URL
   ).replace(/\/+$/, "");
-  if (!migrationKey || !botToken || !storageSecret || !organizationId || !clinicId) {
-    throw new Error("LEGACY_MEDIA_MIGRATION_NOT_CONFIGURED");
+  const missing = [
+    ["LEGACY_MEDIA_MIGRATION_KEY", migrationKey],
+    ["BOT_TOKEN", botToken],
+    ["REPORT_STORAGE_EDGE_SECRET", storageSecret],
+    ["LEGACY_MEDIA_MIGRATION_ORGANIZATION_ID", organizationId],
+    ["LEGACY_MEDIA_MIGRATION_CLINIC_ID", clinicId],
+  ]
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`LEGACY_MEDIA_MIGRATION_NOT_CONFIGURED:${missing.join(",")}`);
   }
-  return { migrationKey, botToken, storageSecret, organizationId, clinicId, edgeUrl };
+  return {
+    migrationKey: migrationKey!,
+    botToken: botToken!,
+    storageSecret: storageSecret!,
+    organizationId: organizationId!,
+    clinicId: clinicId!,
+    edgeUrl,
+  };
 }
 
 async function telegramFile(botToken: string, fileId: string) {
