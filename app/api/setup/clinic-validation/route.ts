@@ -73,7 +73,11 @@ async function checkClinicExists(organizationId: string, clinicId: string): Prom
   }
 }
 
-async function checkStaffMembership(clinicId: string, staffId: string): Promise<boolean> {
+async function checkStaffMembership(
+  organizationId: string,
+  clinicId: string,
+  staffId: string
+): Promise<boolean> {
   try {
     const { createClient } = await import("@supabase/supabase-js");
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -87,7 +91,9 @@ async function checkStaffMembership(clinicId: string, staffId: string): Promise<
     const { data } = await supabase
       .from("clinic_memberships")
       .select("user_id")
+      .eq("organization_id", organizationId)
       .eq("clinic_id", clinicId)
+      .eq("user_id", staffId)
       .eq("status", "active")
       .limit(1);
 
@@ -124,6 +130,16 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as ValidationRequest | null;
     const organizationId = body?.organizationId || tenant.organizationId;
     const clinicId = body?.clinicId || tenant.clinicId;
+
+    if (
+      organizationId !== tenant.organizationId ||
+      clinicId !== tenant.clinicId
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "TENANT_SCOPE_MISMATCH" },
+        { status: 403 }
+      );
+    }
 
     const result: ValidationResult = {
       ok: false,
@@ -164,7 +180,11 @@ export async function POST(request: NextRequest) {
           `Clinic ${clinicId} not found or does not belong to organization ${organizationId}`
         );
       } else {
-        const hasMembership = await checkStaffMembership(clinicId, access.staffId);
+        const hasMembership = await checkStaffMembership(
+          organizationId,
+          clinicId,
+          access.staffId
+        );
         result.checks.staffHasClinicMembership = hasMembership;
 
         if (!hasMembership) {
@@ -191,7 +211,9 @@ export async function POST(request: NextRequest) {
     const readinessChecksPass =
       result.checks.tenantContextResolvable &&
       result.checks.departmentDataScopedToClinic &&
-      result.checks.tenantFiltersPresentInReaders;
+      result.checks.tenantFiltersPresentInReaders &&
+      result.checks.explicitTenantParametersInWriters &&
+      result.checks.crossTenantIsolationVerified;
 
     result.ok = true;
     result.isReady = allChecksPass && readinessChecksPass && result.errors.length === 0;
