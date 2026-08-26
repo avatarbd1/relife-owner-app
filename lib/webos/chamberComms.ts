@@ -20,8 +20,6 @@ const CHAT_SHEET = "28_Chat_Messages";
 const EQUIPMENT_SHEET = "29_Equipment_Requests";
 const RESOURCE_SHEET = "24_Chamber_Resources";
 const SCHEMA_VERSION = "relife-uda-v1";
-const ORGANIZATION_ID = "RELIFE";
-const CLINIC_ID = "RELIFE-PHYSIO";
 const BRANCH_ID = "AMTALI-01";
 const CALL_PREFIX = "CALL:";
 const BROADCAST_MARKER = "CALL:ALL:PHYSIO";
@@ -228,6 +226,8 @@ function auditRow(
   before: string,
   after: string,
   reason: string,
+  organizationId: string,
+  clinicId: string,
   now = nowDhaka()
 ): SheetCellValue[] {
   return [
@@ -241,10 +241,10 @@ function auditRow(
     before,
     after,
     reason,
-    ORGANIZATION_ID,
-    CLINIC_ID,
+    organizationId,
+    clinicId,
     BRANCH_ID,
-    `${CLINIC_ID}:${entityId}`,
+    `${clinicId}:${entityId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -423,6 +423,8 @@ export async function getChamberCommsSnapshot(context: AccessContext): Promise<C
 
 export async function sendChamberMessage(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     body?: unknown;
     priority?: unknown;
@@ -465,10 +467,10 @@ export async function sendChamberMessage(
     JSON.stringify([context.staffId]),
     "Active",
     "Physio",
-    ORGANIZATION_ID,
-    CLINIC_ID,
+    organizationId,
+    clinicId,
     BRANCH_ID,
-    `${CLINIC_ID}:${messageId}`,
+    `${clinicId}:${messageId}`,
     "web_pwa",
     "human_entry",
     true,
@@ -487,6 +489,8 @@ export async function sendChamberMessage(
       "",
       priority,
       emergency ? "Emergency Chamber broadcast sent" : "Chamber operational message sent",
+      organizationId,
+      clinicId,
       now
     )
   );
@@ -495,6 +499,8 @@ export async function sendChamberMessage(
 
 export async function acceptChamberCall(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   messageIdInput: unknown
 ): Promise<{
   messageId: string;
@@ -564,6 +570,8 @@ export async function acceptChamberCall(
       emergency
         ? `Emergency Chamber broadcast acknowledged by ${actorName}`
         : `Targeted Chamber call accepted by ${actorName}`,
+      organizationId,
+      clinicId,
       now
     )
   );
@@ -578,6 +586,8 @@ export async function acceptChamberCall(
 
 export async function createEquipmentRequest(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     resourceId?: unknown;
     fromLocation?: unknown;
@@ -638,10 +648,10 @@ export async function createEquipmentRequest(
     "",
     notes,
     "Physio",
-    ORGANIZATION_ID,
-    CLINIC_ID,
+    organizationId,
+    clinicId,
     BRANCH_ID,
-    `${CLINIC_ID}:${requestId}`,
+    `${clinicId}:${requestId}`,
     "web_pwa",
     SCHEMA_VERSION,
   ];
@@ -663,10 +673,10 @@ export async function createEquipmentRequest(
     JSON.stringify([context.staffId]),
     "Active",
     "Physio",
-    ORGANIZATION_ID,
-    CLINIC_ID,
+    organizationId,
+    clinicId,
     BRANCH_ID,
-    `${CLINIC_ID}:${messageId}`,
+    `${clinicId}:${messageId}`,
     "web_pwa",
     "human_entry",
     true,
@@ -687,6 +697,8 @@ export async function createEquipmentRequest(
       "",
       JSON.stringify({ resourceId: machine.resourceId, fromLocation, toLocation, neededDurationMin }),
       "Urgent Chamber equipment request created",
+      organizationId,
+      clinicId,
       now
     )
   );
@@ -704,6 +716,8 @@ const NEXT_STATUS: Record<EquipmentStatus, EquipmentStatus[]> = {
 
 export async function updateEquipmentRequestStatus(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   requestIdInput: unknown,
   statusInput: unknown
 ): Promise<{ requestId: string; status: EquipmentStatus }> {
@@ -760,6 +774,8 @@ export async function updateEquipmentRequestStatus(
       currentStatus,
       nextStatus,
       `Equipment request moved ${currentStatus} → ${nextStatus}`,
+      organizationId,
+      clinicId,
       now
     )
   );

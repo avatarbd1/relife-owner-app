@@ -9,7 +9,7 @@ import {
   type AttendanceAction,
 } from "@/lib/webos/attendance";
 import { performNormalAttendanceCheckIn } from "@/lib/webos/attendanceNormal";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 const ACTIONS = new Set<AttendanceAction>([
   "check_in",
@@ -34,7 +34,8 @@ export async function POST(request: NextRequest) {
     );
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
     const action = body?.action as AttendanceAction;
     if (!ACTIONS.has(action)) {
@@ -46,18 +47,18 @@ export async function POST(request: NextRequest) {
 
     const record =
       action === "check_in"
-        ? await performNormalAttendanceCheckIn(context)
-        : await performAttendanceAction(context, action);
+        ? await performNormalAttendanceCheckIn(access, tenant.organizationId, tenant.clinicId)
+        : await performAttendanceAction(access, tenant.organizationId, tenant.clinicId, action);
 
     if (action === "check_in") {
-      const department = gamificationDepartmentForContext(context);
+      const department = gamificationDepartmentForContext(access);
       if (department) {
         const eventType =
           Number(record.lateMinutes || 0) <= 2
             ? "attendance_on_time"
             : "attendance_check_in";
         await recordActorWorkGamification({
-          context,
+          context: access,
           department,
           purpose: "attendance",
           eventType,

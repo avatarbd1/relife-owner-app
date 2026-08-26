@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     validateTenantScope(access, tenant, "inventory.adjust");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    const result = await adjustPhysioInventory(access, {
+    const result = await adjustPhysioInventory(access, tenant.organizationId, tenant.clinicId, {
       itemName: body.itemName,
       change: Number(body.change),
       reason: body.reason,

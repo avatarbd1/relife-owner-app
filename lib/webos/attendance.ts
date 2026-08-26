@@ -232,6 +232,8 @@ function verifyLocation(location: { latitude?: number; longitude?: number; accur
 
 function auditRow(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   action: AttendanceAction,
   attendanceId: string,
   afterValue: string,
@@ -249,10 +251,10 @@ function auditRow(
     "",
     afterValue,
     reason,
-    "RELIFE",
-    "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-PHYSIO:${attendanceId}`,
+    `${clinicId}:${attendanceId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -276,6 +278,8 @@ export async function getTodayAttendance(): Promise<AttendanceRecord[]> {
 
 export async function performAttendanceAction(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   action: AttendanceAction,
   location?: { latitude?: number; longitude?: number; accuracy?: number }
 ): Promise<AttendanceRecord> {
@@ -323,10 +327,10 @@ export async function performAttendanceAction(
         Overtime: 0,
         Status: status,
         Remarks: "Web PWA check-in",
-        Organization_ID: "RELIFE",
-        Clinic_ID: identity.primaryDepartment === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO",
+        Organization_ID: organizationId,
+        Clinic_ID: clinicId,
         Branch_ID: "AMTALI-01",
-        Record_ID: `RELIFE:${attendanceId}`,
+        Record_ID: `${clinicId}:${attendanceId}`,
         Provider_ID: context.staffId,
         Source_System: "web_pwa",
         Source_Type: "human_entry",
@@ -339,7 +343,7 @@ export async function performAttendanceAction(
         "physio",
         "03_Attendance",
         rowForHeaders(headers, values),
-        auditRow(context, action, attendanceId, now.displayTime, locationReason, now)
+        auditRow(context, organizationId, clinicId, action, attendanceId, now.displayTime, locationReason, now)
       );
       return { attendanceId, date: now.date, staffId: identity.staffId, staffName: identity.fullName, role: identity.roles[0] || "Staff", checkIn: now.displayTime, breakOut: "", breakIn: "", checkOut: "", workingHours: null, lateMinutes, overtime: 0, status, remarks: "Web PWA check-in" };
     }
@@ -381,7 +385,7 @@ export async function performAttendanceAction(
       "03_Attendance",
       currentRaw.rowNumber,
       values,
-      auditRow(context, action, current.attendanceId, now.displayTime, locationReason, now)
+      auditRow(context, organizationId, clinicId, action, current.attendanceId, now.displayTime, locationReason, now)
     );
     return current;
   });

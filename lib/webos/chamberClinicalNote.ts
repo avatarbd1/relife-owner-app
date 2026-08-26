@@ -216,6 +216,8 @@ function finalSteps(
 
 function auditRow(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   treatmentId: string,
   capture: ChamberTreatmentCapture,
   summary: string,
@@ -232,10 +234,10 @@ function auditRow(
     "",
     summary,
     `Auto-saved from Chamber completion ${capture.sessionId}`,
-    "RELIFE",
-    "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-PHYSIO:${treatmentId}`,
+    `${clinicId}:${treatmentId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -250,6 +252,8 @@ function auditRow(
 
 export async function recordChamberCompletionTreatmentNote(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   capture: ChamberTreatmentCapture,
   completedAt = new Date().toISOString()
 ): Promise<{ treatmentId: string; sessionNo: number; duplicate: boolean }> {
@@ -356,10 +360,10 @@ export async function recordChamberCompletionTreatmentNote(
     Remarks: remarks,
     Plan_ID: activePlanId,
     Pain: "",
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${treatmentId}`,
+    Record_ID: `${clinicId}:${treatmentId}`,
     Encounter_ID: `ENC-${capture.sessionId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
@@ -392,6 +396,8 @@ export async function recordChamberCompletionTreatmentNote(
     updates,
     auditRow(
       context,
+      organizationId,
+      clinicId,
       treatmentId,
       capture,
       `${fields.treatmentGiven}; session ${sessionNo}`,

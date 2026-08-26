@@ -67,7 +67,7 @@ test("Chamber direct calls and guarded emergency broadcasts ring until accepted"
   assert.match(route, /chamber-emergency-broadcast/);
   assert.match(route, /action === "accept_call"/);
   assert.match(route, /chamber-call:\$\{messageId\}/);
-  assert.match(route, /acceptChamberCall\(access, messageId\)/);
+  assert.match(route, /acceptChamberCall\(access, tenant\.organizationId, tenant\.clinicId, messageId\)/);
 
   assert.match(comms, /BROADCAST_MARKER = "CALL:ALL:PHYSIO"/);
   assert.match(comms, /function canSendEmergencyBroadcast/);

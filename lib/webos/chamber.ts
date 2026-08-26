@@ -251,7 +251,11 @@ function parseSessions(rows: string[][]): Array<ChamberSession & { sheetRow: num
   });
 }
 
-function sessionValues(session: ChamberSession): Record<string, SheetValue> {
+function sessionValues(
+  session: ChamberSession,
+  organizationId: string,
+  clinicId: string
+): Record<string, SheetValue> {
   return {
     Session_ID: session.sessionId,
     Date: session.date,
@@ -275,10 +279,10 @@ function sessionValues(session: ChamberSession): Record<string, SheetValue> {
     Updated_At: session.updatedAt,
     Updated_By: session.updatedBy,
     Department: "Physio",
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${session.sessionId}`,
+    Record_ID: `${clinicId}:${session.sessionId}`,
     Provider_ID: session.updatedBy,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -417,6 +421,8 @@ async function assertRunAssignment(context: AccessContext, session: ChamberSessi
 
 async function appendChamberAudit(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   action: string,
   session: ChamberSession,
   after: string
@@ -434,10 +440,10 @@ async function appendChamberAudit(
       "",
       after,
       "Live Chamber resource action",
-      "RELIFE",
-      "RELIFE-PHYSIO",
+      organizationId,
+      clinicId,
       "AMTALI-01",
-      `RELIFE-PHYSIO:${session.sessionId}`,
+      `${clinicId}:${session.sessionId}`,
       "",
       context.staffId,
       "web_pwa",
@@ -479,12 +485,14 @@ async function setAppointmentFlowFields(
 async function updateSessionRow(
   headers: string[],
   sheetRow: number,
-  session: ChamberSession
+  session: ChamberSession,
+  organizationId: string,
+  clinicId: string
 ) {
   await updateSheetValues(
     "physio",
     `'${SESSION_SHEET}'!A${sheetRow}:AF${sheetRow}`,
-    [rowForHeaders(headers, sessionValues(session))]
+    [rowForHeaders(headers, sessionValues(session, organizationId, clinicId))]
   );
 }
 
@@ -580,6 +588,8 @@ export async function getChamberSnapshot(context: AccessContext): Promise<Chambe
 
 export async function receiveChamberPatient(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   appointmentIdInput: string
 ): Promise<{ sessionId: string }> {
   assertCanPerform(context, "chamber.receive", "Physio");
@@ -623,19 +633,21 @@ export async function receiveChamberPatient(
     version: 1,
   };
   await appendSheetValues("physio", `'${SESSION_SHEET}'!A:AF`, [
-    rowForHeaders(headers, sessionValues(session)),
+    rowForHeaders(headers, sessionValues(session, organizationId, clinicId)),
   ]);
   try {
     await setAppointmentFlowFields(context, appointmentId, "Arrived", context.staffId);
   } catch (error) {
     console.error("Chamber receive saved but appointment status sync failed", error);
   }
-  await appendChamberAudit(context, "chamber.receive", session, "Waiting");
+  await appendChamberAudit(context, organizationId, clinicId, "chamber.receive", session, "Waiting");
   return { sessionId: session.sessionId };
 }
 
 export async function startChamberSession(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionIdInput: string
 ): Promise<{ sessionId: string; stationId: string }> {
   assertCanPerform(context, "chamber.run", "Physio");
@@ -668,18 +680,20 @@ export async function startChamberSession(
     updatedBy: context.staffId,
     version: stored.version + 1,
   };
-  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next);
+  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next, organizationId, clinicId);
   try {
     await setAppointmentFlowFields(context, stored.appointmentId, "In Treatment");
   } catch (error) {
     console.error("Chamber started but appointment status sync failed", error);
   }
-  await appendChamberAudit(context, "chamber.start", next, allocation.station.resourceId);
+  await appendChamberAudit(context, organizationId, clinicId, "chamber.start", next, allocation.station.resourceId);
   return { sessionId, stationId: allocation.station.resourceId };
 }
 
 export async function updateChamberStep(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     sessionId: string;
     step: string;
@@ -739,9 +753,11 @@ export async function updateChamberStep(
     updatedBy: context.staffId,
     version: stored.version + 1,
   };
-  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next);
+  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next, organizationId, clinicId);
   await appendChamberAudit(
     context,
+    organizationId,
+    clinicId,
     "chamber.step.update",
     next,
     JSON.stringify({ step, resourceId, stationId, durationMin })
@@ -751,6 +767,8 @@ export async function updateChamberStep(
 
 export async function completeChamberSession(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionIdInput: string
 ): Promise<{ sessionId: string }> {
   assertCanPerform(context, "chamber.run", "Physio");
@@ -771,12 +789,12 @@ export async function completeChamberSession(
     updatedBy: context.staffId,
     version: stored.version + 1,
   };
-  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next);
+  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next, organizationId, clinicId);
   try {
     await setAppointmentFlowFields(context, stored.appointmentId, "Completed");
   } catch (error) {
     console.error("Chamber completed but appointment status sync failed", error);
   }
-  await appendChamberAudit(context, "chamber.complete", next, `Steps: ${next.stepLog.length}`);
+  await appendChamberAudit(context, organizationId, clinicId, "chamber.complete", next, `Steps: ${next.stepLog.length}`);
   return { sessionId: next.sessionId };
 }

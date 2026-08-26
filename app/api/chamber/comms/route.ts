@@ -65,14 +65,14 @@ export async function POST(request: NextRequest) {
     const action = String(body.action || "");
     if (action === "send_message") {
       const result = await withMutationLock("chamber-chat-write", () =>
-        sendChamberMessage(access, body)
+        sendChamberMessage(access, tenant.organizationId, tenant.clinicId, body)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "broadcast_emergency") {
       const message = String(body.body || "").trim() || "Emergency assistance required in Physio Chamber";
       const result = await withMutationLock("chamber-emergency-broadcast", () =>
-        sendChamberMessage(access, {
+        sendChamberMessage(access, tenant.organizationId, tenant.clinicId, {
           body: message,
           priority: "Urgent",
           roomId: PHYSIO_EMERGENCY_MARKER,
@@ -87,20 +87,20 @@ export async function POST(request: NextRequest) {
       if (!call) throw new Error("CALL_NOT_FOUND");
       if (call.senderId === access.staffId) throw new Error("CALL_TARGET_MISMATCH");
       const result = await withMutationLock(`chamber-call:${messageId}`, () =>
-        acceptChamberCall(access, messageId)
+        acceptChamberCall(access, tenant.organizationId, tenant.clinicId, messageId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "request_equipment") {
       const result = await withMutationLock("chamber-equipment-request", () =>
-        createEquipmentRequest(access, body)
+        createEquipmentRequest(access, tenant.organizationId, tenant.clinicId, body)
       );
       return NextResponse.json({ ok: true, ...result });
     }
     if (action === "equipment_status") {
       const requestId = String(body.requestId || "");
       const result = await withMutationLock(`chamber-equipment:${requestId}`, () =>
-        updateEquipmentRequestStatus(access, requestId, body.status)
+        updateEquipmentRequestStatus(access, tenant.organizationId, tenant.clinicId, requestId, body.status)
       );
       return NextResponse.json({ ok: true, ...result });
     }

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { deleteLatestTodayPhysioPayment } from "@/lib/webos/corrections";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     const receiptNo = String(body.receiptNo || "").trim();
@@ -14,7 +14,12 @@ export async function POST(request: NextRequest) {
     if (!receiptNo || receiptNo !== confirmReceiptNo) {
       return NextResponse.json({ ok: false, error: "CONFIRMATION_MISMATCH" }, { status: 400 });
     }
-    const result = await deleteLatestTodayPhysioPayment(context, receiptNo);
+    const result = await deleteLatestTodayPhysioPayment(
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
+      receiptNo
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CORRECTION_FAILED";

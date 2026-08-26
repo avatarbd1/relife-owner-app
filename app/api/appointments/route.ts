@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     const result = await withMutationLock(lockKey, () => {
       if (isPhysio) {
-        return createCapacityBooking(access, {
+        return createCapacityBooking(access, tenant.organizationId, tenant.clinicId, {
           patientId: patient.patientId,
           date: String(body.date || ""),
           time: String(body.time || ""),

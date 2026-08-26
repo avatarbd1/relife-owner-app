@@ -67,6 +67,8 @@ function dhakaNow(ref = new Date()) {
 
 function auditRow(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   attendanceId: string,
   checkInTime: string,
   now: ReturnType<typeof dhakaNow>
@@ -82,10 +84,10 @@ function auditRow(
     "",
     checkInTime,
     "Normal Web PWA attendance; GPS not required by clinic policy",
-    "RELIFE",
-    "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-PHYSIO:${attendanceId}`,
+    `${clinicId}:${attendanceId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -99,7 +101,9 @@ function auditRow(
 }
 
 export async function performNormalAttendanceCheckIn(
-  context: AccessContext
+  context: AccessContext,
+  organizationId: string,
+  clinicId: string
 ): Promise<AttendanceRecord> {
   assertCanPerform(context, "attendance.self", context.primaryDepartment);
   const identity = await getActiveWebStaffById(context.staffId);
@@ -150,13 +154,10 @@ export async function performNormalAttendanceCheckIn(
       Overtime: 0,
       Status: status,
       Remarks: remarks,
-      Organization_ID: "RELIFE",
-      Clinic_ID:
-        identity.primaryDepartment === "Dental"
-          ? "RELIFE-DENTAL"
-          : "RELIFE-PHYSIO",
+      Organization_ID: organizationId,
+      Clinic_ID: clinicId,
       Branch_ID: "AMTALI-01",
-      Record_ID: `RELIFE:${attendanceId}`,
+      Record_ID: `${clinicId}:${attendanceId}`,
       Provider_ID: context.staffId,
       Source_System: "web_pwa",
       Source_Type: "human_entry",
@@ -170,7 +171,7 @@ export async function performNormalAttendanceCheckIn(
       "physio",
       "03_Attendance",
       rowForHeaders(headers, values),
-      auditRow(context, attendanceId, now.displayTime, now)
+      auditRow(context, organizationId, clinicId, attendanceId, now.displayTime, now)
     );
 
     return {

@@ -202,7 +202,9 @@ async function adjustRaw(
   staffId: string,
   itemName: string,
   change: number,
-  reason: string
+  reason: string,
+  organizationId: string,
+  clinicId: string
 ): Promise<{ itemName: string; previous: number; newBalance: number }> {
   const requestedName = normalize(itemName);
   const safeReason = normalize(reason).slice(0, 240) || "Manual adjustment";
@@ -257,10 +259,10 @@ async function adjustRaw(
     Reason: safeReason,
     Staff: staffId,
     New_Balance: newBalance,
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${recordId}`,
+    Record_ID: `${clinicId}:${recordId}`,
     Provider_ID: staffId,
     Source_System: "web_pwa",
     Source_Type: safeReason.startsWith("Auto-") ? "system_derived" : "human_entry",
@@ -283,10 +285,10 @@ async function adjustRaw(
     Before_Value: String(previous),
     After_Value: String(newBalance),
     Reason: `${safeReason}; requested change ${change}`,
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${auditId}`,
+    Record_ID: `${clinicId}:${auditId}`,
     Provider_ID: staffId,
     Source_System: "web_pwa",
     Source_Type: safeReason.startsWith("Auto-") ? "system_derived" : "human_entry",
@@ -321,29 +323,35 @@ async function adjustLocked(
   staffId: string,
   itemName: string,
   change: number,
-  reason: string
+  reason: string,
+  organizationId: string,
+  clinicId: string
 ) {
   return withMutationLock(inventoryLockKey(itemName), () =>
-    adjustRaw(staffId, itemName, change, reason)
+    adjustRaw(staffId, itemName, change, reason, organizationId, clinicId)
   );
 }
 
 export async function adjustPhysioInventory(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: { itemName: string; change: number; reason: string }
 ) {
   assertCanPerform(context, "inventory.write", "Physio");
-  return adjustLocked(context.staffId, input.itemName, Number(input.change), input.reason);
+  return adjustLocked(context.staffId, input.itemName, Number(input.change), input.reason, organizationId, clinicId);
 }
 
 export async function consumePhysioInventorySystem(
   itemNames: string[],
   staffId: string,
+  organizationId: string,
+  clinicId: string,
   reason: "Auto-Registration" | "Auto-Session"
 ): Promise<void> {
   for (const itemName of itemNames) {
     try {
-      await adjustLocked(staffId, itemName, -1, reason);
+      await adjustLocked(staffId, itemName, -1, reason, organizationId, clinicId);
     } catch (error) {
       // Registration/session authority must not be rolled back by inventory bookkeeping.
       // Failures are surfaced in server observability and can be reconciled from audit context.

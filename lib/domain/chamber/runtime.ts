@@ -273,17 +273,21 @@ export async function getChamberRuntimeSnapshot(context: AccessContext): Promise
 
 export async function receiveChamberRuntimePatient(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   appointmentIdInput: string
 ): Promise<{ sessionId: string }> {
   assertCanPerform(context, "chamber.receive", "Physio");
   const appointmentId = normalize(appointmentIdInput);
-  if (chamberDbMode() !== "supabase") return receiveSheetsChamberPatient(context, appointmentId);
+  if (chamberDbMode() !== "supabase") {
+    return receiveSheetsChamberPatient(context, organizationId, clinicId, appointmentId);
+  }
   requireCutoverConfigured();
 
   return withMutationLock(`chamber-runtime:${todayDhaka()}`, async () => {
     const bootstrap = await getSupabaseChamberBootstrap(todayDhaka());
     if (!findSupabaseAppointment(bootstrap, appointmentId)) {
-      return receiveSheetsChamberPatient(context, appointmentId);
+      return receiveSheetsChamberPatient(context, organizationId, clinicId, appointmentId);
     }
     const result = await receiveSupabaseChamberSession({ appointmentId, actorId: context.staffId });
     return { sessionId: normalize(result.session.id) };
@@ -292,12 +296,14 @@ export async function receiveChamberRuntimePatient(
 
 export async function startChamberRuntimeSession(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionIdInput: string
 ): Promise<{ sessionId: string; stationId: string }> {
   assertCanPerform(context, "chamber.run", "Physio");
   const sessionId = normalize(sessionIdInput);
   if (chamberDbMode() !== "supabase" || !sessionId.startsWith("CHS")) {
-    return startSheetsChamberSession(context, sessionId);
+    return startSheetsChamberSession(context, organizationId, clinicId, sessionId);
   }
   requireCutoverConfigured();
 
@@ -316,6 +322,8 @@ export async function startChamberRuntimeSession(
 
 export async function updateChamberRuntimeStep(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     sessionId: string;
     step: string;
@@ -327,7 +335,7 @@ export async function updateChamberRuntimeStep(
   assertCanPerform(context, "chamber.run", "Physio");
   const sessionId = normalize(input.sessionId);
   if (chamberDbMode() !== "supabase" || !sessionId.startsWith("CHS")) {
-    return updateSheetsChamberStep(context, input);
+    return updateSheetsChamberStep(context, organizationId, clinicId, input);
   }
   requireCutoverConfigured();
 
@@ -353,12 +361,14 @@ export async function updateChamberRuntimeStep(
 
 export async function completeChamberRuntimeSession(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionIdInput: string
 ): Promise<{ sessionId: string }> {
   assertCanPerform(context, "chamber.run", "Physio");
   const sessionId = normalize(sessionIdInput);
   if (chamberDbMode() !== "supabase" || !sessionId.startsWith("CHS")) {
-    return completeSheetsChamberSession(context, sessionId);
+    return completeSheetsChamberSession(context, organizationId, clinicId, sessionId);
   }
   requireCutoverConfigured();
 

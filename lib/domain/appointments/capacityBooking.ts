@@ -330,6 +330,8 @@ function auditRow(
   context: AccessContext,
   appointmentId: string,
   patientId: string,
+  organizationId: string,
+  clinicId: string,
   after: string,
   now: ReturnType<typeof nowDhaka>
 ): SheetCellValue[] {
@@ -344,10 +346,10 @@ function auditRow(
     "",
     after,
     "Gender-capacity booking; machine demand advisory only",
-    "RELIFE",
-    "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-PHYSIO:${appointmentId}`,
+    `${clinicId}:${appointmentId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -412,6 +414,8 @@ function validateInput(input: CapacityBookingInput): { date: string; startMinute
 
 export async function validateCapacityBooking(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: CapacityBookingInput
 ): Promise<CapacityBookingValidation> {
   assertCanPerform(context, "appointment.create", "Physio");
@@ -500,10 +504,12 @@ function withPlanningTag(
 
 export async function createCapacityBooking(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: CapacityBookingInput
 ): Promise<{ appointmentId: string; validation: CapacityBookingValidation }> {
   assertCanPerform(context, "appointment.create", "Physio");
-  const validation = await validateCapacityBooking(context, input);
+  const validation = await validateCapacityBooking(context, organizationId, clinicId, input);
   if (!validation.isValid) {
     const primary = validation.conflicts[0];
     const error = new Error(`APPOINTMENT_CONFLICT:${primary?.type || "capacity"}:${primary?.message || "Booking conflict"}`);
@@ -535,10 +541,10 @@ export async function createCapacityBooking(
     Therapist: therapist,
     Status: "Scheduled",
     Remarks: withPlanningTag(input.remarks || "", validation),
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${appointmentId}`,
+    Record_ID: `${clinicId}:${appointmentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -561,6 +567,8 @@ export async function createCapacityBooking(
       context,
       appointmentId,
       patient.patientId,
+      organizationId,
+      clinicId,
       JSON.stringify({
         appointmentId,
         date,
