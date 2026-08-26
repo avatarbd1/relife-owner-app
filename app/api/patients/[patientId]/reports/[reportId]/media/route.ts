@@ -52,7 +52,15 @@ function mediaContentType(
     heif: "image/heif",
     pdf: "application/pdf",
   };
-  return byExtension[extension] || upstream || "application/octet-stream";
+  const extensionType = byExtension[extension];
+  if (extensionType) return extensionType;
+
+  // Legacy report rows used File_Type=Photo without a MIME type or filename
+  // extension. Keep this compatibility bounded to values that explicitly
+  // declare an image; generic/unknown payloads remain octet-stream.
+  if (declared === "photo" || declared === "image") return "image/jpeg";
+
+  return upstream || "application/octet-stream";
 }
 
 function mediaResponse(

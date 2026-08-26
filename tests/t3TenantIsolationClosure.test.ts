@@ -61,6 +61,14 @@ const boundedLedgerCompatibility = new Map<string, { importPath: string; allowed
   ],
 ]);
 
+// Temporary Tenant #1 read bridge for pre-normalization patient Sheet rows.
+// This is not a generic tenant fallback: patientTenantLegacyBridgeRegression.test.ts
+// locks it to canonical exact-match first, then relife/amtali-main only. It must be
+// removed when the existing patient rows are normalized to canonical tenant IDs.
+const boundedTenant1ReadCompatibility = new Set([
+  "lib/webos/reception.ts",
+]);
+
 function sourceFiles(root: string): string[] {
   const absoluteRoot = join(repoRoot, root);
   const out: string[] = [];
@@ -139,12 +147,16 @@ test("T3 closure: legacy ledger compatibility imports remain on the reviewed bou
   );
 });
 
-test("T3 closure: canonical production code has no hardcoded tenant identity literals outside reviewed ledger compatibility", () => {
+test("T3 closure: canonical production code has no hardcoded tenant identity literals outside reviewed compatibility boundaries", () => {
   const forbidden = ["RELIFE-PHYSIO", "RELIFE-DENTAL", '"RELIFE"', "'RELIFE'"];
   const violations: string[] = [];
 
   for (const file of productionSources()) {
-    if (unreachableLegacyModules.has(file.path) || boundedLedgerCompatibility.has(file.path)) continue;
+    if (
+      unreachableLegacyModules.has(file.path) ||
+      boundedLedgerCompatibility.has(file.path) ||
+      boundedTenant1ReadCompatibility.has(file.path)
+    ) continue;
     for (const literal of forbidden) {
       if (file.content.includes(literal)) {
         violations.push(`${file.path}: ${literal}`);
@@ -155,8 +167,16 @@ test("T3 closure: canonical production code has no hardcoded tenant identity lit
   assert.deepEqual(
     violations,
     [],
-    `Hardcoded tenant identity found outside the reviewed ledger compatibility boundary:\n${violations.join("\n")}`
+    `Hardcoded tenant identity found outside the reviewed compatibility boundaries:\n${violations.join("\n")}`
   );
+});
+
+test("T3 closure: Tenant #1 patient compatibility is one named temporary read boundary", () => {
+  assert.deepEqual([...boundedTenant1ReadCompatibility], ["lib/webos/reception.ts"]);
+  const reception = readFileSync(join(repoRoot, "lib/webos/reception.ts"), "utf8");
+  assert.match(reception, /patientMatchesTenant/);
+  assert.match(reception, /exact-match only/i);
+  assert.doesNotMatch(reception, /getVisiblePatients[\s\S]*\|\|\s*"RELIFE-PHYSIO"/);
 });
 
 test("T3 closure: tenant-scoped API routes do not use legacy access-only context", () => {

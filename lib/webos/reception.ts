@@ -18,6 +18,12 @@ import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 type ClinicDepartment = "Physio" | "Dental";
 type SheetValue = string | number | boolean;
+type ResolvedTenant = {
+  organizationId: string;
+  clinicId: string;
+  organizationSlug?: string;
+  clinicSlug?: string;
+};
 
 export interface PatientCreateInput {
   department: ClinicDepartment;
@@ -224,17 +230,51 @@ function scopeAllows(scope: Scope, department: ClinicDepartment): boolean {
   return scope === "physio" ? department === "Physio" : department === "Dental";
 }
 
+function patientMatchesTenant(patient: PatientRecord, tenant: ResolvedTenant): boolean {
+  if (
+    patient.organizationId === tenant.organizationId &&
+    patient.clinicId === tenant.clinicId
+  ) {
+    return true;
+  }
+
+  // Tenant #1 compatibility bridge while legacy Sheets still carry the old
+  // RELIFE / RELIFE-PHYSIO / RELIFE-DENTAL identifiers. This is intentionally
+  // bounded to the canonical Relife Amtali tenant; every other tenant remains
+  // exact-match only.
+  if (
+    tenant.organizationSlug?.toLowerCase() !== "relife" ||
+    tenant.clinicSlug?.toLowerCase() !== "amtali-main" ||
+    patient.organizationId !== "RELIFE"
+  ) {
+    return false;
+  }
+
+  if (patient.department === "Physio") {
+    return patient.clinicId === "RELIFE-PHYSIO";
+  }
+  if (patient.department === "Dental") {
+    return patient.clinicId === "RELIFE-DENTAL";
+  }
+  return false;
+}
+
 async function tenantForContext(
   context: AccessContext,
   organizationId?: string,
   clinicId?: string
-): Promise<{ organizationId: string; clinicId: string }> {
+): Promise<ResolvedTenant> {
   const org = normalize(organizationId);
   const clinic = normalize(clinicId);
   if (org && clinic) return { organizationId: org, clinicId: clinic };
   const tenant = await resolveStaffTenantContext(context.staffId);
   if (!tenant?.organizationId || !tenant?.clinicId) throw new Error("ACCESS_DENIED");
-  return { organizationId: tenant.organizationId, clinicId: tenant.clinicId };
+  return {
+    organizationId: tenant.organizationId,
+    clinicId: tenant.clinicId,
+    organizationSlug: tenant.organizationSlug,
+    clinicSlug: tenant.clinicSlug,
+  };
 }
 
 export async function getVisiblePatients(
@@ -248,8 +288,7 @@ export async function getVisiblePatients(
   return patients.filter(
     (patient) =>
       patient.department !== "All" &&
-      patient.organizationId === tenant.organizationId &&
-      patient.clinicId === tenant.clinicId &&
+      patientMatchesTenant(patient, tenant) &&
       scopeAllows(scope, patient.department) &&
       canPerform(context, "patient.read", patient.department)
   );
@@ -265,8 +304,7 @@ export async function getPatientForContext(
   const patient = (await getPatients()).find(
     (row) =>
       row.patientId.toLowerCase() === normalize(patientId).toLowerCase() &&
-      row.organizationId === tenant.organizationId &&
-      row.clinicId === tenant.clinicId
+      patientMatchesTenant(row, tenant)
   );
   if (!patient || patient.department === "All") return null;
   assertCanPerform(context, "patient.read", patient.department);
@@ -463,7 +501,7 @@ export async function getPatientAppointmentsForContext(
   clinicId?: string
 ): Promise<AppointmentRecord[]> {
   const tenant = await tenantForContext(context, organizationId, clinicId);
-  if (patient.organizationId !== tenant.organizationId || patient.clinicId !== tenant.clinicId) return [];
+  if (!patientMatchesTenant(patient, tenant)) return [];
   assertCanPerform(context, "appointment.read", patient.department);
   const rows = await loadAppointments(tenant.organizationId, tenant.clinicId);
   return rows

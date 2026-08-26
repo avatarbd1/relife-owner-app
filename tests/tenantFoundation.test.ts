@@ -21,13 +21,16 @@ test("Supabase tenant foundation carries organization and clinic scope", () => {
   assert.doesNotMatch(migration, /grant .*authenticated/i);
 });
 
-test("Tenant activation remains explicit and separate from ledger identity", () => {
+test("Tenant activation follows the first-20 contract and stays separate from legacy ledger identity", () => {
   const contract = source("TENANCY.md");
-  assert.match(contract, /multi-clinic access is intentionally \*\*not activated\*\*/);
+  assert.match(contract, /one shared multi-tenant codebase prepared for the first 20 production Physio clinics/i);
   assert.match(contract, /RELIFE-PHYSIO/);
-  assert.match(contract, /not Supabase tenant primary keys/);
-  assert.match(contract, /Pass `organization_id` and `clinic_id` explicitly/);
-  assert.match(contract, /cross-tenant isolation tests/);
+  assert.match(contract, /legacy Sheets ledger\/department identities/i);
+  assert.match(contract, /not universal Supabase tenant primary keys/i);
+  assert.match(contract, /Every tenant-owned runtime read\/write must use explicit `organization_id` and `clinic_id`/i);
+  assert.match(contract, /Required before Clinic #2 is activated/i);
+  assert.match(contract, /cross-tenant tests/i);
+  assert.match(contract, /T4 -> onboarding\/readiness hardening -> T5 -> generic provisioning -> Clinic #2 real isolation/i);
 });
 
 test("Supabase advisor security remediation is tracked", () => {
