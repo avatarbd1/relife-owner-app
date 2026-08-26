@@ -7,7 +7,7 @@ import {
 import { decideCashMovement } from "@/lib/domain/finance/production";
 import type { Workbook } from "@/lib/data/googleSheets";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusForError(message: string): number {
   if (message === "CONTROL_NOT_FOUND") return 404;
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   let context;
   try {
-    context = await requireCurrentAccessContext();
+    ({ access: context } = await requireCurrentTenantAccessContext());
   } catch {
     return NextResponse.json({ ok: false, error: "ACCESS_DENIED" }, { status: 403 });
   }
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       movementId: id,
       decision,
       receivedAmount,
-      actorId: context.staffId, // Use authenticated Owner's staff ID
+      actorId: context.staffId,
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
