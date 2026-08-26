@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import {
   updateManagedStaff,
   type StaffMutationInput,
@@ -49,8 +49,8 @@ export async function PATCH(
   }
 
   try {
-    const [context, routeParams] = await Promise.all([
-      requireCurrentAccessContext(),
+    const [tenantContext, routeParams] = await Promise.all([
+      requireCurrentTenantAccessContext(),
       params,
     ]);
     const body = await request.json().catch(() => null);
@@ -58,7 +58,9 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
     const result = await updateManagedStaff(
-      context,
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
       decodeURIComponent(routeParams.staffId),
       body as StaffMutationInput
     );

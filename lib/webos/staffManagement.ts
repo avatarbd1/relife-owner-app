@@ -416,6 +416,8 @@ function auditRow(
   action: string,
   staffId: string,
   department: Department,
+  organizationId: string,
+  clinicId: string,
   beforeValue: unknown,
   afterValue: unknown,
   reason: string
@@ -433,10 +435,10 @@ function auditRow(
     Before_Value: JSON.stringify(beforeValue),
     After_Value: JSON.stringify(afterValue),
     Reason: reason,
-    Organization_ID: "RELIFE",
-    Clinic_ID: department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE:${auditId}`,
+    Record_ID: `${organizationId}:${auditId}`,
     Provider_ID: actorId,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -452,7 +454,7 @@ function generateStaffId(): string {
   return `STF-${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
 }
 
-export async function listManagedStaff(context: AccessContext): Promise<ManagedStaffRecord[]> {
+export async function listManagedStaff(context: AccessContext, organizationId: string, clinicId: string): Promise<ManagedStaffRecord[]> {
   assertOwner(context);
   const [directory, raw] = await Promise.all([
     getWebStaffDirectory(),
@@ -488,7 +490,7 @@ export async function listManagedStaff(context: AccessContext): Promise<ManagedS
   });
 }
 
-export async function createManagedStaff(context: AccessContext, input: StaffMutationInput) {
+export async function createManagedStaff(context: AccessContext, organizationId: string, clinicId: string, input: StaffMutationInput) {
   assertOwner(context);
   const normalizedInput = normalizeInput(input, "Active");
 
@@ -535,6 +537,8 @@ export async function createManagedStaff(context: AccessContext, input: StaffMut
           "staff.create",
           staffId,
           normalizedInput.primaryDepartment,
+          organizationId,
+          clinicId,
           {},
           after,
           "Owner created staff access profile"
@@ -548,6 +552,8 @@ export async function createManagedStaff(context: AccessContext, input: StaffMut
 
 export async function updateManagedStaff(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   staffIdInput: string,
   input: StaffMutationInput
 ) {
@@ -608,6 +614,8 @@ export async function updateManagedStaff(
           action,
           staffId,
           normalizedInput.primaryDepartment,
+          organizationId,
+          clinicId,
           previous,
           after,
           action === "staff.reactivate"
@@ -622,7 +630,7 @@ export async function updateManagedStaff(
   });
 }
 
-export async function deactivateManagedStaff(context: AccessContext, staffIdInput: string) {
+export async function deactivateManagedStaff(context: AccessContext, organizationId: string, clinicId: string, staffIdInput: string) {
   assertOwner(context);
   const staffId = normalize(staffIdInput);
   if (!staffId) throw new Error("STAFF_ID_REQUIRED");
@@ -658,6 +666,8 @@ export async function deactivateManagedStaff(context: AccessContext, staffIdInpu
           "staff.deactivate",
           staffId,
           department,
+          organizationId,
+          clinicId,
           previous,
           { ...previous, status: "Inactive" },
           "Owner deactivated staff access profile"
