@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { actOnRewardClaim, type RewardClaimTransition } from "@/lib/data/supabaseRewardClaims";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 const TRANSITIONS = new Set<RewardClaimTransition>(["approve", "deny", "cancel", "claim"]);
 
@@ -22,7 +22,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const { claimId } = await params;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
@@ -43,9 +43,11 @@ export async function POST(
     const result = await actOnRewardClaim({
       requestId: `rca-${randomUUID()}`,
       idempotencyKey,
-      actorId: context.staffId,
-      actorRoles: context.roles,
-      actorDepartmentAccess: context.departmentAccess,
+      actorId: tenantContext.access.staffId,
+      actorRoles: tenantContext.access.roles,
+      actorDepartmentAccess: tenantContext.access.departmentAccess,
+      organizationId: tenantContext.tenant.organizationId,
+      clinicId: tenantContext.tenant.clinicId,
       claimId: String(claimId || "").trim(),
       transition,
       expectedVersion,

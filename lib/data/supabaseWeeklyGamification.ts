@@ -105,6 +105,8 @@ function nullableString(value: unknown): string | null {
 async function callWeekly<T>(
   action: string,
   payload: Record<string, unknown> = {},
+  organizationId?: string,
+  clinicId?: string,
   timeoutMs = 8_000
 ): Promise<T> {
   const secret = edgeSecret();
@@ -121,8 +123,8 @@ async function callWeekly<T>(
       },
       body: JSON.stringify({
         action,
-        organizationSlug: RELIFE_SUPABASE_SCOPE.organizationSlug,
-        clinicSlug: RELIFE_SUPABASE_SCOPE.clinicSlug,
+        organizationId: organizationId || RELIFE_SUPABASE_SCOPE.organizationSlug,
+        clinicId: clinicId || RELIFE_SUPABASE_SCOPE.clinicSlug,
         ...payload,
       }),
       cache: "no-store",
@@ -227,11 +229,15 @@ export async function finalizeWeeklyGamification(input: {
 }
 
 export async function getMonthlyGamificationFinalization(
+  organizationId: string,
+  clinicId: string,
   month?: string
 ): Promise<MonthlyGamificationFinalization | null> {
   const result = await callWeekly<Record<string, unknown>>(
     "monthly_status",
     month ? { month } : {},
+    organizationId,
+    clinicId,
     5_000
   );
   const finalization = objectValue(result.finalization);
@@ -253,10 +259,12 @@ export async function getMonthlyGamificationFinalization(
 export async function finalizeMonthlyGamification(input: {
   actorId: string;
   actorRoles: string[];
+  organizationId: string;
+  clinicId: string;
   month: string;
   rosterSnapshot: MonthlyRosterOpportunitySnapshot[];
 }): Promise<MonthlyGamificationFinalizeResult> {
-  const result = await callWeekly<Record<string, unknown>>("finalize_month", input, 10_000);
+  const result = await callWeekly<Record<string, unknown>>("finalize_month", input, input.organizationId, input.clinicId, 10_000);
   const finalizationId = String(result.finalizationId || "").trim();
   const month = String(result.month || "").trim();
   if (!finalizationId || !month) throw new Error("MONTHLY_FINALIZATION_RESPONSE_INVALID");

@@ -10,7 +10,7 @@ import { isValidRosterMonth } from "@/lib/domain/workforce/monthlyRoster";
 import { timeToMinutes } from "@/lib/domain/workforce/shiftPolicy";
 import { listShiftsForContext } from "@/lib/domain/workforce/shifts";
 import { assertCanPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
   if (message === "ACCESS_DENIED" || message === "OWNER_REQUIRED") return 403;
@@ -55,11 +55,15 @@ function rosterOpportunity(
 
 export async function GET(request: NextRequest) {
   try {
-    const context = await requireCurrentAccessContext();
-    assertCanPerform(context, "performance.weekly.finalize", "All");
+    const tenantContext = await requireCurrentTenantAccessContext();
+    assertCanPerform(tenantContext.access, "performance.weekly.finalize", "All");
     const month = request.nextUrl.searchParams.get("month")?.trim() || undefined;
     if (month && !isValidRosterMonth(month)) throw new Error("ROSTER_MONTH_INVALID");
-    const finalization = await getMonthlyGamificationFinalization(month);
+    const finalization = await getMonthlyGamificationFinalization(
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
+      month
+    );
     return NextResponse.json({ ok: true, finalization });
   } catch (error) {
     const message = error instanceof Error ? error.message : "MONTHLY_STATUS_FAILED";
@@ -73,20 +77,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
-    assertCanPerform(context, "performance.weekly.finalize", "All");
-    if (!context.roles.includes("Owner")) throw new Error("OWNER_REQUIRED");
+    const tenantContext = await requireCurrentTenantAccessContext();
+    assertCanPerform(tenantContext.access, "performance.weekly.finalize", "All");
+    if (!tenantContext.access.roles.includes("Owner")) throw new Error("OWNER_REQUIRED");
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const month = String(body.month || "").trim();
     if (!isValidRosterMonth(month)) throw new Error("ROSTER_MONTH_INVALID");
-    const shifts = await listShiftsForContext(context);
+    const shifts = await listShiftsForContext(tenantContext.access);
     const rosterSnapshot = rosterOpportunity(month, shifts);
     if (rosterSnapshot.some((item) => item.publishedScheduledMinutes <= 0 || item.publishedShiftCount <= 0)) {
       throw new Error("MONTHLY_ROSTER_NOT_PUBLISHED");
     }
     const result = await finalizeMonthlyGamification({
-      actorId: context.staffId,
-      actorRoles: context.roles,
+      actorId: tenantContext.access.staffId,
+      actorRoles: tenantContext.access.roles,
+      organizationId: tenantContext.tenant.organizationId,
+      clinicId: tenantContext.tenant.clinicId,
       month,
       rosterSnapshot,
     });

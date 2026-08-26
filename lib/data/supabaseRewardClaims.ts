@@ -47,6 +47,8 @@ export interface RewardClaimActor {
 export interface RewardClaimRequestInput extends RewardClaimActor {
   requestId: string;
   idempotencyKey: string;
+  organizationId: string;
+  clinicId: string;
   staffId: string;
   department: RelifeDepartment;
   rewardKey: string;
@@ -57,6 +59,8 @@ export interface RewardClaimRequestInput extends RewardClaimActor {
 export interface RewardClaimActionInput extends RewardClaimActor {
   requestId: string;
   idempotencyKey: string;
+  organizationId: string;
+  clinicId: string;
   claimId: string;
   transition: RewardClaimTransition;
   expectedVersion: number;
@@ -89,6 +93,8 @@ export function rewardClaimsConfigured(): boolean {
 async function callClaims<T>(
   action: string,
   payload: Record<string, unknown> = {},
+  organizationId?: string,
+  clinicId?: string,
   timeoutMs = 5_000
 ): Promise<T> {
   const secret = edgeSecret();
@@ -104,8 +110,8 @@ async function callClaims<T>(
       },
       body: JSON.stringify({
         action,
-        organizationSlug: RELIFE_SUPABASE_SCOPE.organizationSlug,
-        clinicSlug: RELIFE_SUPABASE_SCOPE.clinicSlug,
+        organizationId: organizationId || RELIFE_SUPABASE_SCOPE.organizationSlug,
+        clinicId: clinicId || RELIFE_SUPABASE_SCOPE.clinicSlug,
         ...payload,
       }),
       cache: "no-store",
@@ -125,13 +131,13 @@ async function callClaims<T>(
   }
 }
 
-export async function listRewardClaims(input: RewardClaimActor & { status?: RewardClaimStatus | "all" }): Promise<RewardClaimRecord[]> {
+export async function listRewardClaims(input: RewardClaimActor & { organizationId: string; clinicId: string; status?: RewardClaimStatus | "all" }): Promise<RewardClaimRecord[]> {
   const result = await callClaims<{ claims?: unknown }>("claims_list", {
     actorId: input.actorId,
     actorRoles: input.actorRoles,
     actorDepartmentAccess: input.actorDepartmentAccess,
     status: input.status || "pending",
-  });
+  }, input.organizationId, input.clinicId);
   return Array.isArray(result.claims) ? (result.claims as RewardClaimRecord[]) : [];
 }
 
@@ -143,7 +149,7 @@ export async function requestRewardClaim(input: RewardClaimRequestInput): Promis
   reservedCredits?: number;
   availableCreditsAfterReserve?: number;
 }> {
-  return callClaims("claim_request", input as unknown as Record<string, unknown>, 5_000);
+  return callClaims("claim_request", input as unknown as Record<string, unknown>, input.organizationId, input.clinicId, 5_000);
 }
 
 export async function actOnRewardClaim(input: RewardClaimActionInput): Promise<{
@@ -154,5 +160,5 @@ export async function actOnRewardClaim(input: RewardClaimActionInput): Promise<{
   rewardCredits?: RewardCreditBalanceSnapshot;
   settlementRequired?: boolean;
 }> {
-  return callClaims("claim_action", input as unknown as Record<string, unknown>, 5_000);
+  return callClaims("claim_action", input as unknown as Record<string, unknown>, input.organizationId, input.clinicId, 5_000);
 }

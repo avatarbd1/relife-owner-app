@@ -6,7 +6,7 @@ import {
   type RewardClaimStatus,
 } from "@/lib/data/supabaseRewardClaims";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 const STATUSES = new Set<RewardClaimStatus | "all">([
   "pending",
@@ -28,15 +28,17 @@ function errorResponse(error: unknown): NextResponse {
 
 export async function GET(request: NextRequest) {
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const rawStatus = String(request.nextUrl.searchParams.get("status") || "pending").trim() as RewardClaimStatus | "all";
     if (!STATUSES.has(rawStatus)) {
       return NextResponse.json({ ok: false, error: "INVALID_CLAIM_STATUS" }, { status: 400 });
     }
     const claims = await listRewardClaims({
-      actorId: context.staffId,
-      actorRoles: context.roles,
-      actorDepartmentAccess: context.departmentAccess,
+      actorId: tenantContext.access.staffId,
+      actorRoles: tenantContext.access.roles,
+      actorDepartmentAccess: tenantContext.access.departmentAccess,
+      organizationId: tenantContext.tenant.organizationId,
+      clinicId: tenantContext.tenant.clinicId,
       status: rawStatus,
     });
     return NextResponse.json({ ok: true, claims });
@@ -50,7 +52,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -66,10 +68,12 @@ export async function POST(request: NextRequest) {
     const result = await requestRewardClaim({
       requestId: `rcl-${randomUUID()}`,
       idempotencyKey,
-      actorId: context.staffId,
-      actorRoles: context.roles,
-      actorDepartmentAccess: context.departmentAccess,
-      staffId: context.staffId,
+      actorId: tenantContext.access.staffId,
+      actorRoles: tenantContext.access.roles,
+      actorDepartmentAccess: tenantContext.access.departmentAccess,
+      organizationId: tenantContext.tenant.organizationId,
+      clinicId: tenantContext.tenant.clinicId,
+      staffId: tenantContext.access.staffId,
       department,
       rewardKey: String(body.rewardKey || "").trim(),
       requestedFor: body.requestedFor ? String(body.requestedFor).trim() : null,

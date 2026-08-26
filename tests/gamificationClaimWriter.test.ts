@@ -91,11 +91,13 @@ test("claim transitions are optimistic-concurrency and idempotency protected", (
 });
 
 test("Next endpoints preserve server-derived actor identity and bounded command API", () => {
-  assert.match(listRoute, /requireCurrentAccessContext/);
-  assert.match(listRoute, /staffId: context\.staffId/);
-  assert.match(listRoute, /actorRoles: context\.roles/);
+  assert.match(listRoute, /requireCurrentTenantAccessContext/);
+  assert.match(listRoute, /staffId: tenantContext\.access\.staffId/);
+  assert.match(listRoute, /actorRoles: tenantContext\.access\.roles/);
+  assert.match(listRoute, /organizationId: tenantContext\.tenant\.organizationId/);
+  assert.match(listRoute, /clinicId: tenantContext\.tenant\.clinicId/);
   assert.match(listRoute, /isAllowedRequestOrigin/);
-  assert.match(actionRoute, /requireCurrentAccessContext/);
+  assert.match(actionRoute, /requireCurrentTenantAccessContext/);
   assert.match(actionRoute, /transition/);
   assert.match(actionRoute, /expectedVersion/);
   assert.match(actionRoute, /idempotencyKey/);
