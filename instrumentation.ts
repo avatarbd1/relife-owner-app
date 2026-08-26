@@ -2,6 +2,11 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.LEGACY_MEDIA_MIGRATION_RUN_ON_BOOT !== "physio-smoke") return;
 
+  const tokenEnvNames = Object.keys(process.env)
+    .filter((name) => /telegram|bot.*token|token.*bot/i.test(name))
+    .sort();
+  console.log("LEGACY_MEDIA_TOKEN_ENV_NAMES", JSON.stringify(tokenEnvNames));
+
   const key = process.env.LEGACY_MEDIA_MIGRATION_KEY?.trim();
   if (!key) {
     console.error("Legacy media startup smoke skipped: migration key missing");
