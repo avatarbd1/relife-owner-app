@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       if (!call) throw new Error("CALL_NOT_FOUND");
       if (call.senderId === access.staffId) throw new Error("CALL_TARGET_MISMATCH");
       const result = await withMutationLock(`chamber-call:${messageId}`, () =>
-        acceptChamberCall(access, messageId)
+        acceptChamberCall(access, tenant.organizationId, tenant.clinicId, messageId)
       );
       return NextResponse.json({ ok: true, ...result });
     }
