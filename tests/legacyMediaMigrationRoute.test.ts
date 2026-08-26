@@ -25,6 +25,12 @@ test("legacy media migration preserves Telegram source and verifies storage befo
   assert.doesNotMatch(source, /File_Telegram_ID[^\n]*updateSheetValues/);
 });
 
+test("legacy media migration does not overwrite an existing drive or external link", () => {
+  assert.match(source, /const driveLink = normalize\(row\[driveLinkIdx\]\)/);
+  assert.match(source, /return Boolean\(reportId && fileId && !driveLink\)/);
+  assert.match(source, /Never overwrite an existing external\/Drive link/);
+});
+
 test("legacy media destination remains canonical private storage", () => {
   assert.match(source, /relife-patient-reports/);
   assert.match(source, /supabase:\/\//);
