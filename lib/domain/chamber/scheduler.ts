@@ -38,14 +38,18 @@ function capacityInput(input: ChamberScheduleInput): CapacityBookingInput {
 /** @deprecated Use validateCapacityBooking from appointments/capacityBooking. */
 export async function validateChamberSchedule(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ChamberScheduleInput
 ): Promise<ChamberScheduleValidation> {
-  return validateCapacityBooking(context, capacityInput(input));
+  return validateCapacityBooking(context, organizationId, clinicId, capacityInput(input));
 }
 
 /** @deprecated Use createCapacityBooking from appointments/capacityBooking. */
 export async function createChamberScheduleBooking(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ChamberScheduleInput
 ): Promise<{
   appointmentId: string;
@@ -53,6 +57,6 @@ export async function createChamberScheduleBooking(
 }> {
   const canonical = capacityInput(input);
   return withMutationLock(`capacity-booking:${canonical.date}`, () =>
-    createCapacityBooking(context, canonical)
+    createCapacityBooking(context, organizationId, clinicId, canonical)
   );
 }
