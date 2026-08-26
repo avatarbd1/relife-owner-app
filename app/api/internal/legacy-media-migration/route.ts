@@ -6,6 +6,7 @@ import {
   updateSheetValues,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import { legacyReportStorageRoot } from "@/lib/data/legacyReportStorage";
 
 const REPORT_BUCKET = "relife-patient-reports";
 const STORAGE_LINK_PREFIX = `supabase://${REPORT_BUCKET}/`;
@@ -82,10 +83,6 @@ function mimeFromFileName(fileName: string, upstream: string): string {
 
 function workbookFor(department: Department): Workbook {
   return department === "Dental" ? "dental" : "physio";
-}
-
-function storageRootFor(department: Department): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
 }
 
 function migrationConfig() {
@@ -208,6 +205,7 @@ async function migrateDepartment(
       const reportId = normalize(row[reportIdIdx]);
       const fileId = normalize(row[telegramIdIdx]);
       const driveLink = normalize(row[driveLinkIdx]);
+      // Never overwrite an existing external/Drive link.
       return Boolean(reportId && fileId && !driveLink);
     })
     .slice(0, limit);
@@ -223,7 +221,7 @@ async function migrateDepartment(
       if (telegram.body.byteLength < 1) throw new Error("TELEGRAM_FILE_EMPTY");
       const mimeType = mimeFromFileName(fileName, telegram.contentType);
       const path = [
-        storageRootFor(department),
+        legacyReportStorageRoot(workbook),
         safeSegment(patientId, "patient"),
         safeSegment(reportId, "report"),
         fileName,
