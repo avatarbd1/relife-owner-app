@@ -48,10 +48,6 @@ function workbookForDepartment(department: ClinicDepartment): Workbook {
   return department === "Dental" ? "dental" : "physio";
 }
 
-function clinicId(department: ClinicDepartment): string {
-  return department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-}
-
 function dhakaNow(ref = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Dhaka",
@@ -232,6 +228,7 @@ export async function uploadPatientReport(
   const patientId = normalize(input.patientId);
   const fileName = normalize(input.fileName).replace(/[\\/]/g, "_").slice(0, 180);
   const mimeType = normalize(input.mimeType) || "application/octet-stream";
+  if (!organizationId.trim() || !clinicId.trim()) throw new Error("ACCESS_DENIED");
   if (!patientId || !fileName) throw new Error("REPORT_FIELDS_REQUIRED");
   if (input.bytes.byteLength < 1 || input.bytes.byteLength > 12 * 1024 * 1024) {
     throw new Error("REPORT_FILE_SIZE_INVALID");
