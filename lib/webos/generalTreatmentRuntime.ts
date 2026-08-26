@@ -88,12 +88,9 @@ async function assertAssignment(context: AccessContext, therapist: string): Prom
   if (!identity) throw new Error("STAFF_NOT_FOUND");
 
   const assigned = normalized(therapist);
-  // Therapist is optional at booking. Any authorised Physio therapist may pick up
-  // an unassigned patient at actual treatment start.
   if (!assigned) return;
   if ([identity.staffId, identity.fullName].map(normalized).includes(assigned)) return;
 
-  // Respect the existing clinical scope used by Relife for same-day cross-cover.
   const scope = normalized(identity.clinicalWriteScope).replace(/\s/g, "_");
   if (scope.includes("today_cross_cover") || scope.includes("cross_cover")) return;
   throw new Error("THERAPIST_NOT_ASSIGNED");
@@ -101,6 +98,8 @@ async function assertAssignment(context: AccessContext, therapist: string): Prom
 
 function auditRow(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionId: string,
   patientId: string,
   bedId: string,
@@ -117,10 +116,10 @@ function auditRow(
     "",
     JSON.stringify({ stationId: bedId, allocatedAtActualStart: true }),
     "General bed allocated at actual treatment start",
-    "RELIFE",
-    "RELIFE-PHYSIO",
+    organizationId,
+    clinicId,
     "AMTALI-01",
-    `RELIFE-PHYSIO:${sessionId}`,
+    `${clinicId}:${sessionId}`,
     "",
     context.staffId,
     "web_pwa",
@@ -152,6 +151,8 @@ async function updateAppointmentStatus(appointmentId: string, status: string): P
 
 export async function startGeneralTreatment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   sessionIdInput: string
 ): Promise<{ sessionId: string; stationId: string }> {
   assertCanPerform(context, "chamber.run", "Physio");
@@ -229,7 +230,7 @@ export async function startGeneralTreatment(
     SESSION_SHEET,
     offset + 2,
     next,
-    auditRow(context, sessionId, at(raw, idx("Patient_ID")), stationId, now)
+    auditRow(context, organizationId, clinicId, sessionId, at(raw, idx("Patient_ID")), stationId, now)
   );
   try {
     await updateAppointmentStatus(at(raw, idx("Appointment_ID")), "In Treatment");
