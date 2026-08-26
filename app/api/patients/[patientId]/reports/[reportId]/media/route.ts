@@ -25,6 +25,36 @@ function safeFilename(value: string, fallback: string): string {
   return (value || fallback).replace(/[\r\n"]/g, "_").slice(0, 180) || fallback;
 }
 
+function mediaContentType(
+  upstreamType: string,
+  reportType: string,
+  fileName: string
+): string {
+  const upstream = upstreamType.trim();
+  const upstreamBase = upstream.split(";", 1)[0]?.trim().toLowerCase() || "";
+  if (upstreamBase.startsWith("image/") || upstreamBase === "application/pdf") {
+    return upstream;
+  }
+
+  const declared = reportType.trim().toLowerCase();
+  if (declared.startsWith("image/") || declared === "application/pdf") {
+    return declared;
+  }
+
+  const extension = fileName.trim().toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || "";
+  const byExtension: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    gif: "image/gif",
+    heic: "image/heic",
+    heif: "image/heif",
+    pdf: "application/pdf",
+  };
+  return byExtension[extension] || upstream || "application/octet-stream";
+}
+
 function mediaResponse(
   body: ArrayBuffer,
   contentType: string,
@@ -75,7 +105,7 @@ export async function GET(
         const stored = await downloadPrivatePatientReport(report.driveLink);
         return mediaResponse(
           stored.body,
-          stored.contentType || report.fileType,
+          mediaContentType(stored.contentType, report.fileType, fileName),
           fileName
         );
       } catch (error) {
@@ -89,7 +119,7 @@ export async function GET(
         const drive = await downloadReportFromDrive(report.driveLink);
         return mediaResponse(
           drive.body,
-          drive.contentType || report.fileType,
+          mediaContentType(drive.contentType, report.fileType, fileName),
           fileName
         );
       } catch (error) {
@@ -124,8 +154,11 @@ export async function GET(
     }
 
     const body = await upstream.arrayBuffer();
-    const contentType =
-      upstream.headers.get("content-type") || "application/octet-stream";
+    const contentType = mediaContentType(
+      upstream.headers.get("content-type") || "",
+      report.fileType,
+      fileName
+    );
     const disposition =
       upstream.headers.get("content-disposition") ||
       `inline; filename="${fileName}"`;
