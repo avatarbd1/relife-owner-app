@@ -87,7 +87,7 @@ function parseDepartment(value: string, fallback: Department): Department {
   return fallback;
 }
 
-function parsePayments(rows: string[][], fallback: Department): Payment[] {
+function parsePayments(rows: string[][], fallback: Department, organizationId: string, clinicId: string): Payment[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const receiptNoIdx = getHeaderIndex(headers, "Receipt_No", "receiptNo");
@@ -101,10 +101,15 @@ function parsePayments(rows: string[][], fallback: Department): Payment[] {
   const methodIdx = getHeaderIndex(headers, "Payment_Method", "paymentMethod");
   const receivedByIdx = getHeaderIndex(headers, "Received_By", "receivedBy");
   const remarksIdx = getHeaderIndex(headers, "Remarks");
+  const orgIdIdx = getHeaderIndex(headers, "Organization_ID");
+  const clinicIdIdx = getHeaderIndex(headers, "Clinic_ID");
 
   return rows.slice(1).flatMap((row) => {
     const receiptNo = valueAt(row, receiptNoIdx);
     if (!receiptNo) return [];
+    const recordOrgId = orgIdIdx >= 0 ? valueAt(row, orgIdIdx) || organizationId : organizationId;
+    const recordClinicId = clinicIdIdx >= 0 ? valueAt(row, clinicIdIdx) || clinicId : clinicId;
+    if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
     const rawMethod = valueAt(row, methodIdx) || "Cash";
     const method = (["Cash", "bKash", "Bank", "Nagad", "Card"] as const).find(
       (item) => item.toLowerCase() === rawMethod.toLowerCase()
@@ -121,6 +126,8 @@ function parsePayments(rows: string[][], fallback: Department): Payment[] {
         due: money(valueAt(row, dueIdx)),
         paymentMethod: method || "Cash",
         receivedBy: valueAt(row, receivedByIdx),
+        organizationId: recordOrgId,
+        clinicId: recordClinicId,
         ...(valueAt(row, remarksIdx)
           ? { remarks: valueAt(row, remarksIdx) }
           : {}),
@@ -129,7 +136,7 @@ function parsePayments(rows: string[][], fallback: Department): Payment[] {
   });
 }
 
-function parseExpenses(rows: string[][], fallback: Department): Expense[] {
+function parseExpenses(rows: string[][], fallback: Department, organizationId: string, clinicId: string): Expense[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const idIdx = getHeaderIndex(headers, "Expense_ID", "expenseId");
@@ -143,10 +150,15 @@ function parseExpenses(rows: string[][], fallback: Department): Expense[] {
   const typeIdx = getHeaderIndex(headers, "Type");
   const statusIdx = getHeaderIndex(headers, "Status");
   const paidAtIdx = getHeaderIndex(headers, "Paid_At");
+  const orgIdIdx = getHeaderIndex(headers, "Organization_ID");
+  const clinicIdIdx = getHeaderIndex(headers, "Clinic_ID");
 
   return rows.slice(1).flatMap((row) => {
     const expenseId = valueAt(row, idIdx);
     if (!expenseId) return [];
+    const recordOrgId = orgIdIdx >= 0 ? valueAt(row, orgIdIdx) || organizationId : organizationId;
+    const recordClinicId = clinicIdIdx >= 0 ? valueAt(row, clinicIdIdx) || clinicId : clinicId;
+    if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
     const expenseType = valueAt(row, typeIdx) || "Clinic Expense";
     const paidFrom = valueAt(row, paidFromIdx);
     return [
@@ -159,6 +171,8 @@ function parseExpenses(rows: string[][], fallback: Department): Expense[] {
         paymentMethod: paidFrom,
         paidBy: valueAt(row, paidByIdx),
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
+        organizationId: recordOrgId,
+        clinicId: recordClinicId,
         expenseType,
         paidFrom,
         status: valueAt(row, statusIdx),
@@ -207,7 +221,9 @@ function parseStaff(rows: string[][]): StaffMember[] {
 function parseSalaryPayments(
   rows: string[][],
   fallback: Department,
-  staffNames: Map<string, string>
+  staffNames: Map<string, string>,
+  organizationId: string,
+  clinicId: string
 ): SalaryPayment[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
@@ -220,10 +236,15 @@ function parseSalaryPayments(
   const paidFromIdx = getHeaderIndex(headers, "Paid_From");
   const statusIdx = getHeaderIndex(headers, "Status");
   const paidAtIdx = getHeaderIndex(headers, "Paid_At");
+  const orgIdIdx = getHeaderIndex(headers, "Organization_ID");
+  const clinicIdIdx = getHeaderIndex(headers, "Clinic_ID");
 
   return rows.slice(1).flatMap((row) => {
     const id = valueAt(row, idIdx);
     if (!id) return [];
+    const recordOrgId = orgIdIdx >= 0 ? valueAt(row, orgIdIdx) || organizationId : organizationId;
+    const recordClinicId = clinicIdIdx >= 0 ? valueAt(row, clinicIdIdx) || clinicId : clinicId;
+    if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
     const staffId = valueAt(row, staffIdIdx);
     const rawType = valueAt(row, typeIdx).toLowerCase();
     const type =
@@ -240,6 +261,8 @@ function parseSalaryPayments(
         staffName: staffNames.get(staffId) || "",
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
         amount: money(valueAt(row, amountIdx)),
+        organizationId: recordOrgId,
+        clinicId: recordClinicId,
         ...(type ? { type } : {}),
         paidFrom: valueAt(row, paidFromIdx),
         status: valueAt(row, statusIdx),
@@ -305,27 +328,31 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
   const staff = parseStaff(physio["08_Staff"] || []);
   const staffNames = new Map(staff.map((item) => [item.staffId, item.fullName]));
 
-  const physioPayments = parsePayments(physio["06_Payments"] || [], "Physio").filter(
+  const physioPayments = parsePayments(physio["06_Payments"] || [], "Physio", "RELIFE", "RELIFE-PHYSIO").filter(
     (row) => row.department === "Physio"
   );
-  const dentalPayments = parsePayments(dental["06_Payments"] || [], "Dental").filter(
+  const dentalPayments = parsePayments(dental["06_Payments"] || [], "Dental", "RELIFE", "RELIFE-DENTAL").filter(
     (row) => row.department === "Dental"
   );
-  const physioExpenses = parseExpenses(physio["07_Expenses"] || [], "Physio").filter(
+  const physioExpenses = parseExpenses(physio["07_Expenses"] || [], "Physio", "RELIFE", "RELIFE-PHYSIO").filter(
     (row) => row.department === "Physio"
   );
-  const dentalExpenses = parseExpenses(dental["07_Expenses"] || [], "Dental").filter(
+  const dentalExpenses = parseExpenses(dental["07_Expenses"] || [], "Dental", "RELIFE", "RELIFE-DENTAL").filter(
     (row) => row.department === "Dental"
   );
   const physioSalary = parseSalaryPayments(
     physio["13_Salary"] || [],
     "Physio",
-    staffNames
+    staffNames,
+    "RELIFE",
+    "RELIFE-PHYSIO"
   ).filter((row) => row.department === "Physio");
   const dentalSalary = parseSalaryPayments(
     dental["13_Salary"] || [],
     "Dental",
-    staffNames
+    staffNames,
+    "RELIFE",
+    "RELIFE-DENTAL"
   ).filter((row) => row.department === "Dental");
   const physioCash = parseCashMovements(
     physio["21_Cash_Movement"] || [],
@@ -408,35 +435,53 @@ async function fromPrivateOrSeed<K extends keyof LiveSnapshot>(
   }
 }
 
-export async function getPayments(): Promise<Payment[]> {
+export async function getPayments(organizationId?: string, clinicId?: string): Promise<Payment[]> {
+  const org = organizationId || "RELIFE";
+  const clinic = clinicId || "RELIFE-PHYSIO";
   if (hasPrivateSheetsCredentials()) {
-    return fromPrivateOrSeed("payments", paymentsSeed as Payment[]);
+    const all = await fromPrivateOrSeed("payments", paymentsSeed as Payment[]);
+    return all.filter((p) => p.organizationId === org && p.clinicId === clinic);
   }
-  if (!process.env.SHEET_PAYMENTS_CSV) return paymentsSeed as Payment[];
+  if (!process.env.SHEET_PAYMENTS_CSV) {
+    const seed = paymentsSeed as Payment[];
+    return seed.filter((p) => p.organizationId === org && p.clinicId === clinic);
+  }
   try {
     return parsePayments(
       await fetchAndParseCSV(process.env.SHEET_PAYMENTS_CSV),
-      "Physio"
+      "Physio",
+      org,
+      clinic
     );
   } catch (error) {
     console.error("Error fetching payments:", error);
-    return paymentsSeed as Payment[];
+    const seed = paymentsSeed as Payment[];
+    return seed.filter((p) => p.organizationId === org && p.clinicId === clinic);
   }
 }
 
-export async function getExpenses(): Promise<Expense[]> {
+export async function getExpenses(organizationId?: string, clinicId?: string): Promise<Expense[]> {
+  const org = organizationId || "RELIFE";
+  const clinic = clinicId || "RELIFE-PHYSIO";
   if (hasPrivateSheetsCredentials()) {
-    return fromPrivateOrSeed("expenses", expensesSeed as Expense[]);
+    const all = await fromPrivateOrSeed("expenses", expensesSeed as Expense[]);
+    return all.filter((e) => e.organizationId === org && e.clinicId === clinic);
   }
-  if (!process.env.SHEET_EXPENSES_CSV) return expensesSeed as Expense[];
+  if (!process.env.SHEET_EXPENSES_CSV) {
+    const seed = expensesSeed as Expense[];
+    return seed.filter((e) => e.organizationId === org && e.clinicId === clinic);
+  }
   try {
     return parseExpenses(
       await fetchAndParseCSV(process.env.SHEET_EXPENSES_CSV),
-      "Physio"
+      "Physio",
+      org,
+      clinic
     );
   } catch (error) {
     console.error("Error fetching expenses:", error);
-    return expensesSeed as Expense[];
+    const seed = expensesSeed as Expense[];
+    return seed.filter((e) => e.organizationId === org && e.clinicId === clinic);
   }
 }
 
@@ -453,24 +498,32 @@ export async function getStaff(): Promise<StaffMember[]> {
   }
 }
 
-export async function getSalaryPayments(): Promise<SalaryPayment[]> {
+export async function getSalaryPayments(organizationId?: string, clinicId?: string): Promise<SalaryPayment[]> {
+  const org = organizationId || "RELIFE";
+  const clinic = clinicId || "RELIFE-PHYSIO";
   if (hasPrivateSheetsCredentials()) {
-    return fromPrivateOrSeed(
+    const all = await fromPrivateOrSeed(
       "salaryPayments",
       salaryPaymentsSeed as SalaryPayment[]
     );
+    return all.filter((s) => s.organizationId === org && s.clinicId === clinic);
   }
-  if (!process.env.SHEET_SALARY_CSV)
-    return salaryPaymentsSeed as SalaryPayment[];
+  if (!process.env.SHEET_SALARY_CSV) {
+    const seed = salaryPaymentsSeed as SalaryPayment[];
+    return seed.filter((s) => s.organizationId === org && s.clinicId === clinic);
+  }
   try {
     return parseSalaryPayments(
       await fetchAndParseCSV(process.env.SHEET_SALARY_CSV),
       "Physio",
-      new Map()
+      new Map(),
+      org,
+      clinic
     );
   } catch (error) {
     console.error("Error fetching salary payments:", error);
-    return salaryPaymentsSeed as SalaryPayment[];
+    const seed = salaryPaymentsSeed as SalaryPayment[];
+    return seed.filter((s) => s.organizationId === org && s.clinicId === clinic);
   }
 }
 
