@@ -32,3 +32,8 @@ test("legacy media destination remains canonical private storage", () => {
   assert.match(source, /LEGACY_MEDIA_MIGRATION_ORGANIZATION_ID/);
   assert.match(source, /LEGACY_MEDIA_MIGRATION_CLINIC_ID/);
 });
+
+test("migration route does not hardcode Tenant 1 UUIDs", () => {
+  assert.doesNotMatch(source, /9673c610-1369-4825-b6e9-5a22cb4ba138/);
+  assert.doesNotMatch(source, /5a1793b4-b3f9-41b5-84a4-1920be5dc1b8/);
+});
