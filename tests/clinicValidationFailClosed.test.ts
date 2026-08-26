@@ -7,10 +7,10 @@ const route = readFileSync(
   "utf8"
 );
 
-test("G2 clinic validation binds membership lookup to the requested staff member", () => {
+test("G2 clinic validation binds membership lookup to organization, clinic, and staff", () => {
   assert.match(
     route,
-    /\.from\("clinic_memberships"\)[\s\S]*?\.eq\("clinic_id", clinicId\)[\s\S]*?\.eq\("user_id", staffId\)[\s\S]*?\.eq\("status", "active"\)/
+    /\.from\("clinic_memberships"\)[\s\S]*?\.eq\("organization_id", organizationId\)[\s\S]*?\.eq\("clinic_id", clinicId\)[\s\S]*?\.eq\("user_id", staffId\)[\s\S]*?\.eq\("status", "active"\)/
   );
 });
 
