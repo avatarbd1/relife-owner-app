@@ -88,6 +88,7 @@ async function checkStaffMembership(clinicId: string, staffId: string): Promise<
       .from("clinic_memberships")
       .select("user_id")
       .eq("clinic_id", clinicId)
+      .eq("user_id", staffId)
       .eq("status", "active")
       .limit(1);
 
@@ -191,7 +192,9 @@ export async function POST(request: NextRequest) {
     const readinessChecksPass =
       result.checks.tenantContextResolvable &&
       result.checks.departmentDataScopedToClinic &&
-      result.checks.tenantFiltersPresentInReaders;
+      result.checks.tenantFiltersPresentInReaders &&
+      result.checks.explicitTenantParametersInWriters &&
+      result.checks.crossTenantIsolationVerified;
 
     result.ok = true;
     result.isReady = allChecksPass && readinessChecksPass && result.errors.length === 0;
