@@ -8,10 +8,10 @@ function source(path: string): string {
 
 const route = source("app/api/control/cash-movement/route.ts");
 
-test("cash approval resolves the authenticated access context and requires Owner before PIN", () => {
+test("cash approval resolves the authenticated tenant access context and requires Owner before PIN", () => {
   const originCheck = route.indexOf("isAllowedRequestOrigin(request)");
   const sessionCheck = route.indexOf("verifySessionToken(session)");
-  const contextResolution = route.indexOf("requireCurrentAccessContext()");
+  const contextResolution = route.indexOf("requireCurrentTenantAccessContext()");
   const ownerGuard = route.indexOf('context.roles.includes("Owner")');
   const bodyRead = route.indexOf("const body = await request.json()");
   const pinCheck = route.indexOf("checkOwnerPin(pin)");
@@ -40,10 +40,10 @@ test("non-Owner approval fails closed with 403 before Owner PIN can authorize", 
   assert(ownerGuard >= 0 && pinGuard > ownerGuard);
 });
 
-test("missing access context also fails closed with 403", () => {
+test("missing tenant access context also fails closed with 403", () => {
   assert.match(
     route,
-    /try \{[\s\S]*?requireCurrentAccessContext\(\)[\s\S]*?\} catch \{[\s\S]*?error: "ACCESS_DENIED"[\s\S]*?status: 403/
+    /try \{[\s\S]*?requireCurrentTenantAccessContext\(\)[\s\S]*?\} catch \{[\s\S]*?error: "ACCESS_DENIED"[\s\S]*?status: 403/
   );
 });
 
