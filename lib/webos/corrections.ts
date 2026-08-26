@@ -122,6 +122,8 @@ function sessionsFromRemarks(remarks: string): number {
 
 export async function deleteLatestTodayPhysioPayment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   receiptInput: string
 ): Promise<{
   receiptNo: string;
@@ -286,10 +288,10 @@ export async function deleteLatestTodayPhysioPayment(
         Amount: amount,
         Sessions: sessions,
         Raw_Data_JSON: rawData,
-        Organization_ID: "RELIFE",
-        Clinic_ID: "RELIFE-PHYSIO",
+        Organization_ID: organizationId,
+        Clinic_ID: clinicId,
         Branch_ID: "AMTALI-01",
-        Record_ID: `RELIFE-PHYSIO:${deleteId}`,
+        Record_ID: `${clinicId}:${deleteId}`,
         Provider_ID: context.staffId,
         Source_System: "web_pwa",
         Source_Type: "owner_correction",
@@ -316,10 +318,10 @@ export async function deleteLatestTodayPhysioPayment(
         Before_Value: rawData,
         After_Value: JSON.stringify({ newPaid, newDue, newAdvance, reversedSessions: sessions }),
         Reason: "Owner same-day latest-entry correction; bot-compatible reversal",
-        Organization_ID: "RELIFE",
-        Clinic_ID: "RELIFE-PHYSIO",
+        Organization_ID: organizationId,
+        Clinic_ID: clinicId,
         Branch_ID: "AMTALI-01",
-        Record_ID: `RELIFE-PHYSIO:${auditId}`,
+        Record_ID: `${clinicId}:${auditId}`,
         Provider_ID: context.staffId,
         Source_System: "web_pwa",
         Source_Type: "owner_correction",
