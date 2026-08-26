@@ -24,6 +24,12 @@ interface ValidationResult {
   };
   errors: string[];
   warnings: string[];
+  /**
+   * Checks whose evidence is a deployment assertion (an enforcement flag)
+   * rather than a runtime probe. They still gate `isReady`, but a caller must
+   * not read them as proof that the property was independently observed.
+   */
+  unverified: string[];
 }
 
 async function checkOrganizationExists(organizationId: string): Promise<boolean> {
@@ -103,7 +109,74 @@ async function checkStaffMembership(
   }
 }
 
-function validateWriterPatterns(): { valid: boolean; gaps: string[] } {
+/**
+ * Probe for dual-key contamination on the requested clinic.
+ *
+ * `(organization_id, clinic_id)` is only an isolation boundary while the two
+ * keys agree with the canonical `clinics (organization_id, id)` mapping. A row
+ * carrying this clinic under a different organization means dual-key filtering
+ * silently returns the wrong tenant's data, so any such row fails the check.
+ *
+ * Read-only, and fails closed when a probe cannot run.
+ */
+async function checkCrossTenantIsolation(
+  organizationId: string,
+  clinicId: string
+): Promise<{ verified: boolean; gaps: string[] }> {
+  const gaps: string[] = [];
+
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return { verified: false, gaps: ["Supabase service credentials unavailable"] };
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const probes: { table: string; column: string }[] = [
+      { table: "clinics", column: "id" },
+      { table: "clinic_memberships", column: "clinic_id" },
+    ];
+
+    for (const probe of probes) {
+      const { data, error } = await supabase
+        .from(probe.table)
+        .select(probe.column)
+        .eq(probe.column, clinicId)
+        .neq("organization_id", organizationId)
+        .limit(1);
+
+      if (error) {
+        gaps.push(`${probe.table} isolation probe failed: ${error.message}`);
+        continue;
+      }
+
+      if (data && data.length > 0) {
+        gaps.push(
+          `${probe.table} has rows for clinic ${clinicId} under an organization other than ${organizationId}`
+        );
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { verified: false, gaps: [`Cross-tenant isolation probe failed: ${message}`] };
+  }
+
+  return { verified: gaps.length === 0, gaps };
+}
+
+/**
+ * Reader and writer tenant-parameter coverage is a source property, so it
+ * cannot be observed from a running request. Both checks therefore rest on the
+ * same single deployment assertion, and this returns one shared result rather
+ * than two lookalike helpers that would imply two independent proofs.
+ *
+ * Callers must list the checks it backs in `result.unverified`.
+ */
+function validateTenantEnforcementFlag(): { valid: boolean; gaps: string[] } {
   const gaps: string[] = [];
 
   if (!process.env.RELIFE_TENANT_CUTOVER_ENFORCED) {
@@ -135,19 +208,42 @@ export async function POST(request: NextRequest) {
       ok: false,
       isReady: false,
       checks: {
-        tenantContextResolvable: true,
+        tenantContextResolvable: false,
         organizationExists: false,
         clinicExists: false,
         clinicBelongsToOrganization: false,
         staffHasClinicMembership: false,
-        departmentDataScopedToClinic: true,
-        tenantFiltersPresentInReaders: true,
+        departmentDataScopedToClinic: false,
+        tenantFiltersPresentInReaders: false,
         explicitTenantParametersInWriters: false,
         crossTenantIsolationVerified: false,
       },
       errors: [],
       warnings: [],
+      unverified: [],
     };
+
+    // Evaluated, not asserted: validateTenantScope above already rejects a
+    // blank organization/clinic/staff binding, so this records the observed
+    // context rather than restating that guarantee as a literal.
+    result.checks.tenantContextResolvable = Boolean(
+      tenant.organizationId?.trim() &&
+        tenant.clinicId?.trim() &&
+        tenant.staffId?.trim()
+    );
+
+    // Department is authorization scope, never a stand-in for clinic identity,
+    // so readiness requires an explicit department scope alongside the clinic
+    // key rather than an implicit global one.
+    const departmentAccess = access.departmentAccess || [];
+    result.checks.departmentDataScopedToClinic =
+      departmentAccess.length > 0 && Boolean(tenant.clinicId?.trim());
+
+    if (!result.checks.departmentDataScopedToClinic) {
+      result.warnings.push(
+        `Staff ${access.staffId} has no explicit department scope bound to a clinic`
+      );
+    }
 
     if (!organizationId || !clinicId) {
       result.errors.push("organizationId and clinicId are required");
@@ -183,12 +279,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const writerChecks = validateWriterPatterns();
-    result.checks.explicitTenantParametersInWriters = writerChecks.valid;
+    const enforcementFlag = validateTenantEnforcementFlag();
+    result.checks.tenantFiltersPresentInReaders = enforcementFlag.valid;
+    result.checks.explicitTenantParametersInWriters = enforcementFlag.valid;
+    result.unverified.push(
+      "tenantFiltersPresentInReaders",
+      "explicitTenantParametersInWriters"
+    );
 
-    if (!writerChecks.valid) {
+    if (!enforcementFlag.valid) {
       result.warnings.push(
-        `Writer pattern validation incomplete: ${writerChecks.gaps.join(", ")}`
+        `Reader/writer tenant parameter enforcement not asserted: ${enforcementFlag.gaps.join(", ")}`
+      );
+    }
+
+    const isolationChecks = await checkCrossTenantIsolation(organizationId, clinicId);
+    result.checks.crossTenantIsolationVerified = isolationChecks.verified;
+
+    if (!isolationChecks.verified) {
+      result.warnings.push(
+        `Cross-tenant isolation not verified: ${isolationChecks.gaps.join(", ")}`
       );
     }
 
