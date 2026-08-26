@@ -5,6 +5,7 @@ import {
   fetchSheetRanges,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import { resolveStaffTenantContext } from "@/lib/domain/tenancy/staffTenantContext";
 import { getPatients, type PatientRecord } from "@/lib/patients";
 import type { Scope } from "@/lib/types";
 import {
@@ -16,7 +17,6 @@ import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
 
 type ClinicDepartment = "Physio" | "Dental";
-
 type SheetValue = string | number | boolean;
 
 export interface PatientCreateInput {
@@ -155,16 +155,10 @@ function sheetTimeFromInput(value: string): string {
   if (hour > 23 || minute > 59) throw new Error("INVALID_TIME");
   const suffix = hour >= 12 ? "PM" : "AM";
   const hour12 = hour % 12 || 12;
-  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(
-    2,
-    "0"
-  )} ${suffix}`;
+  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
-function rowForHeaders(
-  headers: string[],
-  values: Record<string, SheetValue>
-): SheetValue[] {
+function rowForHeaders(headers: string[], values: Record<string, SheetValue>): SheetValue[] {
   const normalizedValues = new Map(
     Object.entries(values).map(([key, value]) => [key.toLowerCase(), value])
   );
@@ -230,20 +224,32 @@ function scopeAllows(scope: Scope, department: ClinicDepartment): boolean {
   return scope === "physio" ? department === "Physio" : department === "Dental";
 }
 
+async function tenantForContext(
+  context: AccessContext,
+  organizationId?: string,
+  clinicId?: string
+): Promise<{ organizationId: string; clinicId: string }> {
+  const org = normalize(organizationId);
+  const clinic = normalize(clinicId);
+  if (org && clinic) return { organizationId: org, clinicId: clinic };
+  const tenant = await resolveStaffTenantContext(context.staffId);
+  if (!tenant?.organizationId || !tenant?.clinicId) throw new Error("ACCESS_DENIED");
+  return { organizationId: tenant.organizationId, clinicId: tenant.clinicId };
+}
+
 export async function getVisiblePatients(
   context: AccessContext,
   scope: Scope,
   organizationId?: string,
   clinicId?: string
 ): Promise<PatientRecord[]> {
+  const tenant = await tenantForContext(context, organizationId, clinicId);
   const patients = await getPatients();
-  const org = organizationId || "RELIFE";
-  const clinic = clinicId || "RELIFE-PHYSIO";
   return patients.filter(
     (patient) =>
       patient.department !== "All" &&
-      patient.organizationId === org &&
-      patient.clinicId === clinic &&
+      patient.organizationId === tenant.organizationId &&
+      patient.clinicId === tenant.clinicId &&
       scopeAllows(scope, patient.department) &&
       canPerform(context, "patient.read", patient.department)
   );
@@ -251,10 +257,16 @@ export async function getVisiblePatients(
 
 export async function getPatientForContext(
   context: AccessContext,
-  patientId: string
+  patientId: string,
+  organizationId?: string,
+  clinicId?: string
 ): Promise<PatientRecord | null> {
+  const tenant = await tenantForContext(context, organizationId, clinicId);
   const patient = (await getPatients()).find(
-    (row) => row.patientId.toLowerCase() === normalize(patientId).toLowerCase()
+    (row) =>
+      row.patientId.toLowerCase() === normalize(patientId).toLowerCase() &&
+      row.organizationId === tenant.organizationId &&
+      row.clinicId === tenant.clinicId
   );
   if (!patient || patient.department === "All") return null;
   assertCanPerform(context, "patient.read", patient.department);
@@ -275,10 +287,9 @@ export async function registerPatient(
   clinicId: string,
   input: PatientCreateInput
 ): Promise<{ patientId: string }> {
+  if (!normalize(organizationId) || !normalize(clinicId)) throw new Error("ACCESS_DENIED");
   const department = input.department;
-  if (!(["Physio", "Dental"] as string[]).includes(department)) {
-    throw new Error("INVALID_DEPARTMENT");
-  }
+  if (!(["Physio", "Dental"] as string[]).includes(department)) throw new Error("INVALID_DEPARTMENT");
   assertCanPerform(context, "patient.create", department);
 
   const fullName = normalize(input.fullName);
@@ -294,17 +305,22 @@ export async function registerPatient(
   const phoneIdx = headerIndex(headers, "Phone");
   const statusIdx = headerIndex(headers, "Status");
   const patientIdIdx = headerIndex(headers, "Patient_ID");
+  const organizationIdx = headerIndex(headers, "Organization_ID");
+  const clinicIdx = headerIndex(headers, "Clinic_ID");
+  if (organizationIdx < 0 || clinicIdx < 0) throw new Error("SCHEMA_MISMATCH");
   const phone = normalizePhone(input.phone);
   if (phone) {
     const duplicate = rows.slice(1).find((row) => {
       const rowPhone = normalizePhone(at(row, phoneIdx));
       const rowStatus = at(row, statusIdx).toLowerCase() || "active";
-      return rowPhone === phone && rowStatus === "active";
+      return (
+        rowPhone === phone &&
+        rowStatus === "active" &&
+        at(row, organizationIdx) === organizationId &&
+        at(row, clinicIdx) === clinicId
+      );
     });
-    if (duplicate) {
-      const existingId = at(duplicate, patientIdIdx);
-      throw new Error(`DUPLICATE_PHONE:${existingId}`);
-    }
+    if (duplicate) throw new Error(`DUPLICATE_PHONE:${at(duplicate, patientIdIdx)}`);
   }
 
   const existingIds = new Set(rows.slice(1).map((row) => at(row, patientIdIdx)));
@@ -351,18 +367,8 @@ export async function registerPatient(
     workbook,
     "02_Patients",
     rowForHeaders(headers, values),
-    auditRow(
-      context,
-      "patient.create",
-      "Patient",
-      patientId,
-      patientId,
-      department,
-      JSON.stringify({ patientId, fullName, department }),
-      now,
-      organizationId,
-      clinicId
-    )
+    auditRow(context, "patient.create", "Patient", patientId, patientId, department,
+      JSON.stringify({ patientId, fullName, department }), now, organizationId, clinicId)
   );
   return { patientId };
 }
@@ -391,40 +397,41 @@ function parseAppointments(
   const receivedByIdx = headerIndex(headers, "Received_By");
   const orgIdIdx = headerIndex(headers, "Organization_ID");
   const clinicIdIdx = headerIndex(headers, "Clinic_ID");
+  if (orgIdIdx < 0 || clinicIdIdx < 0) return [];
 
   return rows.slice(1).flatMap((row) => {
     const appointmentId = at(row, idIdx);
-    if (!appointmentId) return [];
-    const recordOrgId = orgIdIdx >= 0 ? at(row, orgIdIdx) || organizationId : organizationId;
-    const recordClinicId = clinicIdIdx >= 0 ? at(row, clinicIdIdx) || clinicId : clinicId;
-    if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
-    return [
-      {
-        appointmentId,
-        date: at(row, dateIdx),
-        time: at(row, timeIdx),
-        patientId: at(row, patientIdIdx),
-        patientName: at(row, patientNameIdx),
-        department: parseDepartment(at(row, departmentIdx), fallback),
-        therapist: at(row, therapistIdx),
-        status: at(row, statusIdx) || "Scheduled",
-        remarks: at(row, remarksIdx),
-        receivedBy: at(row, receivedByIdx),
-        organizationId: recordOrgId,
-        clinicId: recordClinicId,
-      },
-    ];
+    const recordOrgId = at(row, orgIdIdx);
+    const recordClinicId = at(row, clinicIdIdx);
+    if (!appointmentId || recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
+    return [{
+      appointmentId,
+      date: at(row, dateIdx),
+      time: at(row, timeIdx),
+      patientId: at(row, patientIdIdx),
+      patientName: at(row, patientNameIdx),
+      department: parseDepartment(at(row, departmentIdx), fallback),
+      therapist: at(row, therapistIdx),
+      status: at(row, statusIdx) || "Scheduled",
+      remarks: at(row, remarksIdx),
+      receivedBy: at(row, receivedByIdx),
+      organizationId: recordOrgId,
+      clinicId: recordClinicId,
+    }];
   });
 }
 
-async function loadAppointments(): Promise<AppointmentRecord[]> {
+async function loadAppointments(
+  organizationId: string,
+  clinicId: string
+): Promise<AppointmentRecord[]> {
   const [physio, dental] = await Promise.all([
     fetchSheetRanges("physio", ["04_Appointments"]),
     fetchSheetRanges("dental", ["04_Appointments"]),
   ]);
   return [
-    ...parseAppointments(physio["04_Appointments"] || [], "Physio", "RELIFE", "RELIFE-PHYSIO"),
-    ...parseAppointments(dental["04_Appointments"] || [], "Dental", "RELIFE", "RELIFE-DENTAL"),
+    ...parseAppointments(physio["04_Appointments"] || [], "Physio", organizationId, clinicId),
+    ...parseAppointments(dental["04_Appointments"] || [], "Dental", organizationId, clinicId),
   ];
 }
 
@@ -435,56 +442,49 @@ export async function getAppointmentsForContext(
   organizationId?: string,
   clinicId?: string
 ): Promise<AppointmentRecord[]> {
-  const rows = await loadAppointments();
-  const org = organizationId || "RELIFE";
-  const clinic = clinicId || "RELIFE-PHYSIO";
+  const tenant = await tenantForContext(context, organizationId, clinicId);
+  const rows = await loadAppointments(tenant.organizationId, tenant.clinicId);
   return rows
-    .filter(
-      (row) =>
-        row.organizationId === org &&
-        row.clinicId === clinic &&
-        scopeAllows(scope, row.department) &&
-        (!date || row.date === date) &&
-        canPerform(context, "appointment.read", row.department)
+    .filter((row) =>
+      scopeAllows(scope, row.department) &&
+      (!date || row.date === date) &&
+      canPerform(context, "appointment.read", row.department)
     )
     .sort((a, b) => {
       const dateOrder = a.date.localeCompare(b.date);
-      if (dateOrder !== 0) return dateOrder;
-      return appointmentMinutes(a.time) - appointmentMinutes(b.time);
+      return dateOrder !== 0 ? dateOrder : appointmentMinutes(a.time) - appointmentMinutes(b.time);
     });
 }
 
 export async function getPatientAppointmentsForContext(
   context: AccessContext,
-  patient: PatientRecord
+  patient: PatientRecord,
+  organizationId?: string,
+  clinicId?: string
 ): Promise<AppointmentRecord[]> {
+  const tenant = await tenantForContext(context, organizationId, clinicId);
+  if (patient.organizationId !== tenant.organizationId || patient.clinicId !== tenant.clinicId) return [];
   assertCanPerform(context, "appointment.read", patient.department);
-  const rows = await loadAppointments();
+  const rows = await loadAppointments(tenant.organizationId, tenant.clinicId);
   return rows
-    .filter(
-      (row) =>
-        row.patientId === patient.patientId &&
-        row.department === patient.department &&
-        canPerform(context, "appointment.read", row.department)
+    .filter((row) =>
+      row.patientId === patient.patientId &&
+      row.department === patient.department &&
+      canPerform(context, "appointment.read", row.department)
     )
     .sort((a, b) => {
       const dateOrder = b.date.localeCompare(a.date);
-      if (dateOrder !== 0) return dateOrder;
-      return appointmentMinutes(b.time) - appointmentMinutes(a.time);
+      return dateOrder !== 0 ? dateOrder : appointmentMinutes(b.time) - appointmentMinutes(a.time);
     });
 }
 
-export async function getClinicianOptions(
-  context: AccessContext
-): Promise<ClinicianOption[]> {
+export async function getClinicianOptions(context: AccessContext): Promise<ClinicianOption[]> {
   const directory = await getWebStaffDirectory();
   return directory.flatMap((staff) => {
     if (staff.status !== "Active") return [];
     const department: ClinicDepartment | null = staff.roles.includes("Dentist")
       ? "Dental"
-      : staff.roles.includes("Therapist")
-        ? "Physio"
-        : null;
+      : staff.roles.includes("Therapist") ? "Physio" : null;
     if (!department || !canPerform(context, "appointment.create", department)) return [];
     return [{ staffId: staff.staffId, fullName: staff.fullName, department }];
   });
@@ -493,18 +493,11 @@ export async function getClinicianOptions(
 function normalizeGender(value: unknown): "Male" | "Female" | "" {
   const text = normalize(value).toLowerCase();
   if (["male", "m", "পুরুষ", "ছেলে"].includes(text)) return "Male";
-  if (["female", "f", "মহিলা", "নারী", "মেয়ে", "মেয়ে"].includes(text)) {
-    return "Female";
-  }
+  if (["female", "f", "মহিলা", "নারী", "মেয়ে", "মেয়ে"].includes(text)) return "Female";
   return "";
 }
 
-interface FlowFields {
-  Gender: "Male" | "Female" | "";
-  Room: string;
-  Bed: string;
-  Station: string;
-}
+interface FlowFields { Gender: "Male" | "Female" | ""; Room: string; Bed: string; Station: string; }
 
 function flowFields(remarks: string): FlowFields {
   const fields: FlowFields = { Gender: "", Room: "", Bed: "", Station: "" };
@@ -529,49 +522,27 @@ function withFlowTag(remarks: string, assignment: FlowFields): string {
 }
 
 function allocatePhysioResource(
-  appointments: AppointmentRecord[],
-  date: string,
-  time: string,
-  genderValue: string,
-  needsTraction: boolean
+  appointments: AppointmentRecord[], date: string, time: string, genderValue: string, needsTraction: boolean
 ): FlowFields {
   const gender = normalizeGender(genderValue);
-  if (!gender) {
-    return { Gender: "", Room: "Waiting", Bed: "", Station: "Waiting" };
-  }
-
-  const slot = appointments.filter(
-    (row) =>
-      row.department === "Physio" &&
-      row.date === date &&
-      row.time === time &&
-      ACTIVE_APPOINTMENT_STATUSES.has(row.status.toLowerCase())
+  if (!gender) return { Gender: "", Room: "Waiting", Bed: "", Station: "Waiting" };
+  const slot = appointments.filter((row) =>
+    row.department === "Physio" && row.date === date && row.time === time &&
+    ACTIVE_APPOINTMENT_STATUSES.has(row.status.toLowerCase())
   );
   const occupied = slot.map((row) => flowFields(row.remarks));
-
   if (needsTraction) {
     if (occupied.some((item) => item.Station === "Traction")) {
       throw new Error("APPOINTMENT_CAPACITY:Traction Bed already booked");
     }
-    return {
-      Gender: gender,
-      Room: "Traction Room",
-      Bed: "Traction Bed",
-      Station: "Traction",
-    };
+    return { Gender: gender, Room: "Traction Room", Bed: "Traction Bed", Station: "Traction" };
   }
-
-  const roomGenders = new Map<string, Set<string>>(
-    ROOMS.map((room) => [room, new Set<string>()])
-  );
+  const roomGenders = new Map<string, Set<string>>(ROOMS.map((room) => [room, new Set<string>()]));
   const occupiedBeds = new Set<string>();
   for (const item of occupied) {
-    if (roomGenders.has(item.Room) && item.Gender) {
-      roomGenders.get(item.Room)?.add(item.Gender);
-    }
+    if (roomGenders.has(item.Room) && item.Gender) roomGenders.get(item.Room)?.add(item.Gender);
     if (item.Bed) occupiedBeds.add(item.Bed);
   }
-
   const preferred = [
     ...ROOMS.filter((room) => {
       const genders = roomGenders.get(room) || new Set<string>();
@@ -579,12 +550,9 @@ function allocatePhysioResource(
     }),
     ...ROOMS.filter((room) => (roomGenders.get(room)?.size || 0) === 0),
   ];
-
   for (const room of preferred) {
     for (const bed of BEDS[room]) {
-      if (!occupiedBeds.has(bed)) {
-        return { Gender: gender, Room: room, Bed: bed, Station: "Treatment" };
-      }
+      if (!occupiedBeds.has(bed)) return { Gender: gender, Room: room, Bed: bed, Station: "Treatment" };
     }
   }
   throw new Error("APPOINTMENT_CAPACITY:No gender-compatible treatment bed available");
@@ -613,109 +581,51 @@ export async function createAppointment(
   clinicId: string,
   input: AppointmentCreateInput
 ): Promise<{ appointmentId: string }> {
-  const patient = await getPatientForContext(context, input.patientId);
+  if (!normalize(organizationId) || !normalize(clinicId)) throw new Error("ACCESS_DENIED");
+  const patient = await getPatientForContext(context, input.patientId, organizationId, clinicId);
   if (!patient || patient.department === "All") throw new Error("PATIENT_NOT_FOUND");
   const department = patient.department;
   assertCanPerform(context, "appointment.create", department);
-
   const date = normalize(input.date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("INVALID_DATE");
   const time = sheetTimeFromInput(input.time);
   const therapist = normalize(input.therapist);
   if (!therapist) throw new Error("INVALID_THERAPIST");
-
   const workbook = workbookForDepartment(department);
-  const ranges = department === "Physio"
-    ? ["04_Appointments", "12_Treatment_Plans"]
-    : ["04_Appointments"];
+  const ranges = department === "Physio" ? ["04_Appointments", "12_Treatment_Plans"] : ["04_Appointments"];
   const snapshot = await fetchSheetRanges(workbook, ranges);
   const rawAppointments = snapshot["04_Appointments"] || [];
   if (rawAppointments.length === 0) throw new Error("SCHEMA_MISMATCH");
   const headers = rawAppointments[0];
-  ensureHeaders(headers, [
-    "Appointment_ID",
-    "Date",
-    "Time",
-    "Patient_ID",
-    "Department",
-    "Status",
-  ]);
-
-  const appointments = parseAppointments(
-    rawAppointments,
-    department,
-    organizationId,
-    clinicId
-  );
-  const duplicate = appointments.some(
-    (row) =>
-      row.patientId === patient.patientId &&
-      row.date === date &&
-      row.time === time &&
-      ACTIVE_APPOINTMENT_STATUSES.has(row.status.toLowerCase())
+  ensureHeaders(headers, ["Appointment_ID", "Date", "Time", "Patient_ID", "Department", "Status"]);
+  const appointments = parseAppointments(rawAppointments, department, organizationId, clinicId);
+  const duplicate = appointments.some((row) =>
+    row.patientId === patient.patientId && row.date === date && row.time === time &&
+    ACTIVE_APPOINTMENT_STATUSES.has(row.status.toLowerCase())
   );
   if (duplicate) throw new Error("APPOINTMENT_DUPLICATE");
-
   let remarks = normalize(input.remarks);
   if (department === "Physio") {
-    const needsTraction = activePlanNeedsTraction(
-      snapshot["12_Treatment_Plans"] || [],
-      patient.patientId
-    );
-    const assignment = allocatePhysioResource(
-      appointments,
-      date,
-      time,
-      patient.gender,
-      needsTraction
-    );
-    remarks = withFlowTag(remarks, assignment);
+    const needsTraction = activePlanNeedsTraction(snapshot["12_Treatment_Plans"] || [], patient.patientId);
+    remarks = withFlowTag(remarks, allocatePhysioResource(appointments, date, time, patient.gender, needsTraction));
   }
-
   const idIdx = headerIndex(headers, "Appointment_ID");
   const existingIds = new Set(rawAppointments.slice(1).map((row) => at(row, idIdx)));
   const appointmentId = generateWebId("AP", existingIds);
   const now = dhakaParts();
   const values: Record<string, SheetValue> = {
-    Appointment_ID: appointmentId,
-    Date: date,
-    Time: time,
-    Patient_ID: patient.patientId,
-    Patient_Name: patient.fullName,
-    Department: department,
-    Therapist: therapist,
-    Status: "Scheduled",
-    Remarks: remarks,
-    Organization_ID: organizationId,
-    Clinic_ID: clinicId,
-    Branch_ID: "AMTALI-01",
-    Record_ID: `${clinicId}:${appointmentId}`,
-    Provider_ID: context.staffId,
-    Source_System: "web_pwa",
-    Source_Type: "human_entry",
-    AI_Generated: false,
-    Human_Verified: true,
-    Schema_Version: "relife-uda-v1",
-    Provenance_Timestamp: now.provenance,
-    Received_By: context.staffId,
+    Appointment_ID: appointmentId, Date: date, Time: time, Patient_ID: patient.patientId,
+    Patient_Name: patient.fullName, Department: department, Therapist: therapist, Status: "Scheduled",
+    Remarks: remarks, Organization_ID: organizationId, Clinic_ID: clinicId, Branch_ID: "AMTALI-01",
+    Record_ID: `${clinicId}:${appointmentId}`, Provider_ID: context.staffId, Source_System: "web_pwa",
+    Source_Type: "human_entry", AI_Generated: false, Human_Verified: true,
+    Schema_Version: "relife-uda-v1", Provenance_Timestamp: now.provenance, Received_By: context.staffId,
   };
-
   await appendEntityWithAudit(
-    workbook,
-    "04_Appointments",
-    rowForHeaders(headers, values),
-    auditRow(
-      context,
-      "appointment.create",
-      "Appointment",
-      appointmentId,
-      patient.patientId,
-      department,
+    workbook, "04_Appointments", rowForHeaders(headers, values),
+    auditRow(context, "appointment.create", "Appointment", appointmentId, patient.patientId, department,
       JSON.stringify({ appointmentId, patientId: patient.patientId, date, time, therapist }),
-      now,
-      organizationId,
-      clinicId
-    )
+      now, organizationId, clinicId)
   );
   return { appointmentId };
 }
