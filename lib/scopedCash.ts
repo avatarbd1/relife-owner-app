@@ -21,9 +21,11 @@ export type ScopedCashPosition = ReconciledCashPosition;
 
 export async function getScopedCashPosition(
   scope: Scope,
-  now: Date = new Date()
+  now: Date = new Date(),
+  organizationId: string,
+  clinicId: string
 ): Promise<ScopedCashPosition> {
-  const movements = await getCashMovements();
+  const movements = await getCashMovements(organizationId, clinicId);
 
   if (!IS_LIVE_DATA) {
     const position: ScopedCashPosition = {
@@ -46,9 +48,9 @@ export async function getScopedCashPosition(
   }
 
   const [payments, expenses, salaryPayments] = await Promise.all([
-    getPayments(),
-    getExpenses(),
-    getSalaryPayments(),
+    getPayments(organizationId, clinicId),
+    getExpenses(organizationId, clinicId),
+    getSalaryPayments(organizationId, clinicId),
   ]);
   const asOfBusinessDate = cashBusinessDate(now);
 
@@ -60,4 +62,12 @@ export async function getScopedCashPosition(
     cashMovements: movements,
     dateIncluded: (date) => isCashCustodyLedgerDate(date, asOfBusinessDate),
   });
+}
+
+export async function getScopedCashPositionForAdminView(
+  scope: Scope,
+  now: Date = new Date()
+): Promise<ScopedCashPosition> {
+  const clinic = scope === "dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
+  return getScopedCashPosition(scope, now, "RELIFE", clinic);
 }

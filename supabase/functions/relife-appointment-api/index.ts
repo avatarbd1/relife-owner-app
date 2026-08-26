@@ -187,7 +187,8 @@ async function resolveTenant(executor: typeof sql, body: Record<string, unknown>
 async function patientForPlan(executor: typeof sql, tenant: Tenant, plan: BookingPlan) {
   const rows = await executor`
     select * from relife.patient_cache
-    where clinic_id=${tenant.clinicId}::uuid
+    where organization_id=${tenant.organizationId}::uuid
+      and clinic_id=${tenant.clinicId}::uuid
       and patient_id=${plan.patientId}
       and department='Physio'
       and lower(status) <> 'inactive'
@@ -216,7 +217,8 @@ async function checkPlan(
   if (resourceIds.length > 0) {
     const resources = await executor`
       select resource_id from relife.chamber_resources
-      where clinic_id=${tenant.clinicId}::uuid
+      where organization_id=${tenant.organizationId}::uuid
+        and clinic_id=${tenant.clinicId}::uuid
         and department='Physio'
         and enabled=true
         and resource_id = any(${resourceIds})
@@ -238,7 +240,8 @@ async function checkPlan(
            extract(hour from start_time)::int * 60 + extract(minute from start_time)::int as start_minute,
            expected_duration_min
     from relife.appointments
-    where clinic_id=${tenant.clinicId}::uuid
+    where organization_id=${tenant.organizationId}::uuid
+      and clinic_id=${tenant.clinicId}::uuid
       and date=${plan.date}::date
       and department='Physio'
       and lower(status)=any(${ACTIVE})
@@ -270,7 +273,8 @@ async function checkPlan(
   const reservations = await executor`
     select resource_id, start_minute, end_minute, patient_name
     from relife.machine_reservations
-    where clinic_id=${tenant.clinicId}::uuid
+    where organization_id=${tenant.organizationId}::uuid
+      and clinic_id=${tenant.clinicId}::uuid
       and date=${plan.date}::date
       and lower(status) in ('scheduled','active')
   `;
@@ -345,7 +349,7 @@ Deno.serve(async (req) => {
       const result = await sql.begin(async (tx) => {
         const replay = await tx`
           select id, timeline_id from relife.appointments
-          where clinic_id=${tenant.clinicId}::uuid and request_id=${requestId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and request_id=${requestId}
           limit 1
         `;
         if (replay[0]) {

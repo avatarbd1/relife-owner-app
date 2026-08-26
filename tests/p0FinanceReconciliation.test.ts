@@ -240,7 +240,7 @@ test("salary over-payment never creates a negative due and remains unclassified 
 
 test("legacy cash-position compatibility reader delegates canonical scoped custody", () => {
   const calculations = source("lib/calculations.ts");
-  assert.match(calculations, /getScopedCashPosition\("combined", now\)/);
+  assert.match(calculations, /getScopedCashPositionForAdminView\("combined", now\)/);
   assert.doesNotMatch(calculations, /inCurrentMonthToDate/);
 });
 

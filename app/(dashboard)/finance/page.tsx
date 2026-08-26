@@ -12,7 +12,7 @@ import {
   getTodaysCollection,
 } from "@/lib/calculations";
 import { getPatientFinancialPosition } from "@/lib/patients";
-import { getScopedCashPosition } from "@/lib/scopedCash";
+import { getScopedCashPositionForAdminView } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { allowedScopesForContext, resolveAuthorizedScope } from "@/lib/webos/scope";
@@ -57,7 +57,7 @@ export default async function FinancePage() {
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const now = new Date();
   const [cash, todays, month, salary, monthHandover, receivables, controls] = await Promise.all([
-    getScopedCashPosition(scope, now),
+    getScopedCashPositionForAdminView(scope, now),
     getTodaysCollection(now),
     getMonthBusinessPosition(scope, now),
     getSalaryStatus(scope, now),

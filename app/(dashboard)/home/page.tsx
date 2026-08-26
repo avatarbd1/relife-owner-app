@@ -14,7 +14,7 @@ import {
 import { getTodaysCollection } from "@/lib/calculations";
 import { getOwnerControlSnapshot } from "@/lib/controls";
 import { formatBDT, formatDateBn } from "@/lib/format";
-import { getScopedCashPosition } from "@/lib/scopedCash";
+import { getScopedCashPositionForAdminView } from "@/lib/scopedCash";
 import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
 import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
 import {
@@ -55,7 +55,7 @@ export default async function HomePage() {
   const now = new Date();
   const today = todayDhaka();
   const [cash, todays, appointments, controls, clinicalActivity] = await Promise.all([
-    getScopedCashPosition("combined", now),
+    getScopedCashPositionForAdminView("combined", now),
     getTodaysCollection(now),
     getAppointmentsForContext(context, "combined", today),
     getOwnerControlSnapshot(),

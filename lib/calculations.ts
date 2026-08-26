@@ -14,6 +14,7 @@ import {
   getStaff,
   getSalaryPayments,
   getCashMovements,
+  getCashMovementsForAdminView,
 } from "@/lib/data";
 import {
   isPaidLedgerStatus,
@@ -37,7 +38,7 @@ import {
   prorateMonthlyAmount,
   roundMoney,
 } from "@/lib/domain/finance/dateRange";
-import { getScopedCashPosition } from "@/lib/scopedCash";
+import { getScopedCashPosition, getScopedCashPositionForAdminView } from "@/lib/scopedCash";
 import { reconcileLegacyPayrollExpenses } from "@/lib/domain/finance/legacyPayroll";
 
 function inScope<T extends { department: Department }>(
@@ -85,7 +86,7 @@ export interface CashPosition {
 export async function getCashPosition(
   now: Date = new Date()
 ): Promise<CashPosition> {
-  return getScopedCashPosition("combined", now);
+  return getScopedCashPositionForAdminView("combined", now);
 }
 
 export interface TodaysCollection {
@@ -132,7 +133,7 @@ export async function getMonthCashHandover(
   scope: Scope,
   now: Date = new Date()
 ): Promise<number> {
-  const cashMovements = await getCashMovements();
+  const cashMovements = await getCashMovementsForAdminView();
   const today = cashBusinessDate(now);
   const month = today.slice(0, 7);
   return acceptedCashHandoverTotal({

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getCashMovements, getExpenses, getPayments, getSalaryPayments } from "@/lib/data";
+import { getCashMovements, getCashMovementsForAdminView, getExpenses, getPayments, getSalaryPayments } from "@/lib/data";
 import type { Scope } from "@/lib/types";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
 
@@ -174,7 +174,7 @@ export async function getFinanceLedgerSnapshot(
   const [payments, expenses, cashMovements, salaryPayments] = await Promise.all([
     collectionsAllowed ? getPayments() : Promise.resolve([]),
     expensesAllowed ? getExpenses() : Promise.resolve([]),
-    cashAllowed ? getCashMovements() : Promise.resolve([]),
+    cashAllowed ? getCashMovementsForAdminView() : Promise.resolve([]),
     salaryAllowed ? getSalaryPayments() : Promise.resolve([]),
   ]);
 

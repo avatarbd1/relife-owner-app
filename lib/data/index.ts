@@ -274,10 +274,13 @@ function parseSalaryPayments(
 
 function parseCashMovements(
   rows: string[][],
-  fallback: Department
+  fallback: Department,
+  organizationId: string,
+  clinicId: string
 ): CashMovement[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
+
   const idIdx = getHeaderIndex(headers, "Movement_ID", "id");
   const dateIdx = getHeaderIndex(headers, "Date");
   const fromIdx = getHeaderIndex(headers, "From_Custodian");
@@ -290,10 +293,21 @@ function parseCashMovements(
   const statusIdx = getHeaderIndex(headers, "Status");
   const departmentIdx = getHeaderIndex(headers, "Department");
   const noteIdx = getHeaderIndex(headers, "Note", "Remarks");
+  const orgIdIdx = getHeaderIndex(headers, "Organization_ID");
+  const clinicIdIdx = getHeaderIndex(headers, "Clinic_ID");
+
+  if (orgIdIdx < 0 || clinicIdIdx < 0) return [];
 
   return rows.slice(1).flatMap((row) => {
     const id = valueAt(row, idIdx);
     if (!id) return [];
+
+    const recordOrgId = valueAt(row, orgIdIdx);
+    const recordClinicId = valueAt(row, clinicIdIdx);
+
+    if (!recordOrgId || !recordClinicId) return [];
+    if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
+
     const receivedText = valueAt(row, receivedIdx);
     const status = valueAt(row, statusIdx);
     const acceptedAt =
@@ -313,6 +327,8 @@ function parseCashMovements(
         ...(acceptedAt ? { acceptedAt } : {}),
         status,
         department: parseDepartment(valueAt(row, departmentIdx), fallback),
+        organizationId: recordOrgId,
+        clinicId: recordClinicId,
         ...(valueAt(row, noteIdx) ? { remarks: valueAt(row, noteIdx) } : {}),
       },
     ];
@@ -356,11 +372,15 @@ async function loadPrivateSnapshot(): Promise<LiveSnapshot> {
   ).filter((row) => row.department === "Dental");
   const physioCash = parseCashMovements(
     physio["21_Cash_Movement"] || [],
-    "Physio"
+    "Physio",
+    "RELIFE",
+    "RELIFE-PHYSIO"
   ).filter((row) => row.department === "Physio");
   const dentalCash = parseCashMovements(
     dental["21_Cash_Movement"] || [],
-    "Dental"
+    "Dental",
+    "RELIFE",
+    "RELIFE-DENTAL"
   ).filter((row) => row.department === "Dental");
 
   return {
@@ -527,22 +547,32 @@ export async function getSalaryPayments(organizationId?: string, clinicId?: stri
   }
 }
 
-export async function getCashMovements(): Promise<CashMovement[]> {
+export async function getCashMovements(organizationId: string, clinicId: string): Promise<CashMovement[]> {
   if (hasPrivateSheetsCredentials()) {
-    return fromPrivateOrSeed(
+    const all = await fromPrivateOrSeed(
       "cashMovements",
       cashMovementsSeed as unknown as CashMovement[]
     );
+    return all.filter((c) => c.organizationId === organizationId && c.clinicId === clinicId);
   }
-  if (!process.env.SHEET_CASH_CSV)
-    return cashMovementsSeed as unknown as CashMovement[];
+  if (!process.env.SHEET_CASH_CSV) {
+    const seed = cashMovementsSeed as unknown as CashMovement[];
+    return seed.filter((c) => c.organizationId === organizationId && c.clinicId === clinicId);
+  }
   try {
     return parseCashMovements(
       await fetchAndParseCSV(process.env.SHEET_CASH_CSV),
-      "Physio"
+      "Physio",
+      organizationId,
+      clinicId
     );
   } catch (error) {
     console.error("Error fetching cash movements:", error);
-    return cashMovementsSeed as unknown as CashMovement[];
+    const seed = cashMovementsSeed as unknown as CashMovement[];
+    return seed.filter((c) => c.organizationId === organizationId && c.clinicId === clinicId);
   }
+}
+
+export async function getCashMovementsForAdminView(): Promise<CashMovement[]> {
+  return getCashMovements("RELIFE", "RELIFE-PHYSIO");
 }

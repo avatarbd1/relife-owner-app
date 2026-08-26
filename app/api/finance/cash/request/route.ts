@@ -48,7 +48,10 @@ export async function POST(request: NextRequest) {
     if (department === "Physio" || department === "Dental") {
       validateDepartmentAccess(access, department);
       const cash = await getScopedCashPosition(
-        department === "Dental" ? "dental" : "physio"
+        department === "Dental" ? "dental" : "physio",
+        new Date(),
+        tenant.organizationId,
+        tenant.clinicId
       );
       if (Number.isFinite(amount) && amount > cash.reception + 0.001) {
         throw new Error(`INSUFFICIENT_RECEPTION_CASH:${Math.max(0, cash.reception)}`);
