@@ -251,7 +251,11 @@ function parseSessions(rows: string[][]): Array<ChamberSession & { sheetRow: num
   });
 }
 
-function sessionValues(session: ChamberSession): Record<string, SheetValue> {
+function sessionValues(
+  session: ChamberSession,
+  organizationId: string,
+  clinicId: string
+): Record<string, SheetValue> {
   return {
     Session_ID: session.sessionId,
     Date: session.date,
@@ -275,10 +279,10 @@ function sessionValues(session: ChamberSession): Record<string, SheetValue> {
     Updated_At: session.updatedAt,
     Updated_By: session.updatedBy,
     Department: "Physio",
-    Organization_ID: "RELIFE",
-    Clinic_ID: "RELIFE-PHYSIO",
+    Organization_ID: organizationId,
+    Clinic_ID: clinicId,
     Branch_ID: "AMTALI-01",
-    Record_ID: `RELIFE-PHYSIO:${session.sessionId}`,
+    Record_ID: `${clinicId}:${session.sessionId}`,
     Provider_ID: session.updatedBy,
     Source_System: "web_pwa",
     Source_Type: "human_entry",
@@ -481,12 +485,14 @@ async function setAppointmentFlowFields(
 async function updateSessionRow(
   headers: string[],
   sheetRow: number,
-  session: ChamberSession
+  session: ChamberSession,
+  organizationId: string,
+  clinicId: string
 ) {
   await updateSheetValues(
     "physio",
     `'${SESSION_SHEET}'!A${sheetRow}:AF${sheetRow}`,
-    [rowForHeaders(headers, sessionValues(session))]
+    [rowForHeaders(headers, sessionValues(session, organizationId, clinicId))]
   );
 }
 
@@ -627,7 +633,7 @@ export async function receiveChamberPatient(
     version: 1,
   };
   await appendSheetValues("physio", `'${SESSION_SHEET}'!A:AF`, [
-    rowForHeaders(headers, sessionValues(session)),
+    rowForHeaders(headers, sessionValues(session, organizationId, clinicId)),
   ]);
   try {
     await setAppointmentFlowFields(context, appointmentId, "Arrived", context.staffId);
@@ -674,7 +680,7 @@ export async function startChamberSession(
     updatedBy: context.staffId,
     version: stored.version + 1,
   };
-  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next);
+  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next, organizationId, clinicId);
   try {
     await setAppointmentFlowFields(context, stored.appointmentId, "In Treatment");
   } catch (error) {
@@ -747,7 +753,7 @@ export async function updateChamberStep(
     updatedBy: context.staffId,
     version: stored.version + 1,
   };
-  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next);
+  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next, organizationId, clinicId);
   await appendChamberAudit(
     context,
     organizationId,
@@ -783,7 +789,7 @@ export async function completeChamberSession(
     updatedBy: context.staffId,
     version: stored.version + 1,
   };
-  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next);
+  await updateSessionRow(data.sessionRows[0], stored.sheetRow, next, organizationId, clinicId);
   try {
     await setAppointmentFlowFields(context, stored.appointmentId, "Completed");
   } catch (error) {
