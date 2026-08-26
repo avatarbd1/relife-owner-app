@@ -4,7 +4,7 @@ import { getExpenses, getPayments, getSalaryPayments } from "@/lib/data";
 import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
 import { assertValidDateRange, isValidIsoDate } from "@/lib/domain/finance/dateRange";
 import { canPerform, type AccessContext, type WebAction } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getAppointmentsForContext, getVisiblePatients, todayDhaka } from "@/lib/webos/reception";
 
 const EXPORT_TYPES = ["patients", "appointments", "sessions", "payments", "expenses", "salary"] as const;
@@ -153,7 +153,8 @@ function permissionActions(type: ExportType): WebAction[] {
 
 export async function GET(request: NextRequest) {
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const context = tenantContext.access;
     const params = request.nextUrl.searchParams;
     const rawTypes = (params.get("types") || "").split(",").filter(Boolean);
     const types = rawTypes.filter((value): value is ExportType => EXPORT_TYPES.includes(value as ExportType));
