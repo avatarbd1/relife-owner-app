@@ -196,6 +196,8 @@ export async function getWeeklyGamificationFinalization(
   const result = await callWeekly<Record<string, unknown>>(
     "status",
     weekStart ? { weekStart } : {},
+    undefined,
+    undefined,
     5_000
   );
   return parseFinalization(result.finalization);
