@@ -65,12 +65,22 @@ export async function POST(request: NextRequest) {
     const action = String(record.action || "validate");
     const input = parseInput(record);
     if (action === "validate") {
-      const validation = await validateCapacityBooking(access, input);
+      const validation = await validateCapacityBooking(
+        access,
+        tenant.organizationId,
+        tenant.clinicId,
+        input
+      );
       return NextResponse.json({ ok: true, validation });
     }
     if (action === "create") {
       const result = await withMutationLock(`capacity-booking:${input.date}`, () =>
-        createCapacityBooking(access, input)
+        createCapacityBooking(
+          access,
+          tenant.organizationId,
+          tenant.clinicId,
+          input
+        )
       );
       return NextResponse.json({ ok: true, ...result });
     }
