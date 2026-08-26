@@ -1,7 +1,7 @@
 import { PageHeading } from "@/components/WorkspaceUI";
 import { getGamificationStaffSummary } from "@/lib/data/supabaseGamification";
 import { listRewardClaims, rewardClaimsConfigured } from "@/lib/data/supabaseRewardClaims";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { performanceWeekRange } from "@/lib/webos/performance";
 import { getPerformanceRewardPolicy } from "@/lib/webos/performanceRewards";
 import { todayDhaka } from "@/lib/webos/reception";
@@ -11,7 +11,8 @@ import { RewardClaimsClient } from "./RewardClaimsClient";
 const CLAIMANT_ROLES = new Set(["Manager", "Receptionist", "Therapist", "Dentist"]);
 
 export default async function RewardClaimsPage() {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
   const today = todayDhaka();
   const week = performanceWeekRange(today);
   const isOwner = context.roles.includes("Owner");
@@ -29,6 +30,8 @@ export default async function RewardClaimsPage() {
           actorId: context.staffId,
           actorRoles: context.roles,
           actorDepartmentAccess: context.departmentAccess,
+          organizationId: tenantContext.tenant.organizationId,
+          clinicId: tenantContext.tenant.clinicId,
           status: "all",
         }).then((claims) => ({ claims, ok: true as const })).catch((error) => {
           console.error("Reward claims unavailable", error);
