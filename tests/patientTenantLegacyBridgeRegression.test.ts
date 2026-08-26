@@ -10,6 +10,7 @@ const reception = source("lib/webos/reception.ts");
 const mediaRoute = source(
   "app/api/patients/[patientId]/reports/[reportId]/media/route.ts"
 );
+// The merged first-20 contract is authoritative; this hotfix may only bridge legacy reads.
 const rolloutContract = source("docs/TWENTY_CLINIC_PRODUCTION_CONTRACT.md");
 
 test("legacy Relife patient bridge is bounded to the canonical Amtali tenant", () => {
