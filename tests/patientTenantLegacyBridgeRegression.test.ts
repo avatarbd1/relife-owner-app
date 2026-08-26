@@ -14,7 +14,7 @@ const mediaRoute = source(
 test("legacy Relife patient bridge is bounded to the canonical Amtali tenant", () => {
   assert.match(
     reception,
-    /tenant\.organizationSlug\?\.toLowerCase\(\) !== "relife"/[\s\S]*tenant\.clinicSlug\?\.toLowerCase\(\) !== "amtali-main"/[\s\S]*patient\.organizationId !== "RELIFE"/
+    /tenant\.organizationSlug\?\.toLowerCase\(\) !== "relife"[\s\S]*tenant\.clinicSlug\?\.toLowerCase\(\) !== "amtali-main"[\s\S]*patient\.organizationId !== "RELIFE"/
   );
   assert.match(
     reception,
@@ -24,14 +24,8 @@ test("legacy Relife patient bridge is bounded to the canonical Amtali tenant", (
     reception,
     /patient\.department === "Dental"[\s\S]*patient\.clinicId === "RELIFE-DENTAL"/
   );
-  assert.match(
-    reception,
-    /patientMatchesTenant\(patient, tenant\)/
-  );
-  assert.match(
-    reception,
-    /patientMatchesTenant\(row, tenant\)/
-  );
+  assert.match(reception, /patientMatchesTenant\(patient, tenant\)/);
+  assert.match(reception, /patientMatchesTenant\(row, tenant\)/);
 });
 
 test("legacy tenant bridge does not replace canonical exact matching", () => {
@@ -39,10 +33,7 @@ test("legacy tenant bridge does not replace canonical exact matching", () => {
     reception,
     /patient\.organizationId === tenant\.organizationId[\s\S]*patient\.clinicId === tenant\.clinicId[\s\S]*return true/
   );
-  assert.match(
-    reception,
-    /every other tenant remains[\s\S]*exact-match only/i
-  );
+  assert.match(reception, /every other tenant remains[\s\S]*exact-match only/i);
 });
 
 test("legacy Photo media type gets an explicit image MIME fallback", () => {
