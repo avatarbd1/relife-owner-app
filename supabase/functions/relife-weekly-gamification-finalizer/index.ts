@@ -220,7 +220,8 @@ async function configAt(
   const rows = await tx`
     select version, config_value
     from relife.gamification_config
-    where clinic_id = ${tenant.clinicId}::uuid
+    where organization_id = ${tenant.organizationId}::uuid
+      and clinic_id = ${tenant.clinicId}::uuid
       and config_key = ${key}
       and status in ('active','archived')
       and department in ('All', ${department})
@@ -520,7 +521,8 @@ async function finalizationStatus(
           finalization_key, source_cutoff_at, status, trigger_source,
           requested_by, result_summary, created_at, finalized_at
         from relife.weekly_gamification_finalizations
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and week_start = ${weekStart}::date
         limit 1
       `
@@ -529,7 +531,8 @@ async function finalizationStatus(
           finalization_key, source_cutoff_at, status, trigger_source,
           requested_by, result_summary, created_at, finalized_at
         from relife.weekly_gamification_finalizations
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
         order by week_start desc
         limit 1
       `;
@@ -543,7 +546,8 @@ async function finalizationStatus(
       eligibility_reason, score_config_version, earning_config_version,
       score_components, source_cutoff_at
     from relife.weekly_performance
-    where clinic_id = ${tenant.clinicId}::uuid
+    where organization_id = ${tenant.organizationId}::uuid
+      and clinic_id = ${tenant.clinicId}::uuid
       and finalization_id = ${norm(row.finalization_id)}::uuid
     order by ranking_position nulls last, provisional_score desc nulls last, staff_id
   `;
@@ -601,7 +605,8 @@ async function finalizeWeek(
     const existing = await tx`
       select finalization_id::text, status, result_summary
       from relife.weekly_gamification_finalizations
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and finalization_key = ${finalizationKey}
       limit 1
     `;
@@ -627,7 +632,8 @@ async function finalizeWeek(
     const legacyFinal = await tx`
       select id::text
       from relife.weekly_performance
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and week_start = ${weekStart}::date
         and status = 'final'
         and finalization_id is null
@@ -675,7 +681,8 @@ async function finalizeWeek(
     const eventRows = await tx`
       select staff_id, department, role_context, event_type, count(*)::int as event_count
       from relife.performance_events
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and role_context in ('Therapist','Receptionist','Dentist')
         and staff_id in ('ST002','ST003','ST004','ST005','ST008','ST010','ST011')
         and department in ('Physio','Dental')
@@ -693,7 +700,8 @@ async function finalizeWeek(
         on e.id = x.performance_event_id
        and e.organization_id = x.organization_id
        and e.clinic_id = x.clinic_id
-      where x.clinic_id = ${tenant.clinicId}::uuid
+      where x.organization_id = ${tenant.organizationId}::uuid
+        and x.clinic_id = ${tenant.clinicId}::uuid
         and x.staff_id in ('ST002','ST003','ST004','ST005','ST008','ST010','ST011')
         and (e.event_at at time zone 'Asia/Dhaka')::date
           between ${weekStart}::date and ${weekEnd}::date
@@ -934,7 +942,8 @@ async function finalizeWeek(
     await tx`
       update relife.weekly_performance
       set ranking_position = null, updated_at = now()
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and finalization_id = ${finalizationId}::uuid
     `;
     await tx`
@@ -942,7 +951,8 @@ async function finalizeWeek(
         select id,
           dense_rank() over (order by normalized_score desc) as rank
         from relife.weekly_performance
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and finalization_id = ${finalizationId}::uuid
           and normalized_score is not null
       )
@@ -997,14 +1007,16 @@ async function monthlyFinalizationStatus(
         select finalization_id::text, month_key, status, requested_by,
           roster_snapshot, config_snapshot, result_summary, created_at, finalized_at
         from relife.monthly_gamification_finalizations
-        where clinic_id = ${tenant.clinicId}::uuid and month_key = ${month}
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid and month_key = ${month}
         limit 1
       `
     : await sql`
         select finalization_id::text, month_key, status, requested_by,
           roster_snapshot, config_snapshot, result_summary, created_at, finalized_at
         from relife.monthly_gamification_finalizations
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
         order by month_key desc limit 1
       `;
   if (!rows[0]) return { finalization: null };
@@ -1039,7 +1051,8 @@ async function finalizeMonth(
     const existing = await tx`
       select finalization_id::text, status, result_summary
       from relife.monthly_gamification_finalizations
-      where clinic_id = ${tenant.clinicId}::uuid and finalization_key = ${finalizationKey}
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid and finalization_key = ${finalizationKey}
       limit 1
     `;
     if (existing[0]?.status === "finalized") {
@@ -1058,7 +1071,8 @@ async function finalizeMonth(
       select id::text, staff_id, department, role_context, week_end::text,
         normalized_score::numeric, missing_score_metrics
       from relife.weekly_performance
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and staff_id in ('ST002','ST003','ST004','ST005','ST008','ST010','ST011')
         and week_end between ${bounds.start}::date and ${bounds.end}::date
         and status = 'final'

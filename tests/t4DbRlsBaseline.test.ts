@@ -24,6 +24,15 @@ const staffMembership = source(
 const financeEdge = source(
   "supabase/functions/relife-finance-api/index.ts"
 );
+const privilegedTenantEdges = [
+  "supabase/functions/relife-finance-api/index.ts",
+  "supabase/functions/relife-appointment-api/index.ts",
+  "supabase/functions/relife-chamber-api/index.ts",
+  "supabase/functions/relife-chamber-runtime-api/index.ts",
+  "supabase/functions/relife-gamification-api/index.ts",
+  "supabase/functions/relife-reward-claims-api/index.ts",
+  "supabase/functions/relife-weekly-gamification-finalizer/index.ts",
+] as const;
 
 const foundationalOperationalTables = [
   "appointments",
@@ -194,4 +203,31 @@ test("T4 privileged finance DB access always binds organization and clinic toget
     financeEdge,
     /update relife\.finance_operations[\s\S]*where id = \$\{norm\(existing\[0\]\.id\)\}::uuid\s+and organization_id = \$\{tenant\.organizationId\}::uuid\s+and clinic_id = \$\{tenant\.clinicId\}::uuid/
   );
+});
+
+test("T4 privileged tenant Edge SQL has no clinic-only WHERE boundary", () => {
+  const clinicOnlyWhere = /where\s+(?:[a-z]+\.)?clinic_id\s*=/gi;
+
+  for (const path of privilegedTenantEdges) {
+    const edge = source(path);
+    const violations = edge.match(clinicOnlyWhere) || [];
+    assert.deepEqual(
+      violations,
+      [],
+      `${path} contains privileged clinic-only SQL predicates: ${violations.join(", ")}`
+    );
+  }
+});
+
+test("T4 privileged gamification and chamber repair paths bind both tenant keys", () => {
+  for (const path of [
+    "supabase/functions/relife-gamification-api/index.ts",
+    "supabase/functions/relife-reward-claims-api/index.ts",
+    "supabase/functions/relife-weekly-gamification-finalizer/index.ts",
+    "supabase/functions/relife-chamber-runtime-api/index.ts",
+  ]) {
+    const edge = source(path);
+    assert.match(edge, /organization_id\s*=\s*\$\{tenant\.organizationId\}::uuid/i);
+    assert.match(edge, /clinic_id\s*=\s*\$\{tenant\.clinicId\}::uuid/i);
+  }
 });

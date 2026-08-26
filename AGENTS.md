@@ -4,14 +4,17 @@ Cross-repo AI/process/release-control rules are centralized in `avatarbd1/multi-
 
 This repository keeps only product-local safety boundaries:
 
-1. Read current `main`, relevant product docs, active issue/PR, and source before editing.
+1. Read current `main`, `docs/TWENTY_CLINIC_PRODUCTION_CONTRACT.md`, relevant product docs, active issue/PR, and source before editing.
 2. Reuse the existing canonical route/domain/reader/writer; do not create a parallel business path.
 3. Use `docs/CANONICAL_PATH_REGISTRY.md` for product path ownership and `MIGRATION_AUDIT.md` for authority/cutover risk.
 4. Verify permissions from `lib/webos/access.ts`; do not invent role capabilities.
 5. Preserve current Sheets/Supabase authority unless an Owner-approved product issue explicitly changes it.
 6. Financial, clinical, security, tenancy, schema/RLS, writer, migration and cutover changes fail closed when authority is uncertain.
-7. Application changes use a fresh branch and Draft PR; Builder does not self-approve.
-8. Product-specific acceptance criteria and live evidence stay in this repository.
+7. Runtime tenant-owned paths must use explicit `organizationId + clinicId`; department scope never substitutes for tenant scope.
+8. Do not add new fixed-Relife runtime defaults (`RELIFE`, `RELIFE-PHYSIO`, `RELIFE-DENTAL`, `amtali-main`) as a shortcut for admin/dashboard/compatibility behavior. Legacy mapping belongs at an explicit migration/adapter boundary only.
+9. The first rollout target is 20 Physio clinics. Do not optimize or redesign for 50/100 clinics until the 20-clinic readiness gate is closed.
+10. Application changes use a fresh branch and Draft PR; Builder does not self-approve.
+11. Product-specific acceptance criteria and live evidence stay in this repository.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
