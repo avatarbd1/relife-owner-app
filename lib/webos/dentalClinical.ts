@@ -172,7 +172,11 @@ function chargeFromRemarks(remarks: string): number {
   return match ? money(match[1]) : 0;
 }
 
-function parseTreatments(rows: string[][], patientId: string, clinicId: string): DentalTreatmentRecord[] {
+function parseTreatments(
+  rows: string[][],
+  patientId: string,
+  allowedClinicIds: ReadonlySet<string>
+): DentalTreatmentRecord[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const idx = (...names: string[]) => headerIndex(headers, ...names);
@@ -182,7 +186,7 @@ function parseTreatments(rows: string[][], patientId: string, clinicId: string):
     .flatMap((row) => {
       if (at(row, idx("Patient_ID")) !== patientId) return [];
       const rowClinicId = at(row, clinicIdIdx);
-      if (rowClinicId && rowClinicId !== clinicId) return [];
+      if (rowClinicId && !allowedClinicIds.has(rowClinicId)) return [];
       const treatmentId = at(row, idx("Treatment_ID"));
       if (!treatmentId) return [];
       const remarks = at(row, idx("Remarks"));
@@ -254,6 +258,9 @@ export async function getDentalClinicalWorkspace(
   patientId: string
 ): Promise<DentalClinicalWorkspace> {
   const patient = await requireDentalPatient(context, normalize(patientId));
+  const allowedClinicIds = new Set(
+    [clinicId, patient.clinicId].filter((value): value is string => Boolean(value))
+  );
   const snapshot = await fetchSheetRanges("dental", ["05_Treatments"]);
   const conditions = await dentalConditions(context, patient);
   return {
@@ -266,7 +273,7 @@ export async function getDentalClinicalWorkspace(
       due: patient.due,
     },
     canWrite: canPerform(context, "clinical.write", "Dental", conditions),
-    treatments: parseTreatments(snapshot["05_Treatments"] || [], patient.patientId, clinicId),
+    treatments: parseTreatments(snapshot["05_Treatments"] || [], patient.patientId, allowedClinicIds),
   };
 }
 
