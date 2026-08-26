@@ -1,10 +1,11 @@
 import StaffAccessManager from "@/components/StaffAccessManager";
 import StaffManagementClient from "@/components/StaffManagementClient";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { listManagedStaff } from "@/lib/webos/staffManagement";
 
 export default async function StaffAccessPage() {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
   if (!context.roles.includes("Owner")) {
     return (
       <div className="rounded-2xl bg-white p-5 text-sm text-slate-700 shadow-sm ring-1 ring-slate-200">
@@ -13,7 +14,11 @@ export default async function StaffAccessPage() {
     );
   }
 
-  const staff = await listManagedStaff(context);
+  const staff = await listManagedStaff(
+    context,
+    tenantContext.tenant.organizationId,
+    tenantContext.tenant.clinicId
+  );
   const setupReady = staff
     .filter(
       (item) =>

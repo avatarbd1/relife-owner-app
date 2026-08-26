@@ -15,6 +15,8 @@ export interface Payment {
   due: number;
   paymentMethod: "Cash" | "bKash" | "Bank" | "Nagad" | "Card";
   receivedBy: string;
+  organizationId?: string;
+  clinicId?: string;
   remarks?: string;
 }
 
@@ -27,6 +29,8 @@ export interface Expense {
   paymentMethod: string;
   paidBy: string;
   department: Department;
+  organizationId?: string;
+  clinicId?: string;
   /** Clinic Expense vs Household Withdrawal from 07_Expenses.Type. */
   expenseType?: string;
   /** Cash custodian used for the payment (Reception/Home Treasury/Bank). */
@@ -54,6 +58,8 @@ export interface SalaryPayment {
   staffName: string;
   department: Department;
   amount: number;
+  organizationId?: string;
+  clinicId?: string;
   /** Optional because the current 13_Salary sheet has no type discriminator. */
   type?: "Salary" | "Advance";
   paidFrom?: string;

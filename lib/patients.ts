@@ -20,6 +20,8 @@ export interface PatientRecord {
   due: number;
   status: string;
   lastUpdated: string;
+  organizationId?: string;
+  clinicId?: string;
 }
 
 export interface PatientFinancialPosition {
@@ -58,7 +60,7 @@ function parseDepartment(value: string, fallback: Department): Department {
   return fallback;
 }
 
-function parsePatients(rows: string[][], fallback: Department): PatientRecord[] {
+function parsePatients(rows: string[][], fallback: Department, organizationId: string, clinicId: string): PatientRecord[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const patientId = headerIndex(headers, "Patient_ID");
@@ -77,10 +79,15 @@ function parsePatients(rows: string[][], fallback: Department): PatientRecord[] 
   const due = headerIndex(headers, "Due");
   const status = headerIndex(headers, "Status");
   const lastUpdated = headerIndex(headers, "Last_Updated");
+  const orgIdIdx = headerIndex(headers, "Organization_ID");
+  const clinicIdIdx = headerIndex(headers, "Clinic_ID");
 
   return rows.slice(1).flatMap((row) => {
     const id = at(row, patientId);
     if (!id) return [];
+    const recordOrgId = orgIdIdx >= 0 ? at(row, orgIdIdx) || organizationId : organizationId;
+    const recordClinicId = clinicIdIdx >= 0 ? at(row, clinicIdIdx) || clinicId : clinicId;
+    if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
     return [{
       patientId: id,
       registrationDate: at(row, registrationDate),
@@ -98,6 +105,8 @@ function parsePatients(rows: string[][], fallback: Department): PatientRecord[] 
       due: money(at(row, due)),
       status: at(row, status) || "Active",
       lastUpdated: at(row, lastUpdated),
+      organizationId: recordOrgId,
+      clinicId: recordClinicId,
     }];
   });
 }
@@ -122,9 +131,9 @@ async function loadPatients(): Promise<PatientRecord[]> {
     fetchSheetRanges("dental", ["02_Patients"]),
   ]);
 
-  const physioRows = parsePatients(physio["02_Patients"] || [], "Physio")
+  const physioRows = parsePatients(physio["02_Patients"] || [], "Physio", "RELIFE", "RELIFE-PHYSIO")
     .filter((row) => row.department === "Physio");
-  const dentalRows = parsePatients(dental["02_Patients"] || [], "Dental")
+  const dentalRows = parsePatients(dental["02_Patients"] || [], "Dental", "RELIFE", "RELIFE-DENTAL")
     .filter((row) => row.department === "Dental");
 
   return [...physioRows, ...dentalRows].sort((a, b) => {

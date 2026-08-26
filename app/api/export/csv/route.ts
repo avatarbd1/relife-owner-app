@@ -4,7 +4,7 @@ import { getExpenses, getPayments, getSalaryPayments } from "@/lib/data";
 import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
 import { assertValidDateRange, isValidIsoDate } from "@/lib/domain/finance/dateRange";
 import { canPerform, type AccessContext, type WebAction } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getAppointmentsForContext, getVisiblePatients, todayDhaka } from "@/lib/webos/reception";
 
 const EXPORT_TYPES = ["patients", "appointments", "sessions", "payments", "expenses", "salary"] as const;
@@ -153,7 +153,8 @@ function permissionActions(type: ExportType): WebAction[] {
 
 export async function GET(request: NextRequest) {
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const context = tenantContext.access;
     const params = request.nextUrl.searchParams;
     const rawTypes = (params.get("types") || "").split(",").filter(Boolean);
     const types = rawTypes.filter((value): value is ExportType => EXPORT_TYPES.includes(value as ExportType));
@@ -176,7 +177,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (type === "patients") {
-        const patients = await getVisiblePatients(context, scopeForDepartments(departments));
+        const patients = await getVisiblePatients(context, scopeForDepartments(departments), tenantContext.tenant.organizationId, tenantContext.tenant.clinicId);
         const rows = patients
           .filter((patient) => departments.includes(patient.department as Department) && inRange(patient.registrationDate, range))
           .map((patient) => ({
@@ -196,7 +197,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (type === "appointments") {
-        const appointments = await getAppointmentsForContext(context, scopeForDepartments(departments));
+        const appointments = await getAppointmentsForContext(context, scopeForDepartments(departments), undefined, tenantContext.tenant.organizationId, tenantContext.tenant.clinicId);
         const rows = appointments
           .filter((item) => departments.includes(item.department) && inRange(item.date, range))
           .map((item) => ({
@@ -219,7 +220,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (type === "payments") {
-        const rows = (await getPayments())
+        const rows = (await getPayments(tenantContext.tenant.organizationId, tenantContext.tenant.clinicId))
           .filter((item) => item.department !== "All" && departments.includes(item.department) && inRange(item.date, range))
           .map((item) => ({
             receiptNo: item.receiptNo,
@@ -238,7 +239,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (type === "expenses") {
-        const rows = (await getExpenses())
+        const rows = (await getExpenses(tenantContext.tenant.organizationId, tenantContext.tenant.clinicId))
           .filter((item) => item.department !== "All" && departments.includes(item.department) && inRange(item.date, range) && ["approved", "paid"].includes(normalize(item.status).toLowerCase()))
           .map((item) => ({
             expenseId: item.expenseId,
@@ -256,7 +257,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (type === "salary") {
-        const rows = (await getSalaryPayments())
+        const rows = (await getSalaryPayments(tenantContext.tenant.organizationId, tenantContext.tenant.clinicId))
           .filter((item) => item.department !== "All" && departments.includes(item.department) && inRange(item.date, range))
           .map((item) => ({
             paymentId: item.id,

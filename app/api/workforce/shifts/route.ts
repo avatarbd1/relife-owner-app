@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { createShift, listShiftsForContext } from "@/lib/domain/workforce/shifts";
 
 function errorResponse(error: unknown): NextResponse {
@@ -36,8 +36,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
-    const shifts = await listShiftsForContext(context);
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const shifts = await listShiftsForContext(tenantContext.access);
     return NextResponse.json({ ok: true, shifts });
   } catch (error) {
     return errorResponse(error);
@@ -49,20 +49,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await createShift(context, {
-      staffId: String(body.staffId || ""),
-      department: String(body.department || ""),
-      shiftDate: String(body.shiftDate || ""),
-      startTime: String(body.startTime || ""),
-      endTime: String(body.endTime || ""),
-      notes: body.notes,
-      requestId: String(body.requestId || ""),
-    });
+    const result = await createShift(
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
+      {
+        staffId: String(body.staffId || ""),
+        department: String(body.department || ""),
+        shiftDate: String(body.shiftDate || ""),
+        startTime: String(body.startTime || ""),
+        endTime: String(body.endTime || ""),
+        notes: body.notes,
+        requestId: String(body.requestId || ""),
+      }
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import {
   createManagedStaff,
   listManagedStaff,
@@ -39,8 +39,12 @@ function errorResponse(error: unknown): NextResponse {
 
 export async function GET() {
   try {
-    const context = await requireCurrentAccessContext();
-    const staff = await listManagedStaff(context);
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const staff = await listManagedStaff(
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId
+    );
     return NextResponse.json({ ok: true, staff });
   } catch (error) {
     return errorResponse(error);
@@ -53,12 +57,17 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const context = await requireCurrentAccessContext();
+    const tenantContext = await requireCurrentTenantAccessContext();
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const result = await createManagedStaff(context, body as StaffMutationInput);
+    const result = await createManagedStaff(
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
+      body as StaffMutationInput
+    );
     return NextResponse.json({ ok: true, ...result }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

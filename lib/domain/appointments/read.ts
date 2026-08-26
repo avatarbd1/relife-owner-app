@@ -43,6 +43,8 @@ function fromSupabase(row: SupabaseAppointmentRow): AppointmentRecord {
     status: normalize(row.status) || "Scheduled",
     remarks: normalize(row.remarks),
     receivedBy: "",
+    organizationId: "RELIFE",
+    clinicId: "RELIFE-PHYSIO",
   };
 }
 

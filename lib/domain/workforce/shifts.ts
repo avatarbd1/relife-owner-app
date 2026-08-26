@@ -178,6 +178,8 @@ async function buildMonthlyRosterPreview(month: string): Promise<MonthlyRosterPr
 
 export async function previewMonthlyRoster(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   month: string
 ): Promise<MonthlyRosterPreview> {
   assertOwnerRosterAccess(context);
@@ -188,6 +190,8 @@ export async function previewMonthlyRoster(
 
 export async function applyMonthlyRoster(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: { month: string; requestId: string }
 ): Promise<{ month: string; shiftCount: number; duplicate: boolean }> {
   assertOwnerRosterAccess(context);
@@ -250,6 +254,8 @@ export async function applyMonthlyRoster(
       },
       reason: "Owner applied deterministic monthly roster",
       now,
+      organizationId,
+      clinicId,
     });
     await commitWorkforceBatch([...requests, appendRowRequest(auditSheetId, auditRow)]);
     return { month: input.month, shiftCount: preview.entries.length, duplicate: false };
@@ -259,6 +265,8 @@ export async function applyMonthlyRoster(
 /** Owner/Manager only, department-scoped (issue #153: "read/manage department shifts"). */
 export async function createShift(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: CreateShiftInput
 ): Promise<{ shiftId: string; status: ShiftStatus; duplicate: boolean }> {
   if (!isWorkforceDepartment(input.department)) throw new Error("SHIFT_DEPARTMENT_INVALID");
@@ -344,6 +352,8 @@ export async function createShift(
       },
       reason: "Shift created as Draft",
       now,
+      organizationId,
+      clinicId,
     });
     await commitWorkforceBatch([
       appendRowRequest(shiftSheetId, row),
@@ -376,6 +386,8 @@ async function writeShiftTransition(input: {
   status: ShiftStatus;
   action: string;
   reason: string;
+  organizationId: string;
+  clinicId: string;
 }): Promise<void> {
   const rowNumber = input.rowIndex + 2;
   const now = dhakaClockParts();
@@ -393,6 +405,8 @@ async function writeShiftTransition(input: {
     afterValue: { staffId: input.record.staffId, status: input.status },
     reason: input.reason,
     now,
+    organizationId: input.organizationId,
+    clinicId: input.clinicId,
   });
   await commitWorkforceBatch([
     updateCellRequest(shiftSheetId, rowNumber, idx("Status") + 1, input.status),
@@ -412,6 +426,8 @@ export interface UpdateShiftInput extends ShiftActionInput {
 /** Draft-only edit. Staff identity and department are immutable after create. */
 export async function updateShift(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: UpdateShiftInput
 ): Promise<{ shiftId: string; status: ShiftStatus; duplicate: boolean }> {
   if (!isValidIsoDate(input.shiftDate)) throw new Error("SHIFT_DATE_INVALID");
@@ -470,6 +486,8 @@ export async function updateShift(
       },
       reason: "Draft shift updated",
       now,
+      organizationId,
+      clinicId,
     });
     await commitWorkforceBatch([
       updateCellRequest(shiftSheetId, rowNumber, idx("Shift_Date") + 1, input.shiftDate),
@@ -496,6 +514,8 @@ export interface ShiftActionInput {
  */
 export async function publishShift(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ShiftActionInput
 ): Promise<{ shiftId: string; status: ShiftStatus; duplicate: boolean }> {
   const requestId = validateWorkforceRequestId(input.requestId);
@@ -533,6 +553,8 @@ export async function publishShift(
       status: "Published",
       action: "shift.publish",
       reason: "Shift published",
+      organizationId,
+      clinicId,
     });
     return { shiftId: record.shiftId, status: "Published", duplicate: false };
   });
@@ -541,6 +563,8 @@ export async function publishShift(
 /** Draft or Published -> Cancelled. Preserves history; never a hard delete. */
 export async function cancelShift(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: ShiftActionInput
 ): Promise<{ shiftId: string; status: ShiftStatus; duplicate: boolean }> {
   const requestId = validateWorkforceRequestId(input.requestId);
@@ -572,6 +596,8 @@ export async function cancelShift(
       status: "Cancelled",
       action: "shift.cancel",
       reason: "Shift cancelled",
+      organizationId,
+      clinicId,
     });
     return { shiftId: record.shiftId, status: "Cancelled", duplicate: false };
   });

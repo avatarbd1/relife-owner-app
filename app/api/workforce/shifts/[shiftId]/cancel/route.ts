@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { cancelShift } from "@/lib/domain/workforce/shifts";
 
 function errorResponse(error: unknown): NextResponse {
@@ -32,15 +32,20 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    const [context, routeParams, body] = await Promise.all([
-      requireCurrentAccessContext(),
+    const [tenantContext, routeParams, body] = await Promise.all([
+      requireCurrentTenantAccessContext(),
       params,
       request.json().catch(() => ({})),
     ]);
-    const result = await cancelShift(context, {
-      shiftId: decodeURIComponent(routeParams.shiftId),
-      requestId: String(body?.requestId || ""),
-    });
+    const result = await cancelShift(
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
+      {
+        shiftId: decodeURIComponent(routeParams.shiftId),
+        requestId: String(body?.requestId || ""),
+      }
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);

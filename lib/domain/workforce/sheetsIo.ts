@@ -154,10 +154,11 @@ export function buildWorkforceAuditRow(
     afterValue: Record<string, unknown>;
     reason: string;
     now: ReturnType<typeof dhakaClockParts>;
+    organizationId: string;
+    clinicId: string;
   }
 ): SheetValue[] {
   const auditId = `AUD-${randomUUID()}`;
-  const clinicId = input.department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
   return rowForHeaders(auditHeaders, {
     Audit_ID: auditId,
     Timestamp: input.now.timestamp,
@@ -169,10 +170,10 @@ export function buildWorkforceAuditRow(
     Before_Value: "",
     After_Value: JSON.stringify({ ...input.afterValue, requestId: input.requestId }),
     Reason: input.reason,
-    Organization_ID: RELIFE_SYSTEM.organizationId,
-    Clinic_ID: clinicId,
+    Organization_ID: input.organizationId,
+    Clinic_ID: input.clinicId,
     Branch_ID: RELIFE_SYSTEM.branchId,
-    Record_ID: `${clinicId}:${input.entityId}`,
+    Record_ID: `${input.clinicId}:${input.entityId}`,
     Encounter_ID: "",
     Provider_ID: input.context.staffId,
     Source_System: RELIFE_SYSTEM.sourceSystem,

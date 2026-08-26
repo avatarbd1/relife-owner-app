@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { deactivateManagedStaff } from "@/lib/webos/staffManagement";
 
 function errorResponse(error: unknown): NextResponse {
@@ -30,12 +30,14 @@ export async function POST(
   }
 
   try {
-    const [context, routeParams] = await Promise.all([
-      requireCurrentAccessContext(),
+    const [tenantContext, routeParams] = await Promise.all([
+      requireCurrentTenantAccessContext(),
       params,
     ]);
     const result = await deactivateManagedStaff(
-      context,
+      tenantContext.access,
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId,
       decodeURIComponent(routeParams.staffId)
     );
     return NextResponse.json({ ok: true, ...result });

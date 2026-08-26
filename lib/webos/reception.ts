@@ -54,6 +54,8 @@ export interface AppointmentRecord {
   status: string;
   remarks: string;
   receivedBy: string;
+  organizationId?: string;
+  clinicId?: string;
 }
 
 export interface ClinicianOption {
@@ -230,12 +232,18 @@ function scopeAllows(scope: Scope, department: ClinicDepartment): boolean {
 
 export async function getVisiblePatients(
   context: AccessContext,
-  scope: Scope
+  scope: Scope,
+  organizationId?: string,
+  clinicId?: string
 ): Promise<PatientRecord[]> {
   const patients = await getPatients();
+  const org = organizationId || "RELIFE";
+  const clinic = clinicId || "RELIFE-PHYSIO";
   return patients.filter(
     (patient) =>
       patient.department !== "All" &&
+      patient.organizationId === org &&
+      patient.clinicId === clinic &&
       scopeAllows(scope, patient.department) &&
       canPerform(context, "patient.read", patient.department)
   );
@@ -365,7 +373,9 @@ function parseDepartment(value: string, fallback: ClinicDepartment): ClinicDepar
 
 function parseAppointments(
   rows: string[][],
-  fallback: ClinicDepartment
+  fallback: ClinicDepartment,
+  organizationId: string,
+  clinicId: string
 ): AppointmentRecord[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
@@ -379,10 +389,15 @@ function parseAppointments(
   const statusIdx = headerIndex(headers, "Status");
   const remarksIdx = headerIndex(headers, "Remarks");
   const receivedByIdx = headerIndex(headers, "Received_By");
+  const orgIdIdx = headerIndex(headers, "Organization_ID");
+  const clinicIdIdx = headerIndex(headers, "Clinic_ID");
 
   return rows.slice(1).flatMap((row) => {
     const appointmentId = at(row, idIdx);
     if (!appointmentId) return [];
+    const recordOrgId = orgIdIdx >= 0 ? at(row, orgIdIdx) || organizationId : organizationId;
+    const recordClinicId = clinicIdIdx >= 0 ? at(row, clinicIdIdx) || clinicId : clinicId;
+    if (recordOrgId !== organizationId || recordClinicId !== clinicId) return [];
     return [
       {
         appointmentId,
@@ -395,6 +410,8 @@ function parseAppointments(
         status: at(row, statusIdx) || "Scheduled",
         remarks: at(row, remarksIdx),
         receivedBy: at(row, receivedByIdx),
+        organizationId: recordOrgId,
+        clinicId: recordClinicId,
       },
     ];
   });
@@ -406,20 +423,26 @@ async function loadAppointments(): Promise<AppointmentRecord[]> {
     fetchSheetRanges("dental", ["04_Appointments"]),
   ]);
   return [
-    ...parseAppointments(physio["04_Appointments"] || [], "Physio"),
-    ...parseAppointments(dental["04_Appointments"] || [], "Dental"),
+    ...parseAppointments(physio["04_Appointments"] || [], "Physio", "RELIFE", "RELIFE-PHYSIO"),
+    ...parseAppointments(dental["04_Appointments"] || [], "Dental", "RELIFE", "RELIFE-DENTAL"),
   ];
 }
 
 export async function getAppointmentsForContext(
   context: AccessContext,
   scope: Scope,
-  date?: string
+  date?: string,
+  organizationId?: string,
+  clinicId?: string
 ): Promise<AppointmentRecord[]> {
   const rows = await loadAppointments();
+  const org = organizationId || "RELIFE";
+  const clinic = clinicId || "RELIFE-PHYSIO";
   return rows
     .filter(
       (row) =>
+        row.organizationId === org &&
+        row.clinicId === clinic &&
         scopeAllows(scope, row.department) &&
         (!date || row.date === date) &&
         canPerform(context, "appointment.read", row.department)
@@ -618,7 +641,12 @@ export async function createAppointment(
     "Status",
   ]);
 
-  const appointments = parseAppointments(rawAppointments, department);
+  const appointments = parseAppointments(
+    rawAppointments,
+    department,
+    organizationId,
+    clinicId
+  );
   const duplicate = appointments.some(
     (row) =>
       row.patientId === patient.patientId &&

@@ -1,15 +1,19 @@
 import { PageHeading } from "@/components/WorkspaceUI";
 import { getMonthlyGamificationFinalization } from "@/lib/data/supabaseWeeklyGamification";
 import { assertCanPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { MonthlyFinalizationClient } from "./MonthlyFinalizationClient";
 
 export default async function MonthlyGamificationPage() {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
   assertCanPerform(context, "performance.weekly.finalize", "All");
   let finalization = null;
   try {
-    finalization = await getMonthlyGamificationFinalization();
+    finalization = await getMonthlyGamificationFinalization(
+      tenantContext.tenant.organizationId,
+      tenantContext.tenant.clinicId
+    );
   } catch (error) {
     console.error("Monthly Gamification finalization unavailable", error);
   }
