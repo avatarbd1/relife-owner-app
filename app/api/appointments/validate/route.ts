@@ -57,13 +57,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const validation = await validateCapacityBooking(access, {
-      patientId,
-      date: String(body.date || ""),
-      time: String(body.time || ""),
-      therapist: String(body.therapist || ""),
-      remarks: String(body.remarks || ""),
-    });
+    const validation = await validateCapacityBooking(
+      access,
+      tenant.organizationId,
+      tenant.clinicId,
+      {
+        patientId,
+        date: String(body.date || ""),
+        time: String(body.time || ""),
+        therapist: String(body.therapist || ""),
+        remarks: String(body.remarks || ""),
+      }
+    );
     return NextResponse.json({ ok: true, validation });
   } catch (error) {
     return errorResponse(error);
