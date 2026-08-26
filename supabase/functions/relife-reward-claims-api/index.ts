@@ -172,7 +172,8 @@ async function rewardPolicy(
   const rows = await sql`
     select version, config_value
     from relife.gamification_config
-    where clinic_id = ${tenant.clinicId}::uuid
+    where organization_id = ${tenant.organizationId}::uuid
+      and clinic_id = ${tenant.clinicId}::uuid
       and config_key = 'reward.catalog'
       and status = 'active'
       and department in ('All', ${department})
@@ -218,7 +219,8 @@ async function creditBalance(tx: any, tenant: Tenant, staffId: string): Promise<
         when entry_type in ('released','redeemed') then -credit_amount
         else 0 end), 0)::numeric as reserved_balance
     from relife.reward_credit_ledger
-    where clinic_id = ${tenant.clinicId}::uuid and staff_id = ${staffId}
+    where organization_id = ${tenant.organizationId}::uuid
+      and clinic_id = ${tenant.clinicId}::uuid and staff_id = ${staffId}
   `;
   const ledgerBalance = Number(rows[0]?.ledger_balance || 0);
   const reservedBalance = Number(rows[0]?.reserved_balance || 0);
@@ -282,7 +284,8 @@ async function listClaims(tenant: Tenant, body: Record<string, unknown>) {
       cancelled_at, expires_at, state_version, config_version,
       policy_snapshot, eligible_after
     from relife.reward_redemptions
-    where clinic_id = ${tenant.clinicId}::uuid
+    where organization_id = ${tenant.organizationId}::uuid
+      and clinic_id = ${tenant.clinicId}::uuid
       and (${owner} or staff_id = ${actorId})
       and (${status} = 'all' or status = ${status})
     order by requested_at desc
@@ -343,7 +346,8 @@ async function requestClaim(tenant: Tenant, body: Record<string, unknown>) {
     const duplicate = await tx`
       select id::text, status, state_version
       from relife.reward_redemptions
-      where clinic_id = ${tenant.clinicId}::uuid and idempotency_key = ${idempotencyKey}
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid and idempotency_key = ${idempotencyKey}
       limit 1
     `;
     if (duplicate[0]) {
@@ -365,7 +369,8 @@ async function requestClaim(tenant: Tenant, body: Record<string, unknown>) {
       const previous = await tx`
         select claimed_at
         from relife.reward_redemptions
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and staff_id = ${staffId}
           and reward_key = ${rewardKey}
           and status = 'claimed'
@@ -386,7 +391,8 @@ async function requestClaim(tenant: Tenant, body: Record<string, unknown>) {
       const count = await tx`
         select count(*)::int as count
         from relife.reward_redemptions
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and staff_id = ${staffId}
           and reward_key = ${rewardKey}
           and status in ('pending','approved','claimed')
@@ -399,7 +405,8 @@ async function requestClaim(tenant: Tenant, body: Record<string, unknown>) {
       const count = await tx`
         select count(*)::int as count
         from relife.reward_redemptions
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and staff_id = ${staffId}
           and reward_key = ${rewardKey}
           and status in ('pending','approved','claimed')
@@ -501,20 +508,23 @@ async function transitionClaim(tenant: Tenant, body: Record<string, unknown>) {
     const eventKey = `claim:${claimId}:${transition}:${idempotencyKey}`;
     const already = await tx`
       select state_version from relife.reward_redemption_events
-      where clinic_id = ${tenant.clinicId}::uuid and event_key = ${eventKey}
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid and event_key = ${eventKey}
       limit 1
     `;
     if (already[0]) {
       const current = await tx`
         select status, state_version from relife.reward_redemptions
-        where clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid limit 1
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid limit 1
       `;
       return { claimId, status: norm(current[0]?.status), stateVersion: Number(current[0]?.state_version || already[0].state_version), duplicate: true };
     }
 
     const rows = await tx`
       select * from relife.reward_redemptions
-      where clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
       for update
     `;
     const claim = rows[0];
@@ -545,7 +555,8 @@ async function transitionClaim(tenant: Tenant, body: Record<string, unknown>) {
     const reservation = await tx`
       select id::text, credit_amount::numeric
       from relife.reward_credit_ledger
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and redemption_id = ${claimId}::uuid
         and entry_type = 'reserved'
       order by created_at asc limit 1
@@ -556,7 +567,8 @@ async function transitionClaim(tenant: Tenant, body: Record<string, unknown>) {
     }
     const releaseOrRedeem = await tx`
       select entry_type from relife.reward_credit_ledger
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and redemption_id = ${claimId}::uuid
         and entry_type in ('released','redeemed')
       limit 1
@@ -575,7 +587,8 @@ async function transitionClaim(tenant: Tenant, body: Record<string, unknown>) {
           coverage_status = ${coverageRequired ? "available" : norm(claim.coverage_status)},
           owner_decision_by = ${actorId}, owner_decision_at = now(),
           decision_reason = ${reason}, state_version = ${nextVersion}, updated_at = now()
-        where clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
       `;
     } else if (transition === "deny" || transition === "cancel") {
       nextStatus = transition === "deny" ? "denied" : "cancelled";
@@ -601,7 +614,8 @@ async function transitionClaim(tenant: Tenant, body: Record<string, unknown>) {
           decision_reason = ${reason},
           cancelled_at = case when ${transition} = 'cancel' then now() else cancelled_at end,
           state_version = ${nextVersion}, updated_at = now()
-        where clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
       `;
     } else if (transition === "claim") {
       nextStatus = "claimed";
@@ -624,7 +638,8 @@ async function transitionClaim(tenant: Tenant, body: Record<string, unknown>) {
           status = 'claimed', claimed_at = now(), claimed_by = ${actorId},
           decision_reason = case when ${reason} <> '' then ${reason} else decision_reason end,
           state_version = ${nextVersion}, updated_at = now()
-        where clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid and id = ${claimId}::uuid
       `;
     }
 
@@ -667,10 +682,10 @@ Deno.serve(async (req) => {
     if (action === "health") {
       const rows = await sql`
         select
-          (select count(*)::int from relife.reward_redemptions where clinic_id = ${tenant.clinicId}::uuid) as claims,
-          (select count(*)::int from relife.reward_redemptions where clinic_id = ${tenant.clinicId}::uuid and status = 'pending') as pending_claims,
-          (select count(*)::int from relife.reward_redemption_events where clinic_id = ${tenant.clinicId}::uuid) as claim_events,
-          (select count(*)::int from relife.reward_credit_ledger where clinic_id = ${tenant.clinicId}::uuid) as rc_entries
+          (select count(*)::int from relife.reward_redemptions where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid) as claims,
+          (select count(*)::int from relife.reward_redemptions where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid and status = 'pending') as pending_claims,
+          (select count(*)::int from relife.reward_redemption_events where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid) as claim_events,
+          (select count(*)::int from relife.reward_credit_ledger where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid) as rc_entries
       `;
       return response({ ok: true, tenant, counts: rows[0] || {} });
     }

@@ -122,7 +122,8 @@ async function activeConfig(
       department,
       config_value
     from relife.gamification_config
-    where clinic_id = ${tenant.clinicId}::uuid
+    where organization_id = ${tenant.organizationId}::uuid
+      and clinic_id = ${tenant.clinicId}::uuid
       and status = 'active'
       and department in ('All', ${department})
       and effective_from <= now()
@@ -153,7 +154,8 @@ async function activeXpRule(input: {
   const rows = await sql`
     select version, config_value
     from relife.gamification_config
-    where clinic_id = ${input.tenant.clinicId}::uuid
+    where organization_id = ${input.tenant.organizationId}::uuid
+      and clinic_id = ${input.tenant.clinicId}::uuid
       and status = 'active'
       and config_key = 'xp.rules'
       and department in ('All', ${input.department})
@@ -227,7 +229,8 @@ async function staffSummary(
         on e.id = x.performance_event_id
        and e.clinic_id = x.clinic_id
        and e.organization_id = x.organization_id
-      where x.clinic_id = ${tenant.clinicId}::uuid
+      where x.organization_id = ${tenant.organizationId}::uuid
+        and x.clinic_id = ${tenant.clinicId}::uuid
         and x.staff_id = ${staffId}
     `,
     sql`
@@ -247,13 +250,15 @@ async function staffSummary(
           end
         ), 0)::numeric as reserved_balance
       from relife.reward_credit_ledger
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and staff_id = ${staffId}
     `,
     sql`
       select event_type, role_context, count(*)::int as event_count
       from relife.performance_events
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and staff_id = ${staffId}
       group by event_type, role_context
       order by event_type, role_context
@@ -267,7 +272,8 @@ async function staffSummary(
         status,
         calculation_version
       from relife.weekly_performance
-      where clinic_id = ${tenant.clinicId}::uuid
+      where organization_id = ${tenant.organizationId}::uuid
+        and clinic_id = ${tenant.clinicId}::uuid
         and staff_id = ${staffId}
         and week_start = ${weekStart}::date
       limit 1
@@ -337,10 +343,10 @@ Deno.serve(async (req) => {
     if (action === "health") {
       const rows = await sql`
         select
-          (select count(*)::int from relife.performance_events where clinic_id = ${tenant.clinicId}::uuid) as performance_events,
-          (select count(*)::int from relife.xp_ledger where clinic_id = ${tenant.clinicId}::uuid) as xp_entries,
-          (select count(*)::int from relife.reward_credit_ledger where clinic_id = ${tenant.clinicId}::uuid) as reward_credit_entries,
-          (select count(*)::int from relife.gamification_config where clinic_id = ${tenant.clinicId}::uuid and status = 'active') as active_configs
+          (select count(*)::int from relife.performance_events where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid) as performance_events,
+          (select count(*)::int from relife.xp_ledger where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid) as xp_entries,
+          (select count(*)::int from relife.reward_credit_ledger where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid) as reward_credit_entries,
+          (select count(*)::int from relife.gamification_config where organization_id = ${tenant.organizationId}::uuid and clinic_id = ${tenant.clinicId}::uuid and status = 'active') as active_configs
       `;
       return response({
         ok: true,
@@ -430,7 +436,8 @@ Deno.serve(async (req) => {
       const existing = await tx`
         select id::text
         from relife.performance_events
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and event_key = ${eventKey}
         limit 1
       `;
@@ -438,7 +445,8 @@ Deno.serve(async (req) => {
         const existingXp = await tx`
           select coalesce(sum(xp_awarded), 0)::numeric as xp_awarded
           from relife.xp_ledger
-          where clinic_id = ${tenant.clinicId}::uuid
+          where organization_id = ${tenant.organizationId}::uuid
+            and clinic_id = ${tenant.clinicId}::uuid
             and performance_event_id = ${norm(existing[0].id)}::uuid
         `;
         return {
@@ -511,7 +519,8 @@ Deno.serve(async (req) => {
         const countRows = await tx`
           select count(*)::int as event_count
           from relife.performance_events
-          where clinic_id = ${tenant.clinicId}::uuid
+          where organization_id = ${tenant.organizationId}::uuid
+            and clinic_id = ${tenant.clinicId}::uuid
             and staff_id = ${staffId}
             and role_context = ${roleContext}
             and event_type = ${eventType}

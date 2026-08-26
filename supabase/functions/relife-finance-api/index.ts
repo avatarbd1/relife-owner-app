@@ -110,7 +110,8 @@ Deno.serve(async (req) => {
           count(*)::int as finance_operations,
           count(*) filter (where updated_at > now() - interval '24 hours')::int as last_24h
         from relife.finance_operations
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
       `;
       return response({
         ok: true,
@@ -159,14 +160,15 @@ Deno.serve(async (req) => {
     const result = await sql.begin(async (tx) => {
       await tx`
         select pg_advisory_xact_lock(
-          hashtext(${`relife-finance:${tenant.clinicId}:${requestId}:${eventAction}`})
+          hashtext(${`relife-finance:${tenant.organizationId}:${tenant.clinicId}:${requestId}:${eventAction}`})
         )
       `;
 
       const duplicateAudit = await tx`
         select entity_id
         from relife.audit_events
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and request_id = ${requestId}
           and action = ${eventAction}
         limit 1
@@ -175,7 +177,8 @@ Deno.serve(async (req) => {
         const existing = await tx`
           select *
           from relife.finance_operations
-          where clinic_id = ${tenant.clinicId}::uuid
+          where organization_id = ${tenant.organizationId}::uuid
+            and clinic_id = ${tenant.clinicId}::uuid
             and entity_type = ${entityType}
             and entity_id = ${norm(duplicateAudit[0].entity_id)}
           limit 1
@@ -189,7 +192,8 @@ Deno.serve(async (req) => {
       const existing = await tx`
         select *
         from relife.finance_operations
-        where clinic_id = ${tenant.clinicId}::uuid
+        where organization_id = ${tenant.organizationId}::uuid
+          and clinic_id = ${tenant.clinicId}::uuid
           and entity_type = ${entityType}
           and entity_id = ${entityId}
         limit 1
@@ -219,6 +223,8 @@ Deno.serve(async (req) => {
             payload = payload || ${JSON.stringify(payload)}::jsonb,
             updated_at = now()
           where id = ${norm(existing[0].id)}::uuid
+            and organization_id = ${tenant.organizationId}::uuid
+            and clinic_id = ${tenant.clinicId}::uuid
           returning *
         `;
         operation = rows[0];

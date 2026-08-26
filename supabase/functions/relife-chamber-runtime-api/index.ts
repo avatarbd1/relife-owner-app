@@ -332,7 +332,7 @@ Deno.serve(async (req) => {
               current_step=${step}, current_resource_id=${resourceId}, step_started_at=now(),
               step_duration_min=${durationMin}, expected_release_at=${expected}::timestamptz,
               updated_by=${actorId}, updated_at=now(), version=version+1
-          where clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
           returning *
         `;
         await insertAudit(tx, tenant, actorId, "chamber.step.update", sessionId, norm(session.patient_id), { step, resourceId, stationId, durationMin });
@@ -364,23 +364,23 @@ Deno.serve(async (req) => {
           set status='Completed', step_log=${JSON.stringify(log)}::jsonb,
               completed_at=now(), current_resource_id='', expected_release_at=null,
               updated_by=${actorId}, updated_at=now(), version=version+1
-          where clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${sessionId}
           returning *
         `;
         await tx`
           update relife.appointments
           set status='Completed', updated_by=${actorId}, updated_at=now()
-          where clinic_id=${tenant.clinicId}::uuid and id=${norm(session.appointment_id)}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and id=${norm(session.appointment_id)}
         `;
         await tx`
           update relife.machine_reservations
           set status='Completed', updated_at=now()
-          where clinic_id=${tenant.clinicId}::uuid and appointment_id=${norm(session.appointment_id)}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and appointment_id=${norm(session.appointment_id)}
         `;
         await tx`
           update relife.treatment_timeline
           set status='Completed', updated_at=now()
-          where clinic_id=${tenant.clinicId}::uuid and appointment_id=${norm(session.appointment_id)}
+          where organization_id=${tenant.organizationId}::uuid and clinic_id=${tenant.clinicId}::uuid and appointment_id=${norm(session.appointment_id)}
         `;
         await insertAudit(tx, tenant, actorId, "chamber.complete", sessionId, norm(session.patient_id), { steps: log.length });
         return { ok: true, session: rows[0] as Record<string, unknown> };
