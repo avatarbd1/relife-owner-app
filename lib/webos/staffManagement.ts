@@ -7,6 +7,8 @@ import {
   getSheetProperties,
   type SpreadsheetBatchRequest,
 } from "@/lib/data/googleSheets";
+import { deactivateStoredStaffProvisioning, listStoredStaffProvisioning, replaceStoredStaffProvisioning } from "@/lib/data/staffProvisioning";
+import { normalizeTenantRole } from "@/lib/domain/tenancy/policy";
 import type { Department } from "@/lib/types";
 import type { AccessContext, WebRole } from "@/lib/webos/access";
 import { withMutationLock } from "@/lib/webos/mutationLock";
@@ -456,9 +458,10 @@ function generateStaffId(): string {
 
 export async function listManagedStaff(context: AccessContext, organizationId: string, clinicId: string): Promise<ManagedStaffRecord[]> {
   assertOwner(context);
-  const [directory, raw] = await Promise.all([
+  const [directory, raw, provisioning] = await Promise.all([
     getWebStaffDirectory(),
     fetchSheetRanges("physio", ["08_Staff"]),
+    listStoredStaffProvisioning({ organizationId, clinicId }),
   ]);
   const staffRows = raw["08_Staff"] || [];
   if (staffRows.length < 1) throw new Error("STAFF_SCHEMA_MISMATCH");
@@ -469,7 +472,9 @@ export async function listManagedStaff(context: AccessContext, organizationId: s
     staffRows.slice(1).map((row) => [at(row, idIdx), money(at(row, salaryIdx))])
   );
 
+  const provisionedIds = new Set(provisioning.filter((row) => row.status === "active").map((row) => row.staffId));
   return directory.flatMap((item) => {
+    if (!provisionedIds.has(item.staffId)) return [];
     if (item.roles.includes("Owner")) return [];
     const role = item.roles.find((candidate): candidate is ManagedRole => MANAGED_ROLES.has(candidate as ManagedRole));
     if (!role || !item.primaryDepartment) return [];
@@ -546,6 +551,9 @@ export async function createManagedStaff(context: AccessContext, organizationId:
       ),
     ];
     await batchUpdateSpreadsheet("physio", requests);
+    const roleCode = normalizeTenantRole(normalizedInput.role);
+    if (!roleCode) throw new Error("INVALID_STAFF_ROLE");
+    await replaceStoredStaffProvisioning({ organizationId, clinicId }, { staffId, roleCodes: [roleCode], departmentIds: normalizedInput.departmentAccess, status: "active" });
     return { staffId, status: "Active" as const };
   });
 }
@@ -626,6 +634,9 @@ export async function updateManagedStaff(
     );
 
     await batchUpdateSpreadsheet("physio", requests);
+    const roleCode = normalizeTenantRole(normalizedInput.role);
+    if (!roleCode) throw new Error("INVALID_STAFF_ROLE");
+    await replaceStoredStaffProvisioning({ organizationId, clinicId }, { staffId, roleCodes: [roleCode], departmentIds: normalizedInput.departmentAccess, status: normalizedInput.status.toLowerCase() as "active" | "inactive" });
     return { staffId, status: normalizedInput.status };
   });
 }
@@ -675,6 +686,7 @@ export async function deactivateManagedStaff(context: AccessContext, organizatio
       ),
     ];
     await batchUpdateSpreadsheet("physio", requests);
+    await deactivateStoredStaffProvisioning({ organizationId, clinicId }, staffId);
     return { staffId, status: "Inactive" as const, changed: true };
   });
 }

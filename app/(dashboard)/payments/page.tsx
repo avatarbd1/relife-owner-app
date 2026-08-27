@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import PaymentsWorkspaceClient from "@/components/PaymentsWorkspaceClient";
 import { StatusBadge } from "@/components/FeedbackUI";
 import { getFinanceOperationsSnapshot } from "@/lib/webos/financeOps";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 export default async function PaymentsPage({
@@ -11,11 +12,13 @@ export default async function PaymentsPage({
 }: {
   searchParams: Promise<{ patientId?: string }>;
 }) {
-  const [context, cookieStore, params] = await Promise.all([
-    requireCurrentAccessContext(),
+  const [tenantContext, cookieStore, params] = await Promise.all([
+    requireCurrentTenantAccessContext(),
     cookies(),
     searchParams,
   ]);
+  const context = tenantContext.access;
+  await requireTenantFeature(tenantContext.tenant, "core.finance_basic");
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const snapshot = await getFinanceOperationsSnapshot(context, scope);
 
