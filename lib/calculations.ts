@@ -96,9 +96,12 @@ export interface TodaysCollection {
 }
 
 export async function getTodaysCollection(
-  now: Date = new Date()
+  now: Date = new Date(),
+  organizationId?: string,
+  clinicId?: string
 ): Promise<TodaysCollection> {
-  const payments = await getPayments();
+  if ((organizationId && !clinicId) || (!organizationId && clinicId)) throw new Error("TENANT_SCOPE_REQUIRED");
+  const payments = await getPayments(organizationId, clinicId);
   const today = payments.filter((p) => isSameDay(p.date, now));
   const physio = today
     .filter((p) => p.department === "Physio")

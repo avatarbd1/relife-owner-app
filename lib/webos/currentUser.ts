@@ -7,6 +7,7 @@ import {
   type StaffTenantContext,
 } from "@/lib/domain/tenancy/staffTenantContext";
 import type { AccessContext } from "@/lib/webos/access";
+import { ACTIVE_TENANT_COOKIE, parseTenantSelection } from "@/lib/domain/tenancy/tenantSelection";
 import {
   getActiveWebStaffById,
   toAccessContext,
@@ -16,6 +17,11 @@ import {
 async function currentSessionStaffId(): Promise<string | null> {
   const cookieStore = await cookies();
   return getSessionStaffId(cookieStore.get(SESSION_COOKIE)?.value);
+}
+
+async function currentTenantSelection() {
+  const cookieStore = await cookies();
+  return parseTenantSelection(cookieStore.get(ACTIVE_TENANT_COOKIE)?.value);
 }
 
 export function isOwnerTenantCutoverEnforced(): boolean {
@@ -57,7 +63,7 @@ export async function requireCurrentAccessContext(): Promise<AccessContext> {
 export async function getCurrentTenantContext(): Promise<StaffTenantContext | null> {
   const staffId = await currentSessionStaffId();
   if (!staffId) return null;
-  return resolveStaffTenantContext(staffId);
+  return resolveStaffTenantContext(staffId, await currentTenantSelection());
 }
 
 export async function requireCurrentTenantContext(): Promise<StaffTenantContext> {
@@ -78,7 +84,7 @@ export async function getCurrentTenantAccessContext(): Promise<CurrentTenantAcce
   if (!identity) return null;
   const access = toAccessContext(identity);
   if (!access) return null;
-  const tenant = await resolveStaffTenantContext(identity.staffId);
+  const tenant = await resolveStaffTenantContext(identity.staffId, await currentTenantSelection());
   return {
     identity,
     access,

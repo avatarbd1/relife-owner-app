@@ -153,13 +153,15 @@ test("Chamber completion attempts an audited clinical treatment note", () => {
   assert.match(note, /clinical\.session\.auto_from_chamber/);
 });
 
-test("Home and Daily Ops count completed clinical work instead of payment session remarks", () => {
+test("Home and Daily Ops count completed operational work instead of payment session remarks", () => {
   const home = source("app/(dashboard)/home/page.tsx");
   const daily = source("app/(dashboard)/daily/page.tsx");
   const activity = source("lib/webos/dailyClinicalActivity.ts");
 
+  assert.match(home, /getAppointmentsForContext\(context, "combined", today, tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(home, /status\.trim\(\)\.toLowerCase\(\) === "completed"/);
+  assert.match(daily, /getDailyClinicalActivity/);
   for (const page of [home, daily]) {
-    assert.match(page, /getDailyClinicalActivity/);
     assert.doesNotMatch(page, /paymentSessionCount/);
     assert.doesNotMatch(page, /todayPayments/);
   }

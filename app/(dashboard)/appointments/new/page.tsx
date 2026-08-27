@@ -4,7 +4,7 @@ import AppointmentFormMultiDateGate from "@/components/AppointmentBookingGate";
 import type { Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { getBookingModalityOptions } from "@/lib/webos/appointmentScheduling";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import {
   getClinicianOptions,
   getPatientForContext,
@@ -27,13 +27,13 @@ export default async function NewAppointmentPage({
 }: {
   searchParams: Promise<{ patientId?: string; department?: string }>;
 }) {
-  const context = await requireCurrentAccessContext();
+  const { access: context, tenant } = await requireCurrentTenantAccessContext();
   const cookieStore = await cookies();
   const scope = readScope(cookieStore.get("relife_scope")?.value);
   const { patientId, department: departmentParam } = await searchParams;
   const defaultDepartment = department(departmentParam);
   const [visiblePatients, clinicians, modalityOptions] = await Promise.all([
-    getVisiblePatients(context, scope),
+    getVisiblePatients(context, scope, tenant.organizationId, tenant.clinicId),
     getClinicianOptions(context),
     canPerform(context, "appointment.create", "Physio")
       ? getBookingModalityOptions(context)
@@ -42,7 +42,7 @@ export default async function NewAppointmentPage({
 
   let patients = visiblePatients;
   if (patientId && !visiblePatients.some((patient) => patient.patientId === patientId)) {
-    const direct = await getPatientForContext(context, patientId).catch(() => null);
+    const direct = await getPatientForContext(context, patientId, tenant.organizationId, tenant.clinicId).catch(() => null);
     if (direct && direct.department !== "All") patients = [direct, ...visiblePatients];
   }
 

@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const patient = await getPatientForContext(access, String(body.patientId || ""));
+    const patient = await getPatientForContext(access, String(body.patientId || ""), tenant.organizationId, tenant.clinicId);
     if (!patient || patient.department === "All") {
       return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
     }
