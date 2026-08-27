@@ -47,8 +47,19 @@ alter table relife.clinics
   add constraint clinics_status_check
   check (status in ('draft','setup','ready','active','suspended','archived'));
 
+-- The column default was 'active', from the two-state era where a clinic row and
+-- a serving clinic were the same thing. Under the canonical lifecycle they are
+-- not: a clinic must pass the readiness gate before it serves traffic. Leaving
+-- the old default would mean a provisioning insert that omits status creates an
+-- immediately-serving clinic, silently bypassing that gate.
+--
+-- This changes the default for future inserts only. Existing rows keep the
+-- status they already hold, so the current active clinic stays active.
+alter table relife.clinics
+  alter column status set default 'draft';
+
 comment on column relife.clinics.status is
-  'Canonical clinic lifecycle. A clinic may not serve production traffic before it reaches active.';
+  'Canonical clinic lifecycle. Defaults to draft so an omitted status fails closed; only active serves production traffic.';
 
 -- ---------------------------------------------------------------------------
 -- 2. Clinic profile settings (contract section 5)

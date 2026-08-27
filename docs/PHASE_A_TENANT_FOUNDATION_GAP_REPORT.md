@@ -39,6 +39,7 @@ Verified against current `main`, not assumed.
   - `clinic_data_sources` (§3)
 - `relife.clinic_feature_enabled(...)` resolves feature access as capability **and** commercial grant, failing closed on every unknown.
 - Clinic lifecycle widening maps legacy values to `archived`, never to `active`, so a clinic that was deliberately switched off cannot be promoted back into service by a schema change.
+- **An omitted clinic status fails closed to `draft`.** The column default was `'active'`, inherited from the two-state era where a clinic row and a serving clinic were the same thing. Under the canonical lifecycle they are not: a clinic must pass the readiness gate before it serves traffic, and `clinicMayServe()` admits only `active`. Leaving the old default would have let a provisioning insert that omits status create an immediately-serving clinic, silently bypassing that gate. The change applies to future inserts only; existing rows keep the status they hold.
 - Browser roles are denied and the trusted server path is granted explicitly: `usage` on the schema, table privileges on each configuration table, and `execute` on the resolver, following the staff tenant membership migration's pattern.
 - Resource types are configuration: `BED`, `DENTAL_CHAIR`, `TREATMENT_TABLE`, `CABIN`, `ROOM`, `MACHINE`, `OTHER`. Gender restriction is optional and null by default, so Relife's gender-segregated room policy is not a product rule.
 - Booking modes are configuration: `simple`, `capacity`, `specific_resource`, with a check constraint making `specific_resource` opt-in.

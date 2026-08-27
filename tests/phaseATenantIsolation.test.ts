@@ -485,6 +485,15 @@ const migration = readFileSync(
   "utf8"
 );
 
+/**
+ * The migration with `--` comments removed.
+ *
+ * Negative assertions must run against executable SQL only. A comment that
+ * explains why a legacy default was wrong necessarily quotes that default, and
+ * asserting over the raw file would treat the explanation as the defect.
+ */
+const executableSql = migration.replace(/--[^\n]*/g, "");
+
 test("[sql contract] configuration tables are tenant scoped to relife.clinics", () => {
   for (const table of [
     "clinic_settings",
@@ -541,7 +550,25 @@ test("[sql contract] widening the lifecycle never promotes a legacy clinic to ac
     migration,
     /update relife\.clinics\s*set status = 'archived'\s*where status not in \('draft','setup','ready','active','suspended','archived'\)/
   );
-  assert.doesNotMatch(migration, /set status = 'active'/);
+  assert.doesNotMatch(executableSql, /set status = 'active'/);
+});
+
+test("[sql contract] an omitted clinic status fails closed to draft", () => {
+  // The legacy default was 'active', from the two-state era. Keeping it would
+  // let a provisioning insert that omits status create a clinic that serves
+  // production traffic without ever passing the readiness gate.
+  assert.match(
+    executableSql,
+    /alter table relife\.clinics\s*alter column status set default 'draft'/
+  );
+
+  // Scoped to the lifecycle column. `default 'active'` is correct elsewhere in
+  // this migration — a catalogued feature and a newly created grant are both
+  // active on creation — so only the status default is asserted here.
+  const statusDefaults = executableSql.match(
+    /alter column status set default '\w+'/g
+  );
+  assert.deepEqual(statusDefaults, ["alter column status set default 'draft'"]);
 });
 
 test("[sql contract] the trusted server path is granted, browser roles are not", () => {
