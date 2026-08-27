@@ -5,7 +5,8 @@ import {
   type GamificationStaffSummary,
 } from "@/lib/data/supabaseGamification";
 import { isGamificationEligibleStaffId } from "@/lib/domain/gamification/monthlyPolicy";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import type { TenantScope } from "@/lib/domain/tenancy/policy";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getPerformanceSnapshot } from "@/lib/webos/performance";
 import {
   getPerformanceRewardPolicy,
@@ -55,14 +56,17 @@ function metricLabel(key: string): string {
   return labels[key] || key.replaceAll("_", " ");
 }
 
-async function loadLedgerSummary(input: {
-  staffId: string;
-  weekStart: string;
-  weekEnd: string;
-  today: string;
-}): Promise<GamificationStaffSummary | null> {
+async function loadLedgerSummary(
+  tenant: TenantScope,
+  input: {
+    staffId: string;
+    weekStart: string;
+    weekEnd: string;
+    today: string;
+  }
+): Promise<GamificationStaffSummary | null> {
   try {
-    return await getGamificationStaffSummary(input);
+    return await getGamificationStaffSummary(tenant, input);
   } catch (error) {
     console.error("Gamification ledger summary unavailable", error);
     return null;
@@ -70,7 +74,7 @@ async function loadLedgerSummary(input: {
 }
 
 export default async function PerformancePage() {
-  const context = await requireCurrentAccessContext();
+  const { access: context, tenant } = await requireCurrentTenantAccessContext();
   if (!isGamificationEligibleStaffId(context.staffId)) {
     return (
       <div className="mx-auto w-full max-w-3xl">
@@ -93,8 +97,8 @@ export default async function PerformancePage() {
 
   const snapshot = await getPerformanceSnapshot(context);
   const [rewardPolicy, ledger] = await Promise.all([
-    getPerformanceRewardPolicy(),
-    loadLedgerSummary({
+    getPerformanceRewardPolicy(tenant),
+    loadLedgerSummary(tenant, {
       staffId: context.staffId,
       weekStart: snapshot.weekStart,
       weekEnd: snapshot.weekEnd,
