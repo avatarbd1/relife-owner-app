@@ -42,7 +42,8 @@ export async function writeClinicFeatureFlag(
 
   if (catalogResult.error) throw new Error(`CONFIGURATION_FEATURE_CATALOG_READ_FAILED:${catalogResult.error.message}`);
   if (entitlementResult.error) throw new Error(`CONFIGURATION_ENTITLEMENT_READ_FAILED:${entitlementResult.error.message}`);
-  if (!catalogResult.data || String(catalogResult.data.status) !== "active") throw new Error("FEATURE_NOT_AVAILABLE");
+  if (!catalogResult.data) throw new Error("FEATURE_NOT_AVAILABLE");
+  if (enabled && String(catalogResult.data.status) !== "active") throw new Error("FEATURE_NOT_AVAILABLE");
   if (enabled && !entitlementIsEffective(entitlementResult.data as Record<string, unknown> | null)) {
     throw new Error("FEATURE_NOT_ENTITLED");
   }
