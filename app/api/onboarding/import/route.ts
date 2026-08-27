@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeImportRows, validateColumnMappings, type ImportEntityType, type ColumnMapping } from "@/lib/domain/tenancy/importMapping";
+import { buildImportHandoff } from "@/lib/domain/tenancy/onboardingHandoff";
 import { validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
@@ -72,6 +74,21 @@ export async function POST(request: NextRequest) {
     if (mappingIssues.length) return NextResponse.json({ ok: false, error: mappingIssues.join("; ") }, { status: 400 });
 
     const analysis = analyzeImportRows(entityType, rows, mappings, 10);
+    const sourceDigestSha256 = createHash("sha256")
+      .update(JSON.stringify({ entityType, csvContent, mappings }))
+      .digest("hex");
+    const handoff = buildImportHandoff(
+      { organizationId: tenant.organizationId, clinicId: tenant.clinicId },
+      {
+        entityType,
+        totalRows: analysis.totalRows,
+        validRows: analysis.validRows,
+        invalidRows: analysis.invalidRows,
+        canProceed: analysis.canProceed,
+        sourceDigestSha256,
+      },
+    );
+
     return NextResponse.json({
       ok: true,
       mode: "VALIDATION_PREVIEW_ONLY",
@@ -85,9 +102,8 @@ export async function POST(request: NextRequest) {
       canProceed: analysis.canProceed,
       preview: analysis.preview,
       mutationPerformed: false,
-      nextStep: analysis.canProceed
-        ? "Validation is complete; a separately reviewed canonical import executor is required for mutation."
-        : "Fix every invalid row before any import executor is allowed.",
+      handoff,
+      nextStep: handoff.nextStep,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "IMPORT_PREVIEW_FAILED";

@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
 import { listStoredStaffProvisioning } from "@/lib/data/staffProvisioning";
+import { buildActivationHandoff } from "@/lib/domain/tenancy/onboardingHandoff";
 import { buildProvisioningDryRun } from "@/lib/domain/tenancy/provisioningPlan";
 import { evaluateClinicReadiness, readinessPass, readinessFail, readinessUnverified, type TrustedReadinessEvidence } from "@/lib/domain/tenancy/readinessEngine";
 import { loadStaffMembership } from "@/lib/domain/tenancy/staffAuthorization";
@@ -125,8 +126,17 @@ export async function POST(request: NextRequest) {
       membership?.staffId || null,
       evidence,
     );
+    const isReady = report.overallStatus === "READY_FOR_ACTIVATION";
+    const handoff = buildActivationHandoff({ organizationId, clinicId }, report.overallStatus);
 
-    return NextResponse.json({ ok: true, isReady: report.overallStatus === "READY_FOR_ACTIVATION", phase: "F_ONBOARDING_PORTABILITY", report });
+    return NextResponse.json({
+      ok: true,
+      isReady,
+      phase: "F_ONBOARDING_PORTABILITY",
+      report,
+      handoff,
+      mutationPerformed: false,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "VALIDATION_FAILED";
     return NextResponse.json({ ok: false, error: message }, { status: /ACCESS|TENANT_SCOPE/.test(message) ? 403 : 500 });
