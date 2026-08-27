@@ -39,7 +39,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // T2-02: Require full tenant-aware context for patient operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     const body = await request.json().catch(() => null);
@@ -49,8 +48,6 @@ export async function POST(request: NextRequest) {
 
     const department = String(body.department || "").trim();
     const gender = normalizeGender(body.gender);
-
-    // Validate staff has access to this department
     validateDepartmentAccess(access, department as "Physio" | "Dental");
 
     if (department === "Physio" && !["Male", "Female"].includes(gender)) {
@@ -85,6 +82,7 @@ export async function POST(request: NextRequest) {
 
     if (department === "Physio" || department === "Dental") {
       await recordActorWorkGamification({
+        tenant,
         context: access,
         department,
         purpose: "reception",
