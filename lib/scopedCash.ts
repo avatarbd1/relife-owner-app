@@ -16,6 +16,7 @@ import {
   type ReconciledCashPosition,
 } from "@/lib/domain/finance/reconciliation";
 import type { Scope } from "@/lib/types";
+import { requireCurrentTenantContext } from "@/lib/webos/currentUser";
 
 export type ScopedCashPosition = ReconciledCashPosition;
 
@@ -80,12 +81,9 @@ function addPositions(
 }
 
 /**
- * Authenticated tenant view for the current finance UI.
- *
- * Relife's current Sheets ledgers still carry the reviewed legacy department
- * identities RELIFE-PHYSIO / RELIFE-DENTAL. Accept them only after the caller
- * has resolved the canonical relife/amtali-main tenant. This is a bounded
- * migration adapter, not a silent tenant default.
+ * Tenant-aware finance read with a bounded Tenant #1 compatibility bridge.
+ * RELIFE-PHYSIO / RELIFE-DENTAL are legacy Sheets ledger identities only;
+ * they are accepted here only after canonical relife/amtali-main resolution.
  */
 export async function getScopedCashPositionForTenantView(
   scope: Scope,
@@ -113,4 +111,21 @@ export async function getScopedCashPositionForTenantView(
     getScopedCashPosition("dental", now, "RELIFE", "RELIFE-DENTAL"),
   ]);
   return addPositions(physio, dental);
+}
+
+/**
+ * Existing dashboard API retained during migration, but no longer injects a
+ * fixed tenant. The authenticated staff tenant is mandatory and fail-closed.
+ */
+export async function getScopedCashPositionForAdminView(
+  scope: Scope,
+  now: Date = new Date()
+): Promise<ScopedCashPosition> {
+  const tenant = await requireCurrentTenantContext();
+  return getScopedCashPositionForTenantView(
+    scope,
+    now,
+    tenant.organizationId,
+    tenant.clinicId
+  );
 }
