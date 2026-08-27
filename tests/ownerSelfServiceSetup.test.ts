@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const wizard = readFileSync(new URL("../components/OwnerSetupWizard.tsx", import.meta.url), "utf8");
 const featureRoute = readFileSync(new URL("../app/api/settings/features/route.ts", import.meta.url), "utf8");
 const featureWriter = readFileSync(new URL("../lib/data/clinicFeatureFlags.ts", import.meta.url), "utf8");
+const facilityRoute = readFileSync(new URL("../app/api/settings/facility/route.ts", import.meta.url), "utf8");
 const onboarding = readFileSync(new URL("../app/(dashboard)/onboarding/page.tsx", import.meta.url), "utf8");
 
 test("owner setup reuses canonical clinic, facility, service and readiness routes", () => {
@@ -23,6 +24,14 @@ test("feature selection cannot mutate commercial entitlements", () => {
   assert.ok(featureWriter.includes("FEATURE_NOT_ENTITLED"));
   assert.ok(featureWriter.includes("organization_id"));
   assert.ok(featureWriter.includes("clinic_id"));
+});
+
+test("facility replacement deactivates omitted rooms and resources", () => {
+  assert.ok(facilityRoute.includes("staleRooms"));
+  assert.ok(facilityRoute.includes("staleResources"));
+  assert.ok(facilityRoute.includes("isActive: false"));
+  assert.ok(facilityRoute.includes("isBookable: false"));
+  assert.ok(!facilityRoute.includes("delete()"));
 });
 
 test("browser setup never exposes service role key or direct activation RPC", () => {
