@@ -1,6 +1,8 @@
 import "server-only";
 
-import { RELIFE_SUPABASE_SCOPE, type RelifeDepartment } from "@/lib/config/relifeSystem";
+import { createClient } from "@supabase/supabase-js";
+import type { RelifeDepartment } from "@/lib/config/relifeSystem";
+import { requireTenantScope } from "@/lib/domain/tenancy/policy";
 import type { WebRole } from "@/lib/webos/access";
 
 export type RewardClaimStatus = "pending" | "approved" | "denied" | "cancelled" | "claimed" | "expired";
@@ -72,48 +74,53 @@ const DEFAULT_REWARD_CLAIMS_EDGE_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-reward-claims-api";
 
 function endpoint(): string {
-  return (
-    process.env.RELIFE_SUPABASE_REWARD_CLAIMS_EDGE_URL ||
-    DEFAULT_REWARD_CLAIMS_EDGE_URL
-  ).trim();
+  return (process.env.RELIFE_SUPABASE_REWARD_CLAIMS_EDGE_URL || DEFAULT_REWARD_CLAIMS_EDGE_URL).trim();
 }
 
 function edgeSecret(): string {
-  return (
-    process.env.RELIFE_GAMIFICATION_EDGE_SECRET ||
-    process.env.RELIFE_EDGE_SECRET ||
-    ""
-  ).trim();
+  return (process.env.RELIFE_GAMIFICATION_EDGE_SECRET || process.env.RELIFE_EDGE_SECRET || "").trim();
 }
 
 export function rewardClaimsConfigured(): boolean {
   return Boolean(endpoint() && edgeSecret());
 }
 
+async function resolveTenantSlugs(organizationId: string, clinicId: string): Promise<{ organizationSlug: string; clinicSlug: string }> {
+  const tenant = requireTenantScope({ organizationId, clinicId });
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!url || !key) throw new Error("GAMIFICATION_TENANT_STORE_UNAVAILABLE");
+  const relife = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }).schema("relife");
+  const [organization, clinic] = await Promise.all([
+    relife.from("organizations").select("slug,status").eq("id", tenant.organizationId).maybeSingle(),
+    relife.from("clinics").select("slug,status,organization_id").eq("organization_id", tenant.organizationId).eq("id", tenant.clinicId).maybeSingle(),
+  ]);
+  if (organization.error || clinic.error) throw new Error("GAMIFICATION_TENANT_RESOLUTION_FAILED");
+  const organizationSlug = String(organization.data?.slug || "").trim();
+  const clinicSlug = String(clinic.data?.slug || "").trim();
+  if (!organizationSlug || !clinicSlug || String(organization.data?.status || "").toLowerCase() !== "active" || String(clinic.data?.status || "").toLowerCase() !== "active") {
+    throw new Error("GAMIFICATION_TENANT_NOT_ACTIVE");
+  }
+  return { organizationSlug, clinicSlug };
+}
+
 async function callClaims<T>(
   action: string,
-  payload: Record<string, unknown> = {},
-  organizationId?: string,
-  clinicId?: string,
+  payload: Record<string, unknown>,
+  organizationId: string,
+  clinicId: string,
   timeoutMs = 5_000
 ): Promise<T> {
   const secret = edgeSecret();
   if (!secret) throw new Error("GAMIFICATION_EDGE_SECRET_MISSING");
+  const tenant = await resolveTenantSlugs(organizationId, clinicId);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(endpoint(), {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-relife-server-key": secret,
-      },
-      body: JSON.stringify({
-        action,
-        organizationId: organizationId || RELIFE_SUPABASE_SCOPE.organizationSlug,
-        clinicId: clinicId || RELIFE_SUPABASE_SCOPE.clinicSlug,
-        ...payload,
-      }),
+      headers: { "content-type": "application/json", "x-relife-server-key": secret },
+      body: JSON.stringify({ action, organizationSlug: tenant.organizationSlug, clinicSlug: tenant.clinicSlug, ...payload }),
       cache: "no-store",
       signal: controller.signal,
     });
