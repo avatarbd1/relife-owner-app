@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { actOnRewardClaim, type RewardClaimTransition } from "@/lib/data/supabaseRewardClaims";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
@@ -9,7 +10,11 @@ const TRANSITIONS = new Set<RewardClaimTransition>(["approve", "deny", "cancel",
 function errorResponse(error: unknown): NextResponse {
   const typed = error as Error & { status?: number };
   const message = error instanceof Error ? error.message : "REWARD_CLAIM_ACTION_FAILED";
-  const status = typed.status && typed.status >= 400 && typed.status < 600 ? typed.status : 500;
+  const status = message.startsWith("FEATURE_ACCESS_DENIED:")
+    ? 403
+    : typed.status && typed.status >= 400 && typed.status < 600
+      ? typed.status
+      : 500;
   if (status >= 500) console.error("Reward claim action failed", error);
   return NextResponse.json({ ok: false, error: message }, { status });
 }
@@ -23,6 +28,7 @@ export async function POST(
   }
   try {
     const tenantContext = await requireCurrentTenantAccessContext();
+    await requireTenantFeature(tenantContext.tenant, "optional.gamification");
     const { claimId } = await params;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
