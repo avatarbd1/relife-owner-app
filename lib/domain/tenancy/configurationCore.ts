@@ -118,6 +118,7 @@ export function resolveClinicConfiguration(
     return { ok: false, reason: "not_authorized", details: ["TENANT_SCOPE_MISMATCH"] };
   }
   const tenantRows = [
+    ...(snapshot.profile ? [snapshot.profile] : []),
     ...snapshot.operatingHours,
     ...snapshot.flags,
     ...snapshot.entitlements,
