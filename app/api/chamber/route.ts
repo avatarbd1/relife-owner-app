@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findActivePatientConflict } from "@/lib/domain/chamber/patientConcurrency";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
 import {
@@ -23,6 +24,7 @@ import { getMachineOperationSnapshot } from "@/lib/webos/machineRuntime";
 import { withMutationLock } from "@/lib/webos/mutationLock";
 
 function statusFor(message: string): number {
+  if (message.startsWith("FEATURE_ACCESS_DENIED:")) return 403;
   if (["ACCESS_DENIED", "THERAPIST_NOT_ASSIGNED"].includes(message)) return 403;
   if (["APPOINTMENT_NOT_FOUND", "PATIENT_NOT_FOUND", "CHAMBER_SESSION_NOT_FOUND", "STATION_NOT_FOUND", "RESOURCE_NOT_FOUND", "STAFF_NOT_FOUND"].includes(message)) return 404;
   if (["CHAMBER_SCHEMA_MISSING", "SUPABASE_EDGE_SECRET_MISSING"].includes(message)) return 503;
@@ -45,6 +47,7 @@ export async function GET() {
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.read");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const snapshot = await getChamberRuntimeSnapshot(access);
     const enriched = await enrichChamberSnapshotWithPatientProfiles(access, snapshot);
     return NextResponse.json({ ok: true, snapshot: enriched });
@@ -66,6 +69,7 @@ export async function POST(request: NextRequest) {
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.run");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });

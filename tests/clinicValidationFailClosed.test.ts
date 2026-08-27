@@ -7,11 +7,10 @@ const route = readFileSync(
   "utf8"
 );
 
-test("G2 clinic validation binds membership lookup to organization, clinic, and staff", () => {
-  assert.match(
-    route,
-    /\.from\("clinic_memberships"\)[\s\S]*?\.eq\("organization_id", organizationId\)[\s\S]*?\.eq\("clinic_id", clinicId\)[\s\S]*?\.eq\("user_id", staffId\)[\s\S]*?\.eq\("status", "active"\)/
-  );
+test("Phase B clinic validation uses canonical staff membership and configuration readers", () => {
+  assert.match(route, /loadStaffMembership/);
+  assert.match(route, /readClinicConfiguration/);
+  assert.doesNotMatch(route, /clinic_memberships/);
 });
 
 test("G2 privileged validation cannot inspect a different authenticated tenant", () => {
@@ -21,23 +20,11 @@ test("G2 privileged validation cannot inspect a different authenticated tenant",
   );
 });
 
-test("G2 does not manufacture readiness evidence", () => {
-  assert.match(route, /departmentDataScopedToClinic: false/);
-  assert.match(route, /tenantFiltersPresentInReaders: false/);
-  assert.match(route, /explicitTenantParametersInWriters: false/);
-  assert.match(route, /crossTenantIsolationVerified: false/);
-  assert.doesNotMatch(route, /function validateWriterPatterns/);
-  assert.doesNotMatch(route, /RELIFE_TENANT_CUTOVER_ENFORCED feature flag not set/);
+test("Phase B readiness reports real configuration checks and bounded scope", () => {
+  for (const check of ["validLifecycle", "clinicProfileConfigured", "operatingHoursConfigured", "featureConfigurationConsistent", "requiredServicesConfigured", "tenantSafeConfigurationLookup"]) assert.match(route, new RegExp(check));
+  assert.match(route, /facility\/booking runtime, finance, imports and full activation remain deferred/);
 });
 
-test("G2 readiness fails closed unless every advertised check passes", () => {
-  assert.match(
-    route,
-    /const readinessChecksPass =[\s\S]*?tenantContextResolvable[\s\S]*?departmentDataScopedToClinic[\s\S]*?tenantFiltersPresentInReaders[\s\S]*?explicitTenantParametersInWriters[\s\S]*?crossTenantIsolationVerified/
-  );
-
-  assert.match(
-    route,
-    /result\.isReady = allChecksPass && readinessChecksPass && result\.errors\.length === 0/
-  );
+test("Phase B readiness fails closed unless every advertised check passes", () => {
+  assert.match(route, /Object\.values\(checks\)\.every\(Boolean\) && errors\.length === 0/);
 });

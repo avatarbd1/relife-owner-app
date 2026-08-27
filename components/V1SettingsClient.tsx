@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppIcon from "@/components/AppIcon";
 
@@ -63,6 +63,26 @@ export default function V1SettingsClient({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [clinicConfiguration, setClinicConfiguration] = useState<null | {
+    profile: { clinicName: string; branchName: string; timezone: string; currency: string } | null;
+    operatingHours: Array<{ dayOfWeek: number; isOpen: boolean; opensAt: string | null; closesAt: string | null }>;
+    services: Array<{ serviceCode: string; displayName: string; price: number; isActive: boolean }>;
+  }>(null);
+  const [configurationError, setConfigurationError] = useState("");
+
+  useEffect(() => {
+    if (!isOwner) return;
+    let active = true;
+    fetch("/api/settings/clinic", { cache: "no-store" })
+      .then(async (response) => ({ response, payload: await response.json().catch(() => ({})) }))
+      .then(({ response, payload }) => {
+        if (!active) return;
+        if (!response.ok || !payload.ok) throw new Error(String(payload.error || "CONFIGURATION_READ_FAILED"));
+        setClinicConfiguration(payload.configuration);
+      })
+      .catch(() => active && setConfigurationError("Clinic configuration is unavailable; no default schedule or price was substituted."));
+    return () => { active = false; };
+  }, [isOwner]);
 
   const dirty = fullName.trim() !== initialProfile.fullName || phone.trim() !== initialProfile.phone;
 
@@ -156,6 +176,11 @@ export default function V1SettingsClient({
 
       {isOwner ? (
         <Card title="Clinic">
+          <div className="px-4 py-3">
+            <p className="text-sm font-semibold text-slate-900">{clinicConfiguration?.profile?.clinicName || "Clinic profile not configured"}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{clinicConfiguration?.profile ? `${clinicConfiguration.profile.branchName || "Main branch"} · ${clinicConfiguration.profile.timezone} · ${clinicConfiguration.profile.currency}` : "Configuration fails closed until an authorized owner completes it."}</p>
+            {configurationError ? <p className="mt-1 text-[11px] text-red-600">{configurationError}</p> : null}
+          </div>
           <Row
             href="/security/staff-access"
             icon="staff"
@@ -169,8 +194,8 @@ export default function V1SettingsClient({
               </span>
               <div>
                 <p className="text-sm font-semibold text-slate-900">Working hours</p>
-                <p className="mt-0.5 text-xs leading-5 text-slate-500">Physio booking: 9 AM–1 PM · 3 PM–9 PM</p>
-                <p className="text-[11px] leading-4 text-slate-400">This is the current enforced schedule, not a decorative setting.</p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">{clinicConfiguration ? clinicConfiguration.operatingHours.map((day) => day.isOpen ? `${day.dayOfWeek}: ${day.opensAt?.slice(0,5)}–${day.closesAt?.slice(0,5)}` : `${day.dayOfWeek}: Closed`).join(" · ") || "Not configured" : "Loading tenant configuration…"}</p>
+                <p className="text-[11px] leading-4 text-slate-400">Clinic timezone and the seven-day schedule are read from the canonical configuration.</p>
               </div>
             </div>
           </div>
@@ -181,7 +206,7 @@ export default function V1SettingsClient({
               </span>
               <div>
                 <p className="text-sm font-semibold text-slate-900">Services</p>
-                <p className="mt-0.5 text-xs leading-5 text-slate-500">Physiotherapy · Dental</p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">{clinicConfiguration ? clinicConfiguration.services.filter((service) => service.isActive).map((service) => `${service.displayName} · ${clinicConfiguration.profile?.currency || ""} ${service.price}`).join(" · ") || "No active services configured" : "Loading tenant services…"}</p>
               </div>
             </div>
           </div>
