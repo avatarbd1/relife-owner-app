@@ -32,8 +32,22 @@ import { join, relative } from "node:path";
  * Sheets compatibility boundary itself.
  */
 
+/**
+ * Two forms of the same defect.
+ *
+ * The first is a fixed identifier written as a literal at the call site. The
+ * second is the same identity reached through a constant: `RELIFE_SYSTEM` and
+ * `RELIFE_SUPABASE_SCOPE` resolve to `RELIFE` / `AMTALI-01` and
+ * `relife` / `amtali-main`, so a reader that reaches for their tenant fields is
+ * injecting a fixed clinic just as surely as one that types the string.
+ *
+ * A ledger that watched only literals would report shrinking debt every time an
+ * injection was moved behind a constant, which is the opposite of progress.
+ * Environment variable names such as `RELIFE_MUTATION_LOCK_SECRET` are excluded
+ * deliberately: those are product branding on a secret, not tenant identity.
+ */
 const FIXED_IDENTIFIER =
-  /"RELIFE(-PHYSIO|-DENTAL)?"|"amtali-main"|'amtali-main'/g;
+  /"RELIFE(-PHYSIO|-DENTAL)?"|"amtali-main"|'amtali-main'|RELIFE_SUPABASE_SCOPE\.(organizationSlug|clinicSlug)|RELIFE_SYSTEM\.(organizationId|branchId)/g;
 
 /** file -> number of fixed-identifier occurrences currently accepted. */
 const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
@@ -62,10 +76,28 @@ const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
   ["supabase/functions/relife-report-storage/index.ts", 2],
   ["supabase/functions/relife-reward-claims-api/index.ts", 1],
   ["supabase/functions/relife-weekly-gamification-finalizer/index.ts", 1],
+
+  // Supabase readers reaching the fixed tenant through RELIFE_SUPABASE_SCOPE.
+  // These resolve the same relife/amtali-main identity as a literal would.
+  // Phase B, with the tenant-context cutover.
+  ["lib/data/supabaseChamber.ts", 2],
+  ["lib/data/supabaseFinance.ts", 2],
+  ["lib/data/supabaseGamification.ts", 2],
+  ["lib/data/supabaseRewardClaims.ts", 2],
+  ["lib/data/supabaseWeeklyGamification.ts", 2],
+
+  // Finance and workforce writers stamping RELIFE_SYSTEM tenant fields onto
+  // rows. Accounting invariants stay independent of tenant routing, so these
+  // move with the writers in Phase B/D rather than with the ledger identities.
+  ["lib/domain/finance/cash.ts", 3],
+  ["lib/domain/finance/expenses.ts", 3],
+  ["lib/domain/finance/payments.ts", 2],
+  ["lib/domain/finance/salary.ts", 2],
+  ["lib/domain/workforce/sheetsIo.ts", 1],
 ]);
 
 /** Total accepted compatibility debt at the close of Phase A. */
-const LEDGER_TOTAL = 92;
+const LEDGER_TOTAL = 113;
 
 const ROOTS = ["lib", "app", "supabase/functions"];
 const REPO_ROOT = new URL("..", import.meta.url).pathname;

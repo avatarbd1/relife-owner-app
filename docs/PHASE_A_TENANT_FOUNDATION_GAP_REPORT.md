@@ -54,7 +54,9 @@ Verified against current `main`, not assumed.
 
 ### Compatibility boundary
 
-`tests/phaseARelifeCompatibilityBoundary.test.ts` implements contract §27 as an executable ratchet: a named ledger of the **92 fixed Relife identifier occurrences across 18 files** that remain. A new file carrying a fixed identifier fails. An increased count fails. A decreased count also fails, forcing the ledger to record the improvement so the removal path stays visible.
+`tests/phaseARelifeCompatibilityBoundary.test.ts` implements contract §27 as an executable ratchet: a named ledger of the **113 fixed Relife tenant injections across 28 files** that remain. A new file carrying one fails. An increased count fails. A decreased count also fails, forcing the ledger to record the improvement so the removal path stays visible.
+
+The ledger counts two forms of the same defect. A literal identifier at the call site is the obvious one. The second is the same identity reached through a constant: `RELIFE_SYSTEM.organizationId` and `RELIFE_SUPABASE_SCOPE.clinicSlug` resolve to the fixed Relife tenant, so a reader using them injects a fixed clinic exactly as a literal would — 21 occurrences across 10 files, in the Supabase readers and the finance/workforce writers. A ledger watching only literals would have reported shrinking debt every time an injection was moved behind a constant, which is the opposite of progress. Environment variable names such as `RELIFE_MUTATION_LOCK_SECRET` are excluded deliberately: those are product branding on a secret, not tenant identity.
 
 ### Stale contract assertions repaired
 
