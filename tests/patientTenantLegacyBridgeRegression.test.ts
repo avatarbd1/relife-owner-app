@@ -39,7 +39,7 @@ test("legacy tenant bridge does not replace canonical exact matching", () => {
 });
 
 test("legacy bridge remains a migration boundary, not the 20-clinic runtime contract", () => {
-  assert.match(rolloutContract, /organizationId\s*\+\s*clinicId/i);
+  assert.match(rolloutContract, /organization_id\s*\+\s*clinic_id/i);
   assert.match(rolloutContract, /legacy|compatib/i);
   assert.match(rolloutContract, /RELIFE/i);
 });
