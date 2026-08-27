@@ -103,19 +103,6 @@ async function checkStaffMembership(
   }
 }
 
-function validateWriterPatterns(): { valid: boolean; gaps: string[] } {
-  const gaps: string[] = [];
-
-  if (!process.env.RELIFE_TENANT_CUTOVER_ENFORCED) {
-    gaps.push("RELIFE_TENANT_CUTOVER_ENFORCED feature flag not set");
-  }
-
-  return {
-    valid: gaps.length === 0,
-    gaps,
-  };
-}
-
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
@@ -150,13 +137,18 @@ export async function POST(request: NextRequest) {
         clinicExists: false,
         clinicBelongsToOrganization: false,
         staffHasClinicMembership: false,
-        departmentDataScopedToClinic: true,
-        tenantFiltersPresentInReaders: true,
+        departmentDataScopedToClinic: false,
+        tenantFiltersPresentInReaders: false,
         explicitTenantParametersInWriters: false,
         crossTenantIsolationVerified: false,
       },
       errors: [],
-      warnings: [],
+      warnings: [
+        "Department data scoping has not been verified by this runtime validator",
+        "Reader tenant filtering has not been verified by this runtime validator",
+        "Writer tenant parameter coverage has not been verified by this runtime validator",
+        "Cross-tenant isolation has not been verified by this runtime validator",
+      ],
     };
 
     if (!organizationId || !clinicId) {
@@ -191,15 +183,6 @@ export async function POST(request: NextRequest) {
           result.warnings.push(`Staff ${access.staffId} has no active membership in clinic ${clinicId}`);
         }
       }
-    }
-
-    const writerChecks = validateWriterPatterns();
-    result.checks.explicitTenantParametersInWriters = writerChecks.valid;
-
-    if (!writerChecks.valid) {
-      result.warnings.push(
-        `Writer pattern validation incomplete: ${writerChecks.gaps.join(", ")}`
-      );
     }
 
     const allChecksPass =
