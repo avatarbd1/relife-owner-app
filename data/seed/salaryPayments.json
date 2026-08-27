@@ -1,7 +1,0 @@
-[
-  { "id": "SAL-001", "date": "2026-08-05", "staffId": "STF-DT-01", "staffName": "Avatar", "department": "Dental", "amount": 6000, "type": "Salary", "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
-  { "id": "SAL-002", "date": "2026-08-05", "staffId": "STF-DT-02", "staffName": "Rakib", "department": "Dental", "amount": 10000, "type": "Advance", "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
-  { "id": "SAL-003", "date": "2026-08-10", "staffId": "STF-DT-03", "staffName": "Hasibur (BDS)", "department": "Dental", "amount": 15000, "type": "Advance", "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
-
-  { "id": "SAL-004", "date": "2026-08-05", "staffId": "STF-PH-01", "staffName": "Nipa", "department": "Physio", "amount": 15000, "type": "Advance", "organizationId": "RELIFE", "clinicId": "RELIFE-PHYSIO" }
-]
