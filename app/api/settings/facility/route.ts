@@ -35,7 +35,8 @@ export async function PUT(request: NextRequest) {
     const generated = body.bulk ? createBulkFacilityPlan(context.tenant, body.bulk) : null;
     const requestedRooms = generated?.rooms || body.rooms;
     const requestedResources = generated?.resources || body.resources;
-    if (!Array.isArray(requestedRooms) || !Array.isArray(requestedResources) || !body.booking) throw new Error("FACILITY_CONFIGURATION_REQUIRED");
+    const requestedBooking = body.booking;
+    if (!Array.isArray(requestedRooms) || !Array.isArray(requestedResources) || !requestedBooking) throw new Error("FACILITY_CONFIGURATION_REQUIRED");
 
     const requestedRoomCodes = new Set(requestedRooms.map((row) => row.roomCode.trim()));
     if (requestedRoomCodes.has("") || requestedRoomCodes.size !== requestedRooms.length || requestedRooms.some((row) => !row.displayName.trim())) throw new Error("INVALID_ROOMS");
@@ -43,7 +44,7 @@ export async function PUT(request: NextRequest) {
     const resourceTypes = new Set(["BED", "DENTAL_CHAIR", "TREATMENT_TABLE", "CABIN", "ROOM", "MACHINE", "OTHER"]);
     if (requestedResourceCodes.has("") || requestedResourceCodes.size !== requestedResources.length || requestedResources.some((row) => !row.displayName.trim() || !resourceTypes.has(row.resourceType) || !Number.isInteger(row.capacity) || row.capacity <= 0 || (row.roomCode !== null && !requestedRoomCodes.has(row.roomCode)))) throw new Error("INVALID_RESOURCES");
 
-    const booking = { ...body.booking, organizationId: context.tenant.organizationId, clinicId: context.tenant.clinicId };
+    const booking = { ...requestedBooking, organizationId: context.tenant.organizationId, clinicId: context.tenant.clinicId };
     if (!validateBookingConfig(booking).valid) throw new Error("INVALID_BOOKING_CONFIGURATION");
 
     // Facility PUT is replacement semantics without destructive deletes. Rows omitted by
@@ -75,7 +76,7 @@ export async function PUT(request: NextRequest) {
     await writeFacilityConfiguration(context.tenant, {
       rooms: [...requestedRooms, ...staleRooms],
       resources: [...requestedResources, ...staleResources],
-      booking: body.booking,
+      booking: requestedBooking,
     });
     const configuration = await readClinicConfiguration(context.tenant);
     return NextResponse.json({ ok: true, facility: { rooms: configuration.rooms, resources: configuration.resources, booking: configuration.booking } });
