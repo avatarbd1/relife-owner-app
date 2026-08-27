@@ -1,1 +1,0 @@
-Owner self-service setup implementation is on branch chatgpt/owner-self-service-setup and is intended for review through a Draft PR before merge.
