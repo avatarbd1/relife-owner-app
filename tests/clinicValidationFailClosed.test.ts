@@ -20,11 +20,15 @@ test("G2 privileged validation cannot inspect a different authenticated tenant",
   );
 });
 
-test("Phase D readiness reports real configuration checks and bounded scope", () => {
-  for (const check of ["validLifecycle", "clinicProfileConfigured", "operatingHoursConfigured", "featureConfigurationConsistent", "requiredServicesConfigured", "tenantSafeConfigurationLookup", "staffProvisioningValid", "financeConfigurationValid"]) assert.match(route, new RegExp(check));
-  assert.match(route, /owner UX, imports, onboarding and full activation remain deferred/);
+test("Phase F readiness engine integrates trusted evidence collectors", () => {
+  assert.match(route, /evaluateClinicReadiness/);
+  assert.match(route, /collectSchemaEvidence/);
+  assert.match(route, /collectCrossTenantEvidence/);
+  assert.match(route, /provisioningRollbackEvidencePresent/);
 });
 
-test("Phase B readiness fails closed unless every advertised check passes", () => {
-  assert.match(route, /Object\.values\(checks\)\.every\(Boolean\) && errors\.length === 0/);
+test("Phase F readiness keeps runtime fallback evidence fail-closed", () => {
+  assert.match(route, /PHASE_F_TENANT_RUNTIME_ATTESTATION/);
+  assert.match(route, /readinessUnverified/);
+  assert.match(route, /overallStatus === "READY_FOR_ACTIVATION"/);
 });
