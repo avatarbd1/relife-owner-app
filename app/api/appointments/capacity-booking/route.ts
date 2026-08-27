@@ -1,0 +1,95 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  createCapacityBooking,
+  validateCapacityBooking,
+  type CapacityBookingInput,
+} from "@/lib/domain/appointments/capacityBooking";
+import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { assertCanPerform } from "@/lib/webos/access";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { withMutationLock } from "@/lib/webos/mutationLock";
+
+function parseInput(body: Record<string, unknown>): CapacityBookingInput {
+  return {
+    patientId: String(body.patientId || ""),
+    date: String(body.date || ""),
+    time: String(body.time || ""),
+    therapist: String(body.therapist || ""),
+    remarks: String(body.remarks || ""),
+    resourceCode: String(body.resourceCode || "").trim() || undefined,
+  };
+}
+
+function responseFor(error: unknown): NextResponse {
+  const message = error instanceof Error ? error.message : "CAPACITY_BOOKING_FAILED";
+  const validation = (error as Error & { validation?: unknown })?.validation;
+  if (message === "ACCESS_DENIED") return NextResponse.json({ ok: false, error: message }, { status: 403 });
+  if (message.startsWith("FEATURE_ACCESS_DENIED:")) return NextResponse.json({ ok: false, error: message }, { status: 403 });
+  if (message === "PATIENT_NOT_FOUND") return NextResponse.json({ ok: false, error: message }, { status: 404 });
+  if (message.startsWith("APPOINTMENT_CONFLICT:")) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "APPOINTMENT_CONFLICT",
+        detail: message.split(":").slice(2).join(":"),
+        validation,
+      },
+      { status: 409 }
+    );
+  }
+  if (["INVALID_DATE", "INVALID_TIME", "INVALID_SLOT"].includes(message)) {
+    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+  }
+  if (message === "SCHEMA_MISMATCH") {
+    return NextResponse.json({ ok: false, error: message }, { status: 503 });
+  }
+  console.error("Capacity booking failed", error);
+  return NextResponse.json({ ok: false, error: message }, { status: 500 });
+}
+
+export async function POST(request: NextRequest) {
+  if (!isAllowedRequestOrigin(request)) {
+    return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
+  }
+  try {
+    // T2-02: Require full tenant-aware context for capacity booking operations
+    const tenantContext = await requireCurrentTenantAccessContext();
+    const { access, tenant } = tenantContext;
+    validateDepartmentAccess(access, "Physio");
+    validateTenantScope(access, tenant, "appointment.create");
+    assertCanPerform(access, "appointment.create", "Physio");
+    await requireTenantFeature(tenant, "core.appointments");
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
+    }
+    const record = body as Record<string, unknown>;
+    const action = String(record.action || "validate");
+    const input = parseInput(record);
+    if (action === "validate") {
+      const validation = await validateCapacityBooking(
+        access,
+        tenant.organizationId,
+        tenant.clinicId,
+        input
+      );
+      return NextResponse.json({ ok: true, validation });
+    }
+    if (action === "create") {
+      const result = await withMutationLock(`capacity-booking:${tenant.organizationId}:${tenant.clinicId}:${input.date}`, () =>
+        createCapacityBooking(
+          access,
+          tenant.organizationId,
+          tenant.clinicId,
+          input
+        )
+      );
+      return NextResponse.json({ ok: true, ...result });
+    }
+    return NextResponse.json({ ok: false, error: "INVALID_ACTION" }, { status: 400 });
+  } catch (error) {
+    return responseFor(error);
+  }
+}

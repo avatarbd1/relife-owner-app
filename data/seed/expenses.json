@@ -1,0 +1,11 @@
+[
+  { "expenseId": "EXP-DT-001", "date": "2026-08-02", "category": "Dental Materials", "description": "Filling material, gloves", "amount": 2500, "paymentMethod": "Cash", "paidBy": "Avatar", "department": "Dental", "isHouseholdWithdrawal": false, "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
+  { "expenseId": "EXP-DT-002", "date": "2026-08-05", "category": "Lab", "description": "Lab work - crown", "amount": 1800, "paymentMethod": "Cash", "paidBy": "Avatar", "department": "Dental", "isHouseholdWithdrawal": false, "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
+  { "expenseId": "EXP-DT-003", "date": "2026-08-09", "category": "Utility", "description": "Electricity bill", "amount": 1265, "paymentMethod": "Cash", "paidBy": "Avatar", "department": "Dental", "isHouseholdWithdrawal": false, "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
+  { "expenseId": "EXP-DT-004", "date": "2026-08-12", "category": "Cleaning", "description": "Clinic cleaning supplies", "amount": 1500, "paymentMethod": "Cash", "paidBy": "Avatar", "department": "Dental", "isHouseholdWithdrawal": false, "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
+  { "expenseId": "EXP-DT-005", "date": "2026-08-10", "category": "Household Withdrawal", "description": "Household withdrawal (not a clinic expense)", "amount": 3000, "paymentMethod": "Cash", "paidBy": "Owner", "department": "Dental", "isHouseholdWithdrawal": true, "organizationId": "RELIFE", "clinicId": "RELIFE-DENTAL" },
+
+  { "expenseId": "EXP-PH-001", "date": "2026-08-03", "category": "Physio Consumables", "description": "TENS pads, gel", "amount": 1200, "paymentMethod": "Cash", "paidBy": "Nipa", "department": "Physio", "isHouseholdWithdrawal": false, "organizationId": "RELIFE", "clinicId": "RELIFE-PHYSIO" },
+  { "expenseId": "EXP-PH-002", "date": "2026-08-06", "category": "Utility", "description": "Electricity bill", "amount": 1400, "paymentMethod": "Cash", "paidBy": "Nipa", "department": "Physio", "isHouseholdWithdrawal": false, "organizationId": "RELIFE", "clinicId": "RELIFE-PHYSIO" },
+  { "expenseId": "EXP-PH-003", "date": "2026-08-11", "category": "Maintenance", "description": "Equipment servicing", "amount": 900, "paymentMethod": "Cash", "paidBy": "Nipa", "department": "Physio", "isHouseholdWithdrawal": false, "organizationId": "RELIFE", "clinicId": "RELIFE-PHYSIO" }
+]
