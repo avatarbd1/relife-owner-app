@@ -6,7 +6,7 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("new appointment flow gates missing gender then shows simple Physio capacity booking", () => {
+test("new appointment flow gates patient then shows configured booking", () => {
   const page = source("app/(dashboard)/appointments/new/page.tsx");
   const gate = source("components/AppointmentBookingGate.tsx");
   const capacityUi = source("components/AppointmentCapacityForm.tsx");
@@ -18,21 +18,17 @@ test("new appointment flow gates missing gender then shows simple Physio capacit
   assert.match(gate, /saveGender\("Female"\)/);
   assert.match(gate, /AppointmentCapacityForm/);
   assert.match(capacityUi, /Appointment hour/);
-  assert.match(capacityUi, /Simple Physio booking · 60 ± 5 min/);
-  assert.match(capacityUi, /Live Chamber handle করবে/);
+  assert.match(capacityUi, /Configured clinic booking/);
+  assert.match(capacityUi, /Live Chamber treatment-time operation/);
   assert.doesNotMatch(capacityUi, /requestedBedId/);
 });
 
-test("Physio booking hours remain canonical hourly starts", () => {
-  const hours = source("lib/domain/chamber/hours.ts");
+test("Physio booking hours come from tenant configuration", () => {
+  const configured = source("lib/domain/appointments/configuredBooking.ts");
   const capacity = source("lib/domain/appointments/capacityBooking.ts");
-
-  assert.match(hours, /"09:00"/);
-  assert.match(hours, /"10:00"/);
-  assert.match(hours, /"20:00"/);
-  assert.doesNotMatch(hours, /"09:30"/);
-  assert.doesNotMatch(hours, /"10:30"/);
-  assert.match(capacity, /if \(!isPhysioChamberStart\(input\.time\)\) throw new Error\("INVALID_SLOT"\)/);
+  assert.match(configured, /slot does not match configured interval/);
+  assert.match(configured, /outside configured operating hours/);
+  assert.match(capacity, /configuration\.operatingHours/);
 });
 
 test("legacy Chamber schedule API is compatibility-only and cannot reserve a bed", () => {
@@ -43,6 +39,6 @@ test("legacy Chamber schedule API is compatibility-only and cannot reserve a bed
   assert.doesNotMatch(handler, /record\.requestedBedId|body\.requestedBedId|requestedBedId\s*:/);
   assert.doesNotMatch(handler, /validateFixedHourBooking/);
   assert.doesNotMatch(handler, /createFixedHourBooking/);
-  assert.match(capacity, /Assigned_Bed_ID: ""/);
+  assert.match(capacity, /Assigned_Bed_ID: input\.resourceCode \|\| ""/);
   assert.match(capacity, /machineReservationsCreated: false/);
 });

@@ -9,19 +9,15 @@ function source(path: string): string {
 test("generic Physio appointment create uses the same capacity-booking authority", () => {
   const route = source("app/api/appointments/route.ts");
   const capacity = source("lib/domain/appointments/capacityBooking.ts");
-  const hours = source("lib/domain/chamber/hours.ts");
+  const configured = source("lib/domain/appointments/configuredBooking.ts");
 
   assert.match(route, /createCapacityBooking/);
   assert.match(route, /capacity-booking:/);
   assert.doesNotMatch(route, /createUnifiedPhysioBooking/);
   assert.match(capacity, /validateCapacityBooking/);
   assert.match(capacity, /createCapacityBooking/);
-  assert.match(capacity, /if \(!isPhysioChamberStart\(input\.time\)\) throw new Error\("INVALID_SLOT"\)/);
-  assert.match(hours, /PHYSIO_CHAMBER_STARTS/);
-  assert.match(hours, /"09:00"/);
-  assert.match(hours, /"20:00"/);
-  assert.doesNotMatch(hours, /"13:00"/);
-  assert.doesNotMatch(hours, /"14:00"/);
+  assert.match(capacity, /resolveConfiguredBooking/);
+  assert.match(configured, /slot does not match configured interval/);
 });
 
 test("generic Physio validation does not expose machine or fixed-bed planning", () => {
@@ -33,7 +29,7 @@ test("generic Physio validation does not expose machine or fixed-bed planning", 
   assert.doesNotMatch(validateRoute, /getBookingProfile/);
   assert.match(validateRoute, /suggestedModalities: \[\]/);
   assert.match(validateRoute, /modalityOptions: \[\]/);
-  assert.match(capacity, /Assigned_Bed_ID: ""/);
+  assert.match(capacity, /Assigned_Bed_ID: input\.resourceCode \|\| ""/);
   assert.match(capacity, /Timeline_ID: ""/);
   assert.match(capacity, /machineReservationsCreated: false/);
 });

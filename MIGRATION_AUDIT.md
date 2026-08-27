@@ -12,6 +12,12 @@
 
 Phase B makes the Phase A Supabase configuration tables authoritative only for clinic profile/settings, weekly operating hours, feature/entitlement resolution, clinic service catalog/pricing, and this bounded readiness slice. Existing staff self-profile remains on the canonical Sheets staff writer; operational patient, appointment, clinical, finance and workforce authorities are unchanged. There is no second writer for a single user action.
 
+## Phase C — facility and booking authority
+
+Phase C makes the Phase A `clinic_rooms`, `clinic_resources`, and `clinic_booking_config` tables authoritative for facility shape and booking policy. The existing appointment route/domain and Sheets appointment ledger remain the sole operational appointment writer; this is a configuration cutover, not a second appointment store. Reads, bulk creation and upserts bind `organization_id + clinic_id`, mutations reuse `settings.manage`, and booking independently requires membership, `appointment.create`, and a valid `core.appointments` feature decision.
+
+The old compiled four-bed/hour assumptions no longer decide active booking. Live Chamber still owns treatment-time assignment and operational machine state; it is not converted into booking-time reservation. No production data was migrated or written in this phase.
+
 Canonical server access is `lib/data/clinicConfiguration.ts`; normalization and fail-closed decisions are in `lib/domain/tenancy/configurationCore.ts`. Reads and writes bind both `organization_id + clinic_id`; configuration management reuses `settings.manage`, and membership/permission denial remains separate from entitlement denial. No production migration or data write was performed by this PR.
 
 ## Current production-safety facts

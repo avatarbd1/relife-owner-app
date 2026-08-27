@@ -84,6 +84,11 @@ export interface ClinicBookingConfig extends TenantScope {
   maxSimultaneous: number | null;
   providerRequired: boolean;
   resourceRequired: boolean;
+  blockDuplicatePatientOverlap?: boolean;
+  allowWalkIn?: boolean;
+  cancellationNoticeMin?: number;
+  lateArrivalGraceMin?: number;
+  capacityRules?: Record<string, unknown>;
 }
 
 /**
@@ -224,6 +229,10 @@ export function validateBookingConfig(
   config: ClinicBookingConfig
 ): { valid: boolean; problems: string[] } {
   const problems: string[] = [];
+
+  if (!["simple", "capacity", "specific_resource"].includes(config.bookingMode)) {
+    problems.push("bookingMode is invalid");
+  }
 
   if (config.defaultDurationMin <= 0) {
     problems.push("defaultDurationMin must be positive");
