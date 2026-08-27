@@ -32,9 +32,14 @@ export async function POST(request: NextRequest) {
   let tenantContext;
   try {
     tenantContext = await requireCurrentTenantAccessContext();
+  } catch {
+    return NextResponse.json({ ok: false, error: "ACCESS_DENIED" }, { status: 403 });
+  }
+
+  try {
     await requireTenantFeature(tenantContext.tenant, "optional.finance_advanced");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "ACCESS_DENIED";
+    const message = error instanceof Error ? error.message : "FEATURE_ACCESS_DENIED";
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
   const context = tenantContext.access;
