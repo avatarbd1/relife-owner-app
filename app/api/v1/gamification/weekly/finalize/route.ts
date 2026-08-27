@@ -4,11 +4,16 @@ import {
   finalizeWeeklyGamification,
   getWeeklyGamificationFinalization,
 } from "@/lib/data/supabaseWeeklyGamification";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { assertCanPerform } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
-  if (message === "ACCESS_DENIED" || message === "OWNER_REQUIRED") return 403;
+  if (
+    message === "ACCESS_DENIED" ||
+    message === "OWNER_REQUIRED" ||
+    message.startsWith("FEATURE_ACCESS_DENIED:")
+  ) return 403;
   if (
     message === "INVALID_WEEK_START" ||
     message === "WEEK_START_MUST_BE_MONDAY" ||
@@ -25,6 +30,7 @@ function statusFor(message: string): number {
 export async function GET(request: NextRequest) {
   try {
     const { access, tenant } = await requireCurrentTenantAccessContext();
+    await requireTenantFeature(tenant, "optional.gamification");
     assertCanPerform(access, "performance.weekly.finalize", "All");
     const weekStart = request.nextUrl.searchParams.get("weekStart")?.trim() || undefined;
     const finalization = await getWeeklyGamificationFinalization(
@@ -46,6 +52,7 @@ export async function POST(request: NextRequest) {
   }
   try {
     const { access, tenant } = await requireCurrentTenantAccessContext();
+    await requireTenantFeature(tenant, "optional.gamification");
     assertCanPerform(access, "performance.weekly.finalize", "All");
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const weekStart = String(body.weekStart || "").trim() || undefined;
