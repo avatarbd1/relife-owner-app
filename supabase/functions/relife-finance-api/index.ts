@@ -7,8 +7,6 @@ const sql = postgres(dbUrl, { prepare: false, max: 3, idle_timeout: 20 });
 
 const SERVER_KEY_HASH =
   "50840a8a74de86a912cb2a268ff6d24b2a9fc3cf4ab016229e52d3219a3772fe";
-const DEFAULT_ORGANIZATION_SLUG = "relife";
-const DEFAULT_CLINIC_SLUG = "amtali-main";
 const DEPARTMENTS = new Set(["Physio", "Dental"]);
 const ENTITY_TYPES = new Set([
   "Payment",
@@ -70,10 +68,9 @@ async function authorized(req: Request): Promise<boolean> {
 }
 
 async function resolveTenant(body: Record<string, unknown>): Promise<Tenant> {
-  const organizationSlug = norm(
-    body.organizationSlug || DEFAULT_ORGANIZATION_SLUG
-  );
-  const clinicSlug = norm(body.clinicSlug || DEFAULT_CLINIC_SLUG);
+  const organizationSlug = norm(body.organizationSlug);
+  const clinicSlug = norm(body.clinicSlug);
+  if (!organizationSlug || !clinicSlug) throw new Error("TENANT_SCOPE_REQUIRED");
   const rows = await sql`
     select o.id::text as organization_id, c.id::text as clinic_id
     from relife.organizations o
@@ -308,6 +305,6 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("relife-finance-api", error);
     const message = error instanceof Error ? error.message : "EDGE_FAILED";
-    return response({ ok: false, error: message }, 500);
+    return response({ ok: false, error: message }, message === "TENANT_SCOPE_REQUIRED" ? 400 : 500);
   }
 });
