@@ -18,6 +18,14 @@ Phase C makes the Phase A `clinic_rooms`, `clinic_resources`, and `clinic_bookin
 
 The old compiled four-bed/hour assumptions no longer decide active booking. Live Chamber still owns treatment-time assignment and operational machine state; it is not converted into booking-time reservation. No production data was migrated or written in this phase.
 
+## Phase D — staff and finance configuration authority
+
+Phase D keeps `08_Staff`, `Staff_Department_Access`, and the existing finance Sheets ledgers as their operational authorities. Staff create/update/deactivate now also synchronizes the already-established Phase A `staff_tenant_bindings`, `staff_tenant_roles`, and `staff_tenant_departments` configuration so an operational staff row is not discoverable through another clinic's settings path. The application lists staff only when an active binding matches the exact `organization_id + clinic_id`.
+
+This is a named compatibility dual-write across Sheets and Supabase. Sheets is written first; a failed tenant-provisioning write leaves the staff profile fail-closed (no active tenant access), while partial role/department replacement deactivates the binding as compensation. It does not claim cross-system atomicity. Removing this boundary belongs to the later Supabase-primary operational cutover, not Phase D.
+
+Finance writers remain unchanged. Their server routes now require `core.finance_basic`, `optional.salary`, or `optional.finance_advanced` as applicable, in addition to membership and WebAction permission. Disabling a UI item is not the authorization boundary.
+
 Canonical server access is `lib/data/clinicConfiguration.ts`; normalization and fail-closed decisions are in `lib/domain/tenancy/configurationCore.ts`. Reads and writes bind both `organization_id + clinic_id`; configuration management reuses `settings.manage`, and membership/permission denial remains separate from entitlement denial. No production migration or data write was performed by this PR.
 
 ## Current production-safety facts

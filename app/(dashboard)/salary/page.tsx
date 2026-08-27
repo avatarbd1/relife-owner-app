@@ -6,7 +6,8 @@ import { StatusBadge } from "@/components/FeedbackUI";
 import { getSalaryPayments, getStaff } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 function monthDhaka(): string {
@@ -30,12 +31,14 @@ function dateKey(value: string | undefined): string {
 }
 
 export default async function SalaryPage() {
-  const [context, cookieStore, allStaff, allPayments] = await Promise.all([
-    requireCurrentAccessContext(),
+  const [tenantContext, cookieStore, allStaff, allPayments] = await Promise.all([
+    requireCurrentTenantAccessContext(),
     cookies(),
     getStaff(),
     getSalaryPayments(),
   ]);
+  const context = tenantContext.access;
+  await requireTenantFeature(tenantContext.tenant, "optional.salary");
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const readableDepartments = (["Physio", "Dental"] as const).filter(
     (department) => inScope(scope, department) && canPerform(context, "salary.read", department)

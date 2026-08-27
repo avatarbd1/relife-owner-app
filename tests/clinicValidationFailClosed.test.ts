@@ -20,9 +20,9 @@ test("G2 privileged validation cannot inspect a different authenticated tenant",
   );
 });
 
-test("Phase C readiness reports real configuration checks and bounded scope", () => {
-  for (const check of ["validLifecycle", "clinicProfileConfigured", "operatingHoursConfigured", "featureConfigurationConsistent", "requiredServicesConfigured", "tenantSafeConfigurationLookup"]) assert.match(route, new RegExp(check));
-  assert.match(route, /finance, imports, onboarding and full activation remain deferred/);
+test("Phase D readiness reports real configuration checks and bounded scope", () => {
+  for (const check of ["validLifecycle", "clinicProfileConfigured", "operatingHoursConfigured", "featureConfigurationConsistent", "requiredServicesConfigured", "tenantSafeConfigurationLookup", "staffProvisioningValid", "financeConfigurationValid"]) assert.match(route, new RegExp(check));
+  assert.match(route, /owner UX, imports, onboarding and full activation remain deferred/);
 });
 
 test("Phase B readiness fails closed unless every advertised check passes", () => {

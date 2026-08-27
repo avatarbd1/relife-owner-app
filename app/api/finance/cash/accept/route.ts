@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getScopedCashPosition } from "@/lib/scopedCash";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import {
   finalizeCashMovement,
@@ -10,6 +11,7 @@ import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function code(message: string): number {
   if (message === "ACCESS_DENIED") return 403;
+  if (message.startsWith("FEATURE_ACCESS_DENIED:")) return 403;
   if (message === "CASH_MOVEMENT_NOT_FOUND") return 404;
   if (message === "CASH_MOVEMENT_ALREADY_DECIDED") return 409;
   if (message.startsWith("INSUFFICIENT_RECEPTION_CASH:")) return 409;
@@ -27,6 +29,7 @@ export async function POST(request: NextRequest) {
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateTenantScope(access, tenant, "cash.accept");
+    await requireTenantFeature(tenant, "optional.finance_advanced");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });

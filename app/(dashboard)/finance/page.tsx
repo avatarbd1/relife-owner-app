@@ -14,7 +14,8 @@ import {
 import { getPatientFinancialPosition } from "@/lib/patients";
 import { getScopedCashPositionForAdminView } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { allowedScopesForContext, resolveAuthorizedScope } from "@/lib/webos/scope";
 
 function percent(value: number): number {
@@ -50,7 +51,9 @@ function TruthCard({
 }
 
 export default async function FinancePage() {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
+  await requireTenantFeature(tenantContext.tenant, "core.finance_basic");
   if (!context.roles.includes("Owner")) redirect("/operations");
   const cookieStore = await cookies();
   const allowedScopes = allowedScopesForContext(context);

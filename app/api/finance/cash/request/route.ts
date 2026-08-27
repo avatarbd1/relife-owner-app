@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requestCashMovement } from "@/lib/domain/finance/production";
 import { getScopedCashPosition } from "@/lib/scopedCash";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
@@ -10,6 +11,7 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "ACCESS_DENIED") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
+  if (message.startsWith("FEATURE_ACCESS_DENIED:")) return NextResponse.json({ ok: false, error: message }, { status: 403 });
   if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") {
     return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
@@ -38,6 +40,7 @@ export async function POST(request: NextRequest) {
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateTenantScope(access, tenant, "cash.request");
+    await requireTenantFeature(tenant, "optional.finance_advanced");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
