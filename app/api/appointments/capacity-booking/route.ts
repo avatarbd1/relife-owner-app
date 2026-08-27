@@ -5,6 +5,7 @@ import {
   type CapacityBookingInput,
 } from "@/lib/domain/appointments/capacityBooking";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
@@ -17,6 +18,7 @@ function parseInput(body: Record<string, unknown>): CapacityBookingInput {
     time: String(body.time || ""),
     therapist: String(body.therapist || ""),
     remarks: String(body.remarks || ""),
+    resourceCode: String(body.resourceCode || "").trim() || undefined,
   };
 }
 
@@ -24,6 +26,7 @@ function responseFor(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "CAPACITY_BOOKING_FAILED";
   const validation = (error as Error & { validation?: unknown })?.validation;
   if (message === "ACCESS_DENIED") return NextResponse.json({ ok: false, error: message }, { status: 403 });
+  if (message.startsWith("FEATURE_ACCESS_DENIED:")) return NextResponse.json({ ok: false, error: message }, { status: 403 });
   if (message === "PATIENT_NOT_FOUND") return NextResponse.json({ ok: false, error: message }, { status: 404 });
   if (message.startsWith("APPOINTMENT_CONFLICT:")) {
     return NextResponse.json(
@@ -57,6 +60,7 @@ export async function POST(request: NextRequest) {
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "appointment.create");
     assertCanPerform(access, "appointment.create", "Physio");
+    await requireTenantFeature(tenant, "core.appointments");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
@@ -74,7 +78,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, validation });
     }
     if (action === "create") {
-      const result = await withMutationLock(`capacity-booking:${input.date}`, () =>
+      const result = await withMutationLock(`capacity-booking:${tenant.organizationId}:${tenant.clinicId}:${input.date}`, () =>
         createCapacityBooking(
           access,
           tenant.organizationId,

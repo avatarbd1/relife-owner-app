@@ -9,19 +9,19 @@ const chamberCompatibilitySource = fs.readFileSync("app/api/chamber/schedule/han
 const machineSource = fs.readFileSync("lib/webos/machineRuntime.ts", "utf8");
 const liveSource = fs.readFileSync("components/LiveChamberBoard.tsx", "utf8");
 
-test("Physio capacity booking keeps 60 ± 5 and no machine reservation writes", () => {
-  assert.match(capacitySource, /GENERAL_SESSION_MIN = 60/);
+test("Physio booking uses configured duration and creates no machine reservations", () => {
+  assert.match(capacitySource, /configuration\.booking\?\.defaultDurationMin/);
   assert.match(capacitySource, /GENERAL_TOLERANCE_MIN = 5/);
   assert.match(capacitySource, /machineReservationsCreated: false/);
   assert.doesNotMatch(capacitySource, /25_Machine_Reservations/);
   assert.doesNotMatch(capacitySource, /26_Treatment_Timeline/);
 });
 
-test("Reception Physio booking remains simple and does not ask for bed or machine timing", () => {
+test("Reception booking follows configuration and keeps treatment timing out", () => {
   assert.match(bookingGateSource, /AppointmentCapacityForm/);
-  assert.match(capacityUiSource, /Bed, machine, treatment sequence/);
-  assert.match(capacityUiSource, /Therapist · optional/);
-  assert.match(capacityUiSource, /Therapist overlap booking block করবে না/);
+  assert.match(capacityUiSource, /api\/settings\/facility/);
+  assert.match(capacityUiSource, /providerRequired/);
+  assert.match(capacityUiSource, /Live Chamber treatment-time operation/);
   assert.doesNotMatch(capacityUiSource, /Expected machine demand/);
   assert.doesNotMatch(capacityUiSource, /requestedBedId/);
   assert.doesNotMatch(capacityUiSource, /Check beds/);

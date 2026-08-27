@@ -2,7 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { fetchSheetRanges } from "@/lib/data/googleSheets";
-import { isPhysioChamberStart } from "@/lib/domain/chamber/hours";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { resolveConfiguredBooking } from "@/lib/domain/appointments/configuredBooking";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getPatientForContext } from "@/lib/webos/reception";
 import {
@@ -13,12 +14,10 @@ import {
 const APPOINTMENT_SHEET = "04_Appointments";
 const PLAN_SHEET = "12_Treatment_Plans";
 const RESOURCE_SHEET = "24_Chamber_Resources";
-const GENERAL_SESSION_MIN = 60;
 const GENERAL_TOLERANCE_MIN = 5;
 const TRACTION_EXPECTED_MIN = 20;
-const VALIDATION_VERSION = "capacity-advisory-v1";
+const VALIDATION_VERSION = "configured-booking-v2";
 const ACTIVE = new Set(["scheduled", "received", "arrived", "waiting", "in treatment"]);
-const ROOM_CAPACITY: Record<string, number> = { "Room 1": 2, "Room 2": 2 };
 
 export type CapacityConflictType = "gender_required" | "capacity" | "duplicate" | "schema";
 
@@ -45,6 +44,7 @@ export interface CapacityBookingInput {
   time: string;
   therapist?: string;
   remarks?: string;
+  resourceCode?: string;
 }
 
 export interface CapacityBookingValidation {
@@ -58,6 +58,7 @@ export interface CapacityBookingValidation {
   conflicts: CapacityConflict[];
   warnings: CapacityWarning[];
   expectedDemand: ExpectedDemand[];
+  clinicTimezone: string;
 }
 
 type ResourceOption = {
@@ -77,6 +78,9 @@ type Appointment = {
   roomId: string;
   gender: "Male" | "Female" | "";
   modalities: string[];
+  organizationId: string;
+  clinicId: string;
+  resourceCode: string | null;
 };
 
 function normalize(value: unknown): string {
@@ -166,13 +170,6 @@ function flowFields(remarks: string): { gender: "Male" | "Female" | ""; roomId: 
     gender: parseGender(values.get("gender")),
     roomId: normalize(values.get("room")),
   };
-}
-
-function roomFromBed(value: string): string {
-  const text = normalized(value);
-  if (/bed[-\s]*[12]\b/.test(text)) return "Room 1";
-  if (/bed[-\s]*[34]\b/.test(text)) return "Room 2";
-  return "";
 }
 
 function rowForHeaders(headers: string[], values: Record<string, SheetCellValue>): SheetCellValue[] {
@@ -276,54 +273,18 @@ function parseAppointments(rows: string[][]): Appointment[] {
       patientName: at(row, idx("Patient_Name")),
       therapist: at(row, idx("Therapist")),
       status: at(row, idx("Status")) || "Scheduled",
-      roomId: flow.roomId || roomFromBed(at(row, idx("Assigned_Bed_ID"))),
+      roomId: flow.roomId,
       gender: flow.gender,
       modalities: parseJsonArray(at(row, idx("Modalities_JSON"))),
+      organizationId: at(row, idx("Organization_ID")),
+      clinicId: at(row, idx("Clinic_ID")),
+      resourceCode: at(row, idx("Assigned_Bed_ID")) || null,
     }];
   });
 }
 
 function appointmentActive(status: string): boolean {
   return ACTIVE.has(normalized(status));
-}
-
-function chooseRoom(
-  existing: Appointment[],
-  gender: "Male" | "Female"
-): { roomId: string; warning?: CapacityWarning } {
-  const roomRows = new Map<string, Appointment[]>(Object.keys(ROOM_CAPACITY).map((room) => [room, []]));
-  const unknownRoom = existing.filter((item) => !ROOM_CAPACITY[item.roomId]);
-  for (const item of existing) {
-    if (ROOM_CAPACITY[item.roomId]) roomRows.get(item.roomId)?.push(item);
-  }
-
-  const candidates: string[] = [];
-  for (const roomId of Object.keys(ROOM_CAPACITY)) {
-    const rows = roomRows.get(roomId) || [];
-    if (rows.length >= ROOM_CAPACITY[roomId]) continue;
-    const genders = new Set(rows.map((item) => item.gender).filter(Boolean));
-    if (genders.size > 1) continue;
-    if (genders.size === 1 && !genders.has(gender)) continue;
-    candidates.push(roomId);
-  }
-
-  candidates.sort((a, b) => {
-    const aRows = roomRows.get(a) || [];
-    const bRows = roomRows.get(b) || [];
-    const aSame = aRows.some((item) => item.gender === gender) ? 0 : 1;
-    const bSame = bRows.some((item) => item.gender === gender) ? 0 : 1;
-    return aSame - bSame || aRows.length - bRows.length;
-  });
-
-  return {
-    roomId: candidates[0] || "",
-    warning: unknownRoom.length
-      ? {
-          type: "legacy_allocation",
-          message: `${unknownRoom.length} older booking(s) have no room tag; total capacity is still counted conservatively.`,
-        }
-      : undefined,
-  };
 }
 
 function auditRow(
@@ -333,7 +294,7 @@ function auditRow(
   organizationId: string,
   clinicId: string,
   after: string,
-  now: ReturnType<typeof nowDhaka>
+  now: ReturnType<typeof nowInTimezone>
 ): SheetCellValue[] {
   return [
     `AUD-${randomUUID()}`,
@@ -348,7 +309,7 @@ function auditRow(
     "Gender-capacity booking; machine demand advisory only",
     organizationId,
     clinicId,
-    "AMTALI-01",
+    clinicId,
     `${clinicId}:${appointmentId}`,
     "",
     context.staffId,
@@ -362,9 +323,9 @@ function auditRow(
   ];
 }
 
-function nowDhaka(ref = new Date()): { display: string; iso: string } {
+function nowInTimezone(timeZone: string, ref = new Date()): { display: string; iso: string } {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Dhaka",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -408,7 +369,6 @@ async function loadState() {
 function validateInput(input: CapacityBookingInput): { date: string; startMinute: number; therapist: string } {
   const date = normalize(input.date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("INVALID_DATE");
-  if (!isPhysioChamberStart(input.time)) throw new Error("INVALID_SLOT");
   return { date, startMinute: timeMinutes(input.time), therapist: normalize(input.therapist) };
 }
 
@@ -423,34 +383,21 @@ export async function validateCapacityBooking(
   if (!patient || patient.department !== "Physio") throw new Error("PATIENT_NOT_FOUND");
   const { date, startMinute, therapist } = validateInput(input);
   const state = await loadState();
+  const configuration = await readClinicConfiguration({ organizationId, clinicId });
   const gender = parseGender(patient.gender);
   const conflicts: CapacityConflict[] = [];
   const warnings: CapacityWarning[] = [];
-  if (!gender) conflicts.push({ type: "gender_required", message: "Patient gender must be set before Physio booking." });
-
-  const hourEnd = startMinute + GENERAL_SESSION_MIN;
+  const configuredDuration = configuration.booking?.defaultDurationMin || 0;
+  const hourEnd = startMinute + configuredDuration;
   const overlapping = state.appointments.filter((item) =>
+    item.organizationId === organizationId && item.clinicId === clinicId &&
     item.date === date &&
     appointmentActive(item.status) &&
-    overlaps(startMinute, hourEnd, item.startMinute, item.startMinute + GENERAL_SESSION_MIN)
+    overlaps(startMinute, hourEnd, item.startMinute, item.startMinute + configuredDuration)
   );
-  if (overlapping.some((item) => item.patientId === patient.patientId)) {
-    conflicts.push({ type: "duplicate", message: "Patient already has an overlapping active appointment in this hour." });
-  }
-
-  let roomId = "";
-  if (gender) {
-    if (overlapping.length >= 4) {
-      conflicts.push({ type: "capacity", message: "Physio treatment capacity is full for this hour." });
-    } else {
-      const room = chooseRoom(overlapping, gender);
-      roomId = room.roomId;
-      if (room.warning) warnings.push(room.warning);
-      if (!roomId) {
-        conflicts.push({ type: "capacity", message: `No ${gender} room capacity is available in this hour without mixing genders.` });
-      }
-    }
-  }
+  const decision = resolveConfiguredBooking({ organizationId, clinicId }, { booking: configuration.booking || null, hours: configuration.operatingHours, resources: configuration.resources || [] }, { date, startMinute, patientId: patient.patientId, providerId: therapist, resourceCode: input.resourceCode, gender }, state.appointments.map((item) => ({ organizationId: item.organizationId, clinicId: item.clinicId, patientId: item.patientId, date: item.date, startMinute: item.startMinute, durationMin: configuredDuration, resourceCode: item.resourceCode, active: appointmentActive(item.status) })));
+  if (!decision.ok) conflicts.push({ type: decision.reason === "duplicate" ? "duplicate" : decision.reason === "invalid" || decision.reason === "not_configured" ? "schema" : "capacity", message: decision.detail });
+  const roomId = decision.ok ? decision.resource?.roomCode || "" : "";
 
   if (therapist) {
     const therapistLoad = overlapping.filter((item) => normalized(item.therapist) === normalized(therapist)).length;
@@ -485,11 +432,12 @@ export async function validateCapacityBooking(
     patientName: patient.fullName,
     gender,
     roomId,
-    sessionMinutes: GENERAL_SESSION_MIN,
+    sessionMinutes: decision.ok ? decision.durationMin : configuredDuration,
     toleranceMinutes: GENERAL_TOLERANCE_MIN,
     conflicts,
     warnings,
     expectedDemand,
+    clinicTimezone: configuration.profile?.timezone || "UTC",
   };
 }
 
@@ -529,7 +477,7 @@ export async function createCapacityBooking(
     if (!existing.has(candidate)) appointmentId = candidate;
   }
   if (!appointmentId) throw new Error("ID_ALLOCATION_FAILED");
-  const now = nowDhaka();
+  const now = nowInTimezone(validation.clinicTimezone);
   const modalities = validation.expectedDemand.map((item) => item.resourceId);
   const appointmentRow = rowForHeaders(headers, {
     Appointment_ID: appointmentId,
@@ -543,7 +491,7 @@ export async function createCapacityBooking(
     Remarks: withPlanningTag(input.remarks || "", validation),
     Organization_ID: organizationId,
     Clinic_ID: clinicId,
-    Branch_ID: "AMTALI-01",
+    Branch_ID: clinicId,
     Record_ID: `${clinicId}:${appointmentId}`,
     Provider_ID: context.staffId,
     Source_System: "web_pwa",
@@ -553,9 +501,9 @@ export async function createCapacityBooking(
     Schema_Version: "relife-uda-v1",
     Provenance_Timestamp: now.iso,
     Received_By: context.staffId,
-    Assigned_Bed_ID: "",
+    Assigned_Bed_ID: input.resourceCode || "",
     Modalities_JSON: JSON.stringify(modalities),
-    Expected_Duration_Min: GENERAL_SESSION_MIN,
+    Expected_Duration_Min: validation.sessionMinutes,
     Timeline_ID: "",
     Booking_Validation_Version: VALIDATION_VERSION,
   });
@@ -576,7 +524,7 @@ export async function createCapacityBooking(
         therapist,
         roomId: validation.roomId,
         gender: validation.gender,
-        sessionMinutes: GENERAL_SESSION_MIN,
+        sessionMinutes: validation.sessionMinutes,
         toleranceMinutes: GENERAL_TOLERANCE_MIN,
         expectedDemand: validation.expectedDemand,
         machineReservationsCreated: false,

@@ -6,36 +6,35 @@ function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("new Physio appointment flow uses simple gender-capacity booking", () => {
+test("new Physio appointment flow uses configured clinic booking", () => {
   const gate = source("components/AppointmentBookingGate.tsx");
   const form = source("components/AppointmentCapacityForm.tsx");
   const capacity = source("lib/domain/appointments/capacityBooking.ts");
 
   assert.match(gate, /AppointmentCapacityForm/);
   assert.match(gate, /Gender missing/);
-  assert.match(form, /Simple Physio booking/);
-  assert.match(form, /Checking gender capacity/);
-  assert.match(form, /Therapist · optional/);
+  assert.match(form, /Configured clinic booking/);
+  assert.match(form, /api\/settings\/facility/);
+  assert.match(form, /providerRequired/);
   assert.match(form, /\/api\/appointments\/capacity-booking/);
   assert.doesNotMatch(form, /requestedBedId/);
   assert.doesNotMatch(form, /BED-1/);
   assert.doesNotMatch(form, /Expected machine demand/);
 
-  assert.match(capacity, /ROOM_CAPACITY/);
-  assert.match(capacity, /gender_required/);
-  assert.match(capacity, /type: "duplicate"/);
-  assert.match(capacity, /Assigned_Bed_ID: ""/);
+  assert.match(capacity, /resolveConfiguredBooking/);
+  assert.doesNotMatch(capacity, /ROOM_CAPACITY/);
+  assert.match(capacity, /Assigned_Bed_ID: input\.resourceCode \|\| ""/);
   assert.match(capacity, /Timeline_ID: ""/);
 });
 
-test("Physio booking capacity is hourly, gender-aware and capped at four", () => {
+test("Physio booking capacity and duration come from clinic configuration", () => {
   const capacity = source("lib/domain/appointments/capacityBooking.ts");
   const workspace = source("components/AppointmentsWorkspaceClientV2.tsx");
   const board = source("components/ChamberCapacityBoard.tsx");
 
-  assert.match(capacity, /GENERAL_SESSION_MIN = 60/);
-  assert.match(capacity, /overlapping\.length >= 4/);
-  assert.match(capacity, /No \$\{gender\} room capacity is available/);
+  assert.match(capacity, /configuration\.booking\?\.defaultDurationMin/);
+  assert.match(capacity, /configuration\.operatingHours/);
+  assert.doesNotMatch(capacity, /overlapping\.length >= 4/);
   assert.match(workspace, /Physio capacity · gender-wise/);
   assert.match(board, /Male \{male\}/);
   assert.match(board, /Female \{female\}/);

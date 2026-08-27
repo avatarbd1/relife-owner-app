@@ -30,7 +30,7 @@ test("active Physio booking does not use the old fixed-bed Supabase cutover", ()
   assert.match(scheduler, /createCapacityBooking/);
   assert.doesNotMatch(scheduler, /createSupabaseFixedHourBooking/);
   assert.doesNotMatch(scheduler, /mergeCutoverValidation/);
-  assert.match(capacity, /Assigned_Bed_ID: ""/);
+  assert.match(capacity, /Assigned_Bed_ID: input\.resourceCode \|\| ""/);
   assert.match(capacity, /machineReservationsCreated: false/);
 
   // Supabase board/runtime cutover remains available for live operational data.

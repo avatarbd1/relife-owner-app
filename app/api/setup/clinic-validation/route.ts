@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
-import { configurationReadiness } from "@/lib/domain/tenancy/configurationCore";
+import { configurationReadiness, facilityBookingReadiness } from "@/lib/domain/tenancy/configurationCore";
 import { loadStaffMembership } from "@/lib/domain/tenancy/staffAuthorization";
 import { validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { canPerform } from "@/lib/webos/access";
@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
     ]);
     const authorizedMembership = Boolean(membership && membership.organizationId === organizationId && membership.clinicId === clinicId);
     const phaseB = configurationReadiness(configuration, authorizedMembership);
+    const phaseC = facilityBookingReadiness(configuration);
     const checks = {
       tenantContextResolvable: true,
       organizationExists: Boolean(organization), clinicExists: Boolean(clinic),
@@ -40,10 +41,12 @@ export async function POST(request: NextRequest) {
       featureConfigurationConsistent: !phaseB.reasons.some((reason) => reason.startsWith("feature ")),
       requiredServicesConfigured: !phaseB.reasons.includes("enabled services workflow requires an active service"),
       tenantSafeConfigurationLookup: configuration.scope.organizationId === organizationId && configuration.scope.clinicId === clinicId && configuration.operatingHours.every((row) => row.organizationId === organizationId && row.clinicId === clinicId) && configuration.services.every((row) => row.organizationId === organizationId && row.clinicId === clinicId),
+      bookingConfigurationValid: phaseC.readyForPhaseCScope,
+      facilityRowsTenantSafe: (configuration.rooms || []).every((row) => row.organizationId === organizationId && row.clinicId === clinicId) && (configuration.resources || []).every((row) => row.organizationId === organizationId && row.clinicId === clinicId),
     };
-    const errors = [...phaseB.reasons];
+    const errors = [...phaseB.reasons, ...phaseC.reasons];
     if (!checks.organizationExists) errors.unshift("organization not found"); if (!checks.clinicExists) errors.unshift("clinic not found in organization");
-    return NextResponse.json({ ok: true, isReady: Object.values(checks).every(Boolean) && errors.length === 0, phase: "B_CONFIGURATION_CORE", checks, errors, warnings: ["This validates the Phase B configuration slice only; facility/booking runtime, finance, imports and full activation remain deferred."] });
+    return NextResponse.json({ ok: true, isReady: Object.values(checks).every(Boolean) && errors.length === 0, phase: "C_FACILITY_BOOKING", checks, errors, warnings: ["This validates the Phase C facility/booking slice only; finance, imports, onboarding and full activation remain deferred."] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "VALIDATION_FAILED";
     return NextResponse.json({ ok: false, error: message }, { status: /ACCESS|TENANT_SCOPE/.test(message) ? 403 : 500 });
