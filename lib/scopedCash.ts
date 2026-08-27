@@ -16,6 +16,7 @@ import {
   type ReconciledCashPosition,
 } from "@/lib/domain/finance/reconciliation";
 import type { Scope } from "@/lib/types";
+import { requireCurrentTenantContext } from "@/lib/webos/currentUser";
 
 export type ScopedCashPosition = ReconciledCashPosition;
 
@@ -64,10 +65,67 @@ export async function getScopedCashPosition(
   });
 }
 
+const RELIFE_CANONICAL_ORGANIZATION = "relife";
+const RELIFE_CANONICAL_CLINIC = "amtali-main";
+
+function addPositions(
+  left: ScopedCashPosition,
+  right: ScopedCashPosition
+): ScopedCashPosition {
+  return {
+    reception: left.reception + right.reception,
+    homeTreasury: left.homeTreasury + right.homeTreasury,
+    bank: left.bank + right.bank,
+    total: left.total + right.total,
+  };
+}
+
+/**
+ * Tenant-aware finance read with a bounded Tenant #1 compatibility bridge.
+ * RELIFE-PHYSIO / RELIFE-DENTAL are legacy Sheets ledger identities only;
+ * they are accepted here only after canonical relife/amtali-main resolution.
+ */
+export async function getScopedCashPositionForTenantView(
+  scope: Scope,
+  now: Date,
+  organizationId: string,
+  clinicId: string
+): Promise<ScopedCashPosition> {
+  const isRelifeTenant =
+    organizationId === RELIFE_CANONICAL_ORGANIZATION &&
+    clinicId === RELIFE_CANONICAL_CLINIC;
+
+  if (!isRelifeTenant) {
+    return getScopedCashPosition(scope, now, organizationId, clinicId);
+  }
+
+  if (scope === "physio") {
+    return getScopedCashPosition("physio", now, "RELIFE", "RELIFE-PHYSIO");
+  }
+  if (scope === "dental") {
+    return getScopedCashPosition("dental", now, "RELIFE", "RELIFE-DENTAL");
+  }
+
+  const [physio, dental] = await Promise.all([
+    getScopedCashPosition("physio", now, "RELIFE", "RELIFE-PHYSIO"),
+    getScopedCashPosition("dental", now, "RELIFE", "RELIFE-DENTAL"),
+  ]);
+  return addPositions(physio, dental);
+}
+
+/**
+ * Existing dashboard API retained during migration, but no longer injects a
+ * fixed tenant. The authenticated staff tenant is mandatory and fail-closed.
+ */
 export async function getScopedCashPositionForAdminView(
   scope: Scope,
   now: Date = new Date()
 ): Promise<ScopedCashPosition> {
-  const clinic = scope === "dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-  return getScopedCashPosition(scope, now, "RELIFE", clinic);
+  const tenant = await requireCurrentTenantContext();
+  return getScopedCashPositionForTenantView(
+    scope,
+    now,
+    tenant.organizationId,
+    tenant.clinicId
+  );
 }
