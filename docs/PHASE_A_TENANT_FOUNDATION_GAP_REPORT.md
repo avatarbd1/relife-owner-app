@@ -38,9 +38,12 @@ Verified against current `main`, not assumed.
   - `clinic_booking_config` (§8)
   - `clinic_data_sources` (§3)
 - `relife.clinic_feature_enabled(...)` resolves feature access as capability **and** commercial grant, failing closed on every unknown.
+- Clinic lifecycle widening maps legacy values to `archived`, never to `active`, so a clinic that was deliberately switched off cannot be promoted back into service by a schema change.
+- Browser roles are denied and the trusted server path is granted explicitly: `usage` on the schema, table privileges on each configuration table, and `execute` on the resolver, following the staff tenant membership migration's pattern.
 - Resource types are configuration: `BED`, `DENTAL_CHAIR`, `TREATMENT_TABLE`, `CABIN`, `ROOM`, `MACHINE`, `OTHER`. Gender restriction is optional and null by default, so Relife's gender-segregated room policy is not a product rule.
 - Booking modes are configuration: `simple`, `capacity`, `specific_resource`, with a check constraint making `specific_resource` opt-in.
-- No seed rows. A migration must not decide which clinic gets what.
+- No clinic-specific seed rows: no clinic, no feature flag, no entitlement. A migration must not decide which clinic gets what.
+- `feature_catalog` **is** seeded, deliberately. It describes the global product surface rather than any clinic's configuration, and seeding it is what lets the flag and entitlement tables carry a foreign key instead of free text. Enabling a catalogued feature for a clinic remains an explicit configuration decision.
 
 ### Application
 

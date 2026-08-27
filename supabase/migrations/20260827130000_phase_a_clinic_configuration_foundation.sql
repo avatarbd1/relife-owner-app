@@ -34,8 +34,13 @@
 alter table relife.clinics
   drop constraint if exists clinics_status_check;
 
+-- Legacy values map to a non-serving state, never to 'active'. The previous
+-- check allowed 'inactive', so widening the lifecycle must not silently promote
+-- a clinic that was deliberately switched off into one that serves traffic.
+-- 'archived' is chosen over 'suspended' so returning such a clinic to service
+-- requires an explicit decision rather than happening by omission.
 update relife.clinics
-  set status = 'active'
+  set status = 'archived'
   where status not in ('draft','setup','ready','active','suspended','archived');
 
 alter table relife.clinics
@@ -399,6 +404,13 @@ create index if not exists clinic_services_active_idx
 -- decision for operational tenant tables. Ordinary RLS is not treated as
 -- protection for privileged traffic; that enforcement lives in the server code.
 
+-- Browser roles are denied; the trusted server path is granted explicitly,
+-- following the pattern already used by the staff tenant membership migration.
+-- service_role bypasses RLS in Supabase, but the table privilege still has to
+-- exist or every server read of these tables fails.
+
+grant usage on schema relife to service_role;
+
 do $$
 declare
   t text;
@@ -425,6 +437,9 @@ begin
     execute format(
       'create policy %I on relife.%I for all to authenticated using (false) with check (false)',
       t || '_deny_authenticated', t
+    );
+    execute format(
+      'grant select, insert, update, delete on table relife.%I to service_role', t
     );
   end loop;
 end
@@ -473,3 +488,6 @@ comment on function relife.clinic_feature_enabled is
 
 revoke all on function relife.clinic_feature_enabled(uuid, uuid, text, timestamptz)
   from public, anon, authenticated;
+
+grant execute on function relife.clinic_feature_enabled(uuid, uuid, text, timestamptz)
+  to service_role;

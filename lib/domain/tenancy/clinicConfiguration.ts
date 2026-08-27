@@ -53,6 +53,18 @@ export interface ClinicResource extends TenantScope {
   isActive: boolean;
 }
 
+/**
+ * A row of the global feature catalog.
+ *
+ * The catalog carries no tenant columns: it describes the product surface, not
+ * one clinic's configuration. A retired entry withdraws the capability from
+ * every clinic at once, whatever their flags and grants say.
+ */
+export interface FeatureCatalogEntry {
+  featureKey: string;
+  status: "active" | "retired";
+}
+
 export interface ClinicFeatureFlag extends TenantScope {
   featureKey: string;
   enabled: boolean;
@@ -161,6 +173,7 @@ export function resolveFeature(
   scope: TenantScope,
   featureKey: string,
   config: {
+    catalog: readonly FeatureCatalogEntry[];
     flags: readonly ClinicFeatureFlag[];
     entitlements: readonly ClinicEntitlement[];
   },
@@ -175,6 +188,12 @@ export function resolveFeature(
 
   const key = featureKey.trim();
   if (!key) return false;
+
+  // The SQL resolver joins feature_catalog and requires status = 'active'.
+  // Checking it here too is what keeps the two from disagreeing: without it a
+  // retired capability would stay open on the application path only.
+  const catalogEntry = config.catalog.find((item) => item.featureKey === key);
+  if (catalogEntry?.status !== "active") return false;
 
   const flag = scopeToTenant(requested, config.flags).find(
     (item) => item.featureKey === key
@@ -240,6 +259,11 @@ export function bookableCapacity(
   config: ClinicBookingConfig,
   resources: readonly ClinicResource[]
 ): number | null {
+  // The configuration itself is tenant-owned data, so it is checked before it
+  // is read. Filtering only the resource rows would still let another clinic's
+  // booking mode and ceiling drive this clinic's calculation.
+  assertTenantOwned(scope, config, "booking.capacity");
+
   if (config.bookingMode === "simple") return null;
 
   if (config.bookingMode === "capacity") {

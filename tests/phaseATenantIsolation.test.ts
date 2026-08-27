@@ -15,6 +15,7 @@ import {
   type ClinicEntitlement,
   type ClinicFeatureFlag,
   type ClinicResource,
+  type FeatureCatalogEntry,
 } from "../lib/domain/tenancy/clinicConfiguration.ts";
 
 /**
@@ -53,6 +54,14 @@ function grant(
     effectiveUntil: null,
     ...overrides,
   };
+}
+
+function catalog(
+  ...entries: Array<string | FeatureCatalogEntry>
+): FeatureCatalogEntry[] {
+  return entries.map((entry) =>
+    typeof entry === "string" ? { featureKey: entry, status: "active" } : entry
+  );
 }
 
 const NOW = new Date("2026-06-01T00:00:00Z");
@@ -174,6 +183,7 @@ test("a blank clinic-local id is refused rather than keyed", () => {
 
 test("feature resolution fails closed on an unusable scope", () => {
   const config = {
+    catalog: catalog("optional.live_chamber"),
     flags: [flag(CLINIC_A, "optional.live_chamber")],
     entitlements: [grant(CLINIC_A, "optional.live_chamber")],
   };
@@ -197,7 +207,7 @@ test("only an active clinic may serve traffic", () => {
 // ---------------------------------------------------------------------------
 
 test("an unconfigured clinic gets no features", () => {
-  const empty = { flags: [], entitlements: [] };
+  const empty = { catalog: catalog("core.patients"), flags: [], entitlements: [] };
   for (const key of ["core.patients", "optional.live_chamber", "optional.gamification"]) {
     assert.equal(resolveFeature(CLINIC_B, key, empty, NOW), false, `${key} must be off`);
   }
@@ -205,6 +215,7 @@ test("an unconfigured clinic gets no features", () => {
 
 test("one clinic's feature configuration never grants another clinic", () => {
   const config = {
+    catalog: catalog("optional.gamification"),
     flags: [flag(CLINIC_A, "optional.gamification")],
     entitlements: [grant(CLINIC_A, "optional.gamification")],
   };
@@ -222,7 +233,11 @@ test("capability without a commercial grant does not open a feature", () => {
     resolveFeature(
       CLINIC_A,
       "optional.live_chamber",
-      { flags: [flag(CLINIC_A, "optional.live_chamber")], entitlements: [] },
+      {
+        catalog: catalog("optional.live_chamber"),
+        flags: [flag(CLINIC_A, "optional.live_chamber")],
+        entitlements: [],
+      },
       NOW
     ),
     false
@@ -234,7 +249,43 @@ test("a grant without capability does not open a feature", () => {
     resolveFeature(
       CLINIC_A,
       "optional.live_chamber",
-      { flags: [], entitlements: [grant(CLINIC_A, "optional.live_chamber")] },
+      {
+        catalog: catalog("optional.live_chamber"),
+        flags: [],
+        entitlements: [grant(CLINIC_A, "optional.live_chamber")],
+      },
+      NOW
+    ),
+    false
+  );
+});
+
+test("a retired catalog feature stays closed despite flag and grant", () => {
+  assert.equal(
+    resolveFeature(
+      CLINIC_A,
+      "optional.live_chamber",
+      {
+        catalog: catalog({ featureKey: "optional.live_chamber", status: "retired" }),
+        flags: [flag(CLINIC_A, "optional.live_chamber")],
+        entitlements: [grant(CLINIC_A, "optional.live_chamber")],
+      },
+      NOW
+    ),
+    false
+  );
+});
+
+test("a feature missing from the catalog stays closed despite flag and grant", () => {
+  assert.equal(
+    resolveFeature(
+      CLINIC_A,
+      "optional.unknown_capability",
+      {
+        catalog: catalog("optional.live_chamber"),
+        flags: [flag(CLINIC_A, "optional.unknown_capability")],
+        entitlements: [grant(CLINIC_A, "optional.unknown_capability")],
+      },
       NOW
     ),
     false
@@ -255,7 +306,11 @@ test("suspended, revoked, future and expired grants all fail closed", () => {
       resolveFeature(
         CLINIC_A,
         "optional.salary",
-        { flags, entitlements: [grant(CLINIC_A, "optional.salary", overrides)] },
+        {
+          catalog: catalog("optional.salary"),
+          flags,
+          entitlements: [grant(CLINIC_A, "optional.salary", overrides)],
+        },
         NOW
       ),
       false,
@@ -270,6 +325,7 @@ test("a disabled flag closes a feature even with a valid grant", () => {
       CLINIC_A,
       "optional.salary",
       {
+        catalog: catalog("optional.salary"),
         flags: [flag(CLINIC_A, "optional.salary", false)],
         entitlements: [grant(CLINIC_A, "optional.salary")],
       },
@@ -361,6 +417,47 @@ test("every configured resource type is accepted", () => {
   assert.equal(bookableCapacity(CLINIC_A, config, resources), types.length);
 });
 
+test("another clinic's booking config is refused in every mode", () => {
+  const foreignConfigs: Array<[string, ClinicBookingConfig]> = [
+    ["simple", booking(CLINIC_B)],
+    ["capacity", booking(CLINIC_B, { bookingMode: "capacity", maxSimultaneous: 99 })],
+    [
+      "specific_resource",
+      booking(CLINIC_B, { bookingMode: "specific_resource", resourceRequired: true }),
+    ],
+  ];
+
+  for (const [mode, config] of foreignConfigs) {
+    assert.throws(
+      () => bookableCapacity(CLINIC_A, config, [resource(CLINIC_A)]),
+      /TENANT_SCOPE_DENIED:booking\.capacity/,
+      `${mode} mode must refuse a foreign booking config`
+    );
+  }
+});
+
+test("a booking config from a matching clinic under another organization is refused", () => {
+  assert.throws(
+    () =>
+      bookableCapacity(
+        CLINIC_A,
+        booking(CLINIC_A_OTHER_ORG, { bookingMode: "capacity", maxSimultaneous: 99 }),
+        []
+      ),
+    /TENANT_SCOPE_DENIED/
+  );
+});
+
+test("a booking config with missing tenant identity is refused", () => {
+  const orphan = {
+    ...booking(CLINIC_A),
+    organizationId: "",
+    clinicId: "",
+  } as ClinicBookingConfig;
+
+  assert.throws(() => bookableCapacity(CLINIC_A, orphan, []), /TENANT_SCOPE_DENIED/);
+});
+
 test("booking configuration validates its own mode requirements", () => {
   assert.equal(validateBookingConfig(booking(CLINIC_A)).valid, true);
 
@@ -435,4 +532,27 @@ test("[sql contract] the canonical clinic lifecycle is the full six states", () 
     migration,
     /check \(status in \('draft','setup','ready','active','suspended','archived'\)\)/
   );
+});
+
+test("[sql contract] widening the lifecycle never promotes a legacy clinic to active", () => {
+  // The previous check allowed 'inactive'. Backfilling those rows to 'active'
+  // would put a deliberately switched-off clinic back into service.
+  assert.match(
+    migration,
+    /update relife\.clinics\s*set status = 'archived'\s*where status not in \('draft','setup','ready','active','suspended','archived'\)/
+  );
+  assert.doesNotMatch(migration, /set status = 'active'/);
+});
+
+test("[sql contract] the trusted server path is granted, browser roles are not", () => {
+  assert.match(migration, /grant usage on schema relife to service_role/);
+  assert.match(
+    migration,
+    /grant select, insert, update, delete on table relife\.%I to service_role/
+  );
+  assert.match(
+    migration,
+    /grant execute on function relife\.clinic_feature_enabled\(uuid, uuid, text, timestamptz\)\s*to service_role/
+  );
+  assert.doesNotMatch(migration, /grant [^;]*to (anon|authenticated)/i);
 });
