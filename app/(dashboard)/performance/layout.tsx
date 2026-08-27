@@ -1,8 +1,12 @@
 import Link from "next/link";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import "./performance-gamified.css";
 
-// Presentation-only wrapper: child routes keep their existing data and authorization logic.
-export default function PerformanceLayout({ children }: { children: React.ReactNode }) {
+export default async function PerformanceLayout({ children }: { children: React.ReactNode }) {
+  const { tenant } = await requireCurrentTenantAccessContext();
+  await requireTenantFeature(tenant, "optional.gamification");
+
   return (
     <div>
       <nav className="performance-gamified-nav mx-auto mb-3 flex w-full max-w-3xl gap-2 px-0" aria-label="Performance navigation">
