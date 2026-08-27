@@ -15,6 +15,14 @@ test("valid tenant configuration resolves", () => assert.equal(resolveClinicConf
 test("missing tenant identity rejects", () => assert.deepEqual(resolveClinicConfiguration({}, snapshot()), { ok: false, reason: "not_authorized", details: ["TENANT_SCOPE_REQUIRED"] }));
 test("partial tenant identity rejects", () => assert.equal(resolveClinicConfiguration({ organizationId: "org-a" }, snapshot()).ok, false));
 test("same clinic id under another organization cannot cross-match", () => assert.equal(resolveClinicConfiguration(A, snapshot(B)).ok, false));
+test("clinic A cannot use clinic B profile", () => {
+  const foreignProfile = { ...snapshot().profile!, ...B };
+  assert.deepEqual(resolveClinicConfiguration(A, snapshot(A, { profile: foreignProfile })), {
+    ok: false,
+    reason: "not_authorized",
+    details: ["CROSS_TENANT_CONFIGURATION_ROW"],
+  });
+});
 test("clinic A cannot use clinic B operating hours", () => assert.equal(resolveClinicConfiguration(A, snapshot(A, { operatingHours: hours(B) })).ok, false));
 test("missing required profile is not configured", () => assert.equal(resolveClinicConfiguration(A, snapshot(A, { profile: null })).ok, false));
 test("missing optional profile values are valid", () => assert.equal(resolveClinicConfiguration(A, snapshot(A, { profile: { ...snapshot().profile!, address: "", phone: "", email: "", logoUrl: "" } })).ok, true));
