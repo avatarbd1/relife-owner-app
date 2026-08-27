@@ -33,17 +33,35 @@ export async function PUT(request: NextRequest) {
     const context = await requireCurrentTenantAccessContext(); authorize(context);
     const body = await request.json() as { rooms?: Omit<ClinicRoomConfiguration, "organizationId" | "clinicId">[]; resources?: Omit<ClinicResource, "organizationId" | "clinicId">[]; bulk?: BulkRoomResourceInput; booking?: Omit<ClinicBookingConfig, "organizationId" | "clinicId"> };
     const generated = body.bulk ? createBulkFacilityPlan(context.tenant, body.bulk) : null;
-    const rooms = generated?.rooms || body.rooms;
-    const resources = generated?.resources || body.resources;
-    if (!Array.isArray(rooms) || !Array.isArray(resources) || !body.booking) throw new Error("FACILITY_CONFIGURATION_REQUIRED");
-    const codes = new Set(rooms.map((row) => row.roomCode.trim()));
-    if (codes.has("") || codes.size !== rooms.length || rooms.some((row) => !row.displayName.trim())) throw new Error("INVALID_ROOMS");
-    const resourceCodes = new Set(resources.map((row) => row.resourceCode.trim()));
+    const requestedRooms = generated?.rooms || body.rooms;
+    const requestedResources = generated?.resources || body.resources;
+    if (!Array.isArray(requestedRooms) || !Array.isArray(requestedResources) || !body.booking) throw new Error("FACILITY_CONFIGURATION_REQUIRED");
+
+    const requestedRoomCodes = new Set(requestedRooms.map((row) => row.roomCode.trim()));
+    if (requestedRoomCodes.has("") || requestedRoomCodes.size !== requestedRooms.length || requestedRooms.some((row) => !row.displayName.trim())) throw new Error("INVALID_ROOMS");
+    const requestedResourceCodes = new Set(requestedResources.map((row) => row.resourceCode.trim()));
     const resourceTypes = new Set(["BED", "DENTAL_CHAIR", "TREATMENT_TABLE", "CABIN", "ROOM", "MACHINE", "OTHER"]);
-    if (resourceCodes.has("") || resourceCodes.size !== resources.length || resources.some((row) => !row.displayName.trim() || !resourceTypes.has(row.resourceType) || !Number.isInteger(row.capacity) || row.capacity <= 0 || (row.roomCode !== null && !codes.has(row.roomCode)))) throw new Error("INVALID_RESOURCES");
+    if (requestedResourceCodes.has("") || requestedResourceCodes.size !== requestedResources.length || requestedResources.some((row) => !row.displayName.trim() || !resourceTypes.has(row.resourceType) || !Number.isInteger(row.capacity) || row.capacity <= 0 || (row.roomCode !== null && !requestedRoomCodes.has(row.roomCode)))) throw new Error("INVALID_RESOURCES");
+
     const booking = { ...body.booking, organizationId: context.tenant.organizationId, clinicId: context.tenant.clinicId };
     if (!validateBookingConfig(booking).valid) throw new Error("INVALID_BOOKING_CONFIGURATION");
-    await writeFacilityConfiguration(context.tenant, { rooms, resources, booking: body.booking });
+
+    // Facility PUT is replacement semantics without destructive deletes. Rows omitted by
+    // the new configuration are explicitly deactivated so shrinking 6 rooms to 2 (or
+    // switching to a room-less clinic) cannot leave old resources active at runtime.
+    const existing = await readClinicConfiguration(context.tenant);
+    const staleRooms = existing.rooms
+      .filter((row) => !requestedRoomCodes.has(row.roomCode))
+      .map(({ organizationId: _organizationId, clinicId: _clinicId, ...row }) => ({ ...row, isActive: false }));
+    const staleResources = existing.resources
+      .filter((row) => !requestedResourceCodes.has(row.resourceCode))
+      .map(({ organizationId: _organizationId, clinicId: _clinicId, ...row }) => ({ ...row, isActive: false, isBookable: false }));
+
+    await writeFacilityConfiguration(context.tenant, {
+      rooms: [...requestedRooms, ...staleRooms],
+      resources: [...requestedResources, ...staleResources],
+      booking: body.booking,
+    });
     const configuration = await readClinicConfiguration(context.tenant);
     return NextResponse.json({ ok: true, facility: { rooms: configuration.rooms, resources: configuration.resources, booking: configuration.booking } });
   } catch (error) { return fail(error); }
