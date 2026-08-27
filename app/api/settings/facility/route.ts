@@ -52,10 +52,25 @@ export async function PUT(request: NextRequest) {
     const existing = await readClinicConfiguration(context.tenant);
     const staleRooms = existing.rooms
       .filter((row) => !requestedRoomCodes.has(row.roomCode))
-      .map(({ organizationId: _organizationId, clinicId: _clinicId, ...row }) => ({ ...row, isActive: false }));
+      .map((row) => ({
+        roomCode: row.roomCode,
+        displayName: row.displayName,
+        isActive: false,
+        sortOrder: row.sortOrder,
+      }));
     const staleResources = existing.resources
       .filter((row) => !requestedResourceCodes.has(row.resourceCode))
-      .map(({ organizationId: _organizationId, clinicId: _clinicId, ...row }) => ({ ...row, isActive: false, isBookable: false }));
+      .map((row) => ({
+        resourceCode: row.resourceCode,
+        displayName: row.displayName,
+        resourceType: row.resourceType,
+        roomCode: row.roomCode,
+        capacity: row.capacity,
+        genderRestriction: row.genderRestriction,
+        isBookable: false,
+        isRuntimeOnly: row.isRuntimeOnly,
+        isActive: false,
+      }));
 
     await writeFacilityConfiguration(context.tenant, {
       rooms: [...requestedRooms, ...staleRooms],
