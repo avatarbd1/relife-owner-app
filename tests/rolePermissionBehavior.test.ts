@@ -7,7 +7,7 @@ import {
   type AccessContext,
   type WebAction,
   type WebRole,
-} from "@/lib/webos/access";
+} from "../lib/webos/access.ts";
 
 function context(overrides: Partial<AccessContext> = {}): AccessContext {
   return {
