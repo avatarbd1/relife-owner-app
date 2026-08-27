@@ -23,7 +23,7 @@ export async function GET() {
     const context = await requireCurrentTenantAccessContext();
     validateTenantScope(context.access, context.tenant, "facility.read");
     const { rooms, resources, booking } = await readClinicConfiguration(context.tenant);
-    return NextResponse.json({ ok: true, facility: { rooms, resources, booking } });
+    return NextResponse.json({ ok: true, facility: { rooms: rooms || [], resources: resources || [], booking } });
   } catch (error) { return fail(error); }
 }
 
@@ -79,6 +79,6 @@ export async function PUT(request: NextRequest) {
       booking: requestedBooking,
     });
     const configuration = await readClinicConfiguration(context.tenant);
-    return NextResponse.json({ ok: true, facility: { rooms: configuration.rooms, resources: configuration.resources, booking: configuration.booking } });
+    return NextResponse.json({ ok: true, facility: { rooms: configuration.rooms || [], resources: configuration.resources || [], booking: configuration.booking } });
   } catch (error) { return fail(error); }
 }
