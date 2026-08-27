@@ -441,9 +441,16 @@ begin
   foreach t in array config_tables loop
     execute format('alter table relife.%I enable row level security', t);
     execute format('revoke all on table relife.%I from anon, authenticated', t);
+    -- Postgres has no `create policy if not exists`, so the drop makes this
+    -- block re-runnable. Re-running a migration is the natural recovery after a
+    -- partial failure, and without this the retry aborts on the first policy.
+    execute format('drop policy if exists %I on relife.%I', t || '_deny_anon', t);
     execute format(
       'create policy %I on relife.%I for all to anon using (false) with check (false)',
       t || '_deny_anon', t
+    );
+    execute format(
+      'drop policy if exists %I on relife.%I', t || '_deny_authenticated', t
     );
     execute format(
       'create policy %I on relife.%I for all to authenticated using (false) with check (false)',

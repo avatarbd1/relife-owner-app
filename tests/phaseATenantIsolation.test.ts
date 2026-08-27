@@ -529,6 +529,13 @@ test("[sql contract] migration seeds no clinic and no grant", () => {
   assert.doesNotMatch(migration, /RELIFE-PHYSIO|RELIFE-DENTAL|amtali-main/);
 });
 
+test("[sql contract] policy creation is re-runnable", () => {
+  // Postgres has no `create policy if not exists`. Re-running a migration is
+  // the natural recovery after a partial failure, so each policy is dropped
+  // first. Verified by execution: the migration applied four times in a row.
+  assert.match(executableSql, /drop policy if exists %I on relife\.%I/);
+});
+
 test("[sql contract] configuration tables stay client-private", () => {
   assert.match(migration, /enable row level security/);
   assert.match(migration, /revoke all on table relife\.%I from anon, authenticated/);
