@@ -5,8 +5,9 @@ import KeyboardShortcutsLayer from "@/components/KeyboardShortcutsLayer";
 import ProfileMenu from "@/components/ProfileMenu";
 import ClinicSwitcher from "@/components/ClinicSwitcher";
 import { IS_LIVE_DATA } from "@/lib/data";
+import { hasTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { actionsForRoles, type WebRole } from "@/lib/webos/access";
-import { requireCurrentAccessContext, requireCurrentTenantContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function displayRole(role: WebRole): string {
   return role === "Dental_Assistant" ? "Dental Assistant" : role;
@@ -17,15 +18,20 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const context = await requireCurrentAccessContext();
+  const current = await requireCurrentTenantAccessContext();
+  const context = current.access;
+  const tenant = current.tenant;
   const roleLabel = context.roles.map(displayRole).join(" · ");
   const actions = actionsForRoles(context.roles);
   const hasPhysioAccess =
     context.departmentAccess.includes("Physio") ||
     context.departmentAccess.includes("All");
-  const canChamber = hasPhysioAccess && actions.includes("chamber.read");
+  const liveChamberEnabled = hasPhysioAccess
+    ? await hasTenantFeature(tenant, "optional.live_chamber")
+    : false;
+  const canChamber =
+    liveChamberEnabled && hasPhysioAccess && actions.includes("chamber.read");
   const isOwner = context.roles.includes("Owner");
-  const tenant = isOwner ? await requireCurrentTenantContext() : null;
 
   return (
     <div className="flex min-h-dvh w-full flex-col bg-slate-50">
@@ -43,10 +49,10 @@ export default async function DashboardLayout({
           <div className="flex shrink-0 items-center gap-2">
             {isOwner ? (
               <ClinicSwitcher current={{
-                organizationId: tenant!.organizationId,
-                organizationName: tenant!.organizationName,
-                clinicId: tenant!.clinicId,
-                clinicName: tenant!.clinicName,
+                organizationId: tenant.organizationId,
+                organizationName: tenant.organizationName,
+                clinicId: tenant.clinicId,
+                clinicName: tenant.clinicName,
               }} />
             ) : null}
             {!IS_LIVE_DATA && (
@@ -78,6 +84,7 @@ export default async function DashboardLayout({
         roles={context.roles}
         actions={actions}
         hasPhysioAccess={hasPhysioAccess}
+        liveChamberEnabled={liveChamberEnabled}
       />
     </div>
   );
