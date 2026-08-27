@@ -13,8 +13,9 @@ export default async function MorePage() {
 
   const canReports = enabled("core.reports") &&
     (actions.has("report.read_operational") || actions.has("report.read_financial"));
-  const canPerformance = enabled("optional.gamification") && actions.has("performance.read_self");
-  const canWeeklyFinalization = actions.has("performance.weekly.finalize");
+  const gamificationEnabled = enabled("optional.gamification");
+  const canPerformance = gamificationEnabled && actions.has("performance.read_self");
+  const canWeeklyFinalization = gamificationEnabled && actions.has("performance.weekly.finalize");
   const canAudit = enabled("optional.audit_viewer") && (
     canPerform(context, "audit.read", "Physio") ||
     canPerform(context, "audit.read", "Dental")
