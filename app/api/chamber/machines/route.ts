@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
@@ -10,7 +11,7 @@ import {
 } from "@/lib/webos/machineRuntime";
 
 function statusFor(message: string): number {
-  if (message === "ACCESS_DENIED") return 403;
+  if (message === "ACCESS_DENIED" || message.startsWith("FEATURE_ACCESS_DENIED:")) return 403;
   if (["CHAMBER_SESSION_NOT_FOUND", "RESOURCE_NOT_FOUND"].includes(message)) return 404;
   if (
     message.startsWith("RESOURCE_BUSY:") ||
@@ -23,11 +24,11 @@ function statusFor(message: string): number {
 
 export async function GET() {
   try {
-    // T2-02: Require full tenant-aware context for chamber operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.machines.read");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const snapshot = await getMachineOperationSnapshot(access);
     return NextResponse.json({ ok: true, snapshot });
   } catch (error) {
@@ -43,11 +44,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    // T2-02: Require full tenant-aware context for chamber operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.machines.run");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
