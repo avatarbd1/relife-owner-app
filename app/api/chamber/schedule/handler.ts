@@ -4,6 +4,7 @@ import {
   validateCapacityBooking,
   type CapacityBookingInput,
 } from "@/lib/domain/appointments/capacityBooking";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
@@ -14,7 +15,7 @@ function errorResponse(error: unknown): NextResponse {
     error instanceof Error ? error.message : "CHAMBER_SCHEDULE_FAILED";
   const validation = (error as Error & { validation?: unknown })?.validation;
 
-  if (message === "ACCESS_DENIED") {
+  if (message === "ACCESS_DENIED" || message.startsWith("FEATURE_ACCESS_DENIED:")) {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
   if (message === "PATIENT_NOT_FOUND") {
@@ -55,6 +56,7 @@ function parseInput(body: Record<string, unknown>): CapacityBookingInput {
 /**
  * Compatibility HTTP boundary for old Chamber booking clients.
  *
+ * This remains part of core appointment booking, not Premium Live Chamber.
  * Physio booking owns only booking intent and automatic gender/capacity safety.
  * requestedBedId, modalities and machine timing from legacy clients are
  * intentionally ignored: general beds and machines are allocated at live
@@ -71,6 +73,7 @@ export async function chamberSchedulePost(request: NextRequest) {
   try {
     const tenantContext = await requireCurrentTenantAccessContext();
     assertCanPerform(tenantContext.access, "appointment.create", "Physio");
+    await requireTenantFeature(tenantContext.tenant, "core.appointments");
 
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
@@ -96,7 +99,7 @@ export async function chamberSchedulePost(request: NextRequest) {
 
     if (action === "create") {
       const result = await withMutationLock(
-        `capacity-booking:${input.date}`,
+        `capacity-booking:${tenantContext.tenant.organizationId}:${tenantContext.tenant.clinicId}:${input.date}`,
         () => createCapacityBooking(
           tenantContext.access,
           tenantContext.tenant.organizationId,
