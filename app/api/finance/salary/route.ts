@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateTenantScope(access, tenant, "salary.pay");
+    // Salary/advance is an Advanced Finance capability and keeps its own
+    // narrower salary entitlement as an additive dependency.
+    await requireTenantFeature(tenant, "optional.finance_advanced");
     await requireTenantFeature(tenant, "optional.salary");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
