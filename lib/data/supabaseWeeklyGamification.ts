@@ -1,6 +1,7 @@
 import "server-only";
 
-import { RELIFE_SUPABASE_SCOPE } from "@/lib/config/relifeSystem";
+import { createClient } from "@supabase/supabase-js";
+import { requireTenantScope } from "@/lib/domain/tenancy/policy";
 
 export interface WeeklyPerformanceFinalizedRow {
   id: string;
@@ -72,18 +73,11 @@ const DEFAULT_WEEKLY_FINALIZER_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-weekly-gamification-finalizer";
 
 function endpoint(): string {
-  return (
-    process.env.RELIFE_SUPABASE_WEEKLY_GAMIFICATION_URL ||
-    DEFAULT_WEEKLY_FINALIZER_URL
-  ).trim();
+  return (process.env.RELIFE_SUPABASE_WEEKLY_GAMIFICATION_URL || DEFAULT_WEEKLY_FINALIZER_URL).trim();
 }
 
 function edgeSecret(): string {
-  return (
-    process.env.RELIFE_GAMIFICATION_EDGE_SECRET ||
-    process.env.RELIFE_EDGE_SECRET ||
-    ""
-  ).trim();
+  return (process.env.RELIFE_GAMIFICATION_EDGE_SECRET || process.env.RELIFE_EDGE_SECRET || "").trim();
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -102,31 +96,42 @@ function nullableString(value: unknown): string | null {
   return text || null;
 }
 
+async function resolveTenantSlugs(organizationId: string, clinicId: string): Promise<{ organizationSlug: string; clinicSlug: string }> {
+  const tenant = requireTenantScope({ organizationId, clinicId });
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!url || !key) throw new Error("GAMIFICATION_TENANT_STORE_UNAVAILABLE");
+  const relife = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }).schema("relife");
+  const [organization, clinic] = await Promise.all([
+    relife.from("organizations").select("slug,status").eq("id", tenant.organizationId).maybeSingle(),
+    relife.from("clinics").select("slug,status,organization_id").eq("organization_id", tenant.organizationId).eq("id", tenant.clinicId).maybeSingle(),
+  ]);
+  if (organization.error || clinic.error) throw new Error("GAMIFICATION_TENANT_RESOLUTION_FAILED");
+  const organizationSlug = String(organization.data?.slug || "").trim();
+  const clinicSlug = String(clinic.data?.slug || "").trim();
+  if (!organizationSlug || !clinicSlug || String(organization.data?.status || "").toLowerCase() !== "active" || String(clinic.data?.status || "").toLowerCase() !== "active") {
+    throw new Error("GAMIFICATION_TENANT_NOT_ACTIVE");
+  }
+  return { organizationSlug, clinicSlug };
+}
+
 async function callWeekly<T>(
   action: string,
-  payload: Record<string, unknown> = {},
-  organizationId?: string,
-  clinicId?: string,
+  payload: Record<string, unknown>,
+  organizationId: string,
+  clinicId: string,
   timeoutMs = 8_000
 ): Promise<T> {
   const secret = edgeSecret();
   if (!secret) throw new Error("GAMIFICATION_EDGE_SECRET_MISSING");
-
+  const tenant = await resolveTenantSlugs(organizationId, clinicId);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(endpoint(), {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-relife-server-key": secret,
-      },
-      body: JSON.stringify({
-        action,
-        organizationId: organizationId || RELIFE_SUPABASE_SCOPE.organizationSlug,
-        clinicId: clinicId || RELIFE_SUPABASE_SCOPE.clinicSlug,
-        ...payload,
-      }),
+      headers: { "content-type": "application/json", "x-relife-server-key": secret },
+      body: JSON.stringify({ action, organizationSlug: tenant.organizationSlug, clinicSlug: tenant.clinicSlug, ...payload }),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -161,9 +166,7 @@ function parseFinalization(value: unknown): WeeklyGamificationFinalization | nul
           normalizedScore: nullableNumber(item.normalizedScore),
           provisionalScore: nullableNumber(item.provisionalScore),
           scoreCoveredWeight: Number(item.scoreCoveredWeight || 0),
-          missingScoreMetrics: Array.isArray(item.missingScoreMetrics)
-            ? item.missingScoreMetrics.map((entry) => String(entry || "").trim()).filter(Boolean)
-            : [],
+          missingScoreMetrics: Array.isArray(item.missingScoreMetrics) ? item.missingScoreMetrics.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
           rank: nullableNumber(item.rank),
           rewardCreditsEarned: Number(item.rewardCreditsEarned || 0),
           eligibilityReason: String(item.eligibilityReason || "").trim(),
@@ -190,69 +193,28 @@ function parseFinalization(value: unknown): WeeklyGamificationFinalization | nul
   };
 }
 
-export async function getWeeklyGamificationFinalization(
-  organizationId: string,
-  clinicId: string,
-  weekStart?: string
-): Promise<WeeklyGamificationFinalization | null> {
-  if (!organizationId.trim() || !clinicId.trim()) throw new Error("ACCESS_DENIED");
-  const result = await callWeekly<Record<string, unknown>>(
-    "status",
-    weekStart ? { weekStart } : {},
-    organizationId,
-    clinicId,
-    5_000
-  );
+export async function getWeeklyGamificationFinalization(organizationId: string, clinicId: string, weekStart?: string): Promise<WeeklyGamificationFinalization | null> {
+  const result = await callWeekly<Record<string, unknown>>("status", weekStart ? { weekStart } : {}, organizationId, clinicId, 5_000);
   return parseFinalization(result.finalization);
 }
 
-export async function finalizeWeeklyGamification(input: {
-  actorId: string;
-  actorRoles: string[];
-  organizationId: string;
-  clinicId: string;
-  weekStart?: string;
-}): Promise<WeeklyGamificationFinalizeResult> {
-  if (!input.organizationId.trim() || !input.clinicId.trim()) throw new Error("ACCESS_DENIED");
+export async function finalizeWeeklyGamification(input: { actorId: string; actorRoles: string[]; organizationId: string; clinicId: string; weekStart?: string }): Promise<WeeklyGamificationFinalizeResult> {
   const action = input.weekStart ? "finalize_week" : "finalize_previous_week";
   const result = await callWeekly<Record<string, unknown>>(
     action,
-    {
-      trigger: "owner_manual",
-      actorId: input.actorId,
-      actorRoles: input.actorRoles,
-      ...(input.weekStart ? { weekStart: input.weekStart } : {}),
-    },
+    { trigger: "owner_manual", actorId: input.actorId, actorRoles: input.actorRoles, ...(input.weekStart ? { weekStart: input.weekStart } : {}) },
     input.organizationId,
     input.clinicId
   );
   const finalizationId = String(result.finalizationId || "").trim();
   const weekStart = String(result.weekStart || "").trim();
   const weekEnd = String(result.weekEnd || "").trim();
-  if (!finalizationId || !weekStart || !weekEnd) {
-    throw new Error("WEEKLY_FINALIZATION_RESPONSE_INVALID");
-  }
-  return {
-    alreadyFinalized: result.alreadyFinalized === true,
-    finalizationId,
-    weekStart,
-    weekEnd,
-    resultSummary: objectValue(result.resultSummary),
-  };
+  if (!finalizationId || !weekStart || !weekEnd) throw new Error("WEEKLY_FINALIZATION_RESPONSE_INVALID");
+  return { alreadyFinalized: result.alreadyFinalized === true, finalizationId, weekStart, weekEnd, resultSummary: objectValue(result.resultSummary) };
 }
 
-export async function getMonthlyGamificationFinalization(
-  organizationId: string,
-  clinicId: string,
-  month?: string
-): Promise<MonthlyGamificationFinalization | null> {
-  const result = await callWeekly<Record<string, unknown>>(
-    "monthly_status",
-    month ? { month } : {},
-    organizationId,
-    clinicId,
-    5_000
-  );
+export async function getMonthlyGamificationFinalization(organizationId: string, clinicId: string, month?: string): Promise<MonthlyGamificationFinalization | null> {
+  const result = await callWeekly<Record<string, unknown>>("monthly_status", month ? { month } : {}, organizationId, clinicId, 5_000);
   const finalization = objectValue(result.finalization);
   const finalizationId = String(finalization.finalizationId || "").trim();
   if (!finalizationId) return null;
@@ -269,22 +231,10 @@ export async function getMonthlyGamificationFinalization(
   };
 }
 
-export async function finalizeMonthlyGamification(input: {
-  actorId: string;
-  actorRoles: string[];
-  organizationId: string;
-  clinicId: string;
-  month: string;
-  rosterSnapshot: MonthlyRosterOpportunitySnapshot[];
-}): Promise<MonthlyGamificationFinalizeResult> {
+export async function finalizeMonthlyGamification(input: { actorId: string; actorRoles: string[]; organizationId: string; clinicId: string; month: string; rosterSnapshot: MonthlyRosterOpportunitySnapshot[] }): Promise<MonthlyGamificationFinalizeResult> {
   const result = await callWeekly<Record<string, unknown>>("finalize_month", input, input.organizationId, input.clinicId, 10_000);
   const finalizationId = String(result.finalizationId || "").trim();
   const month = String(result.month || "").trim();
   if (!finalizationId || !month) throw new Error("MONTHLY_FINALIZATION_RESPONSE_INVALID");
-  return {
-    alreadyFinalized: result.alreadyFinalized === true,
-    finalizationId,
-    month,
-    resultSummary: objectValue(result.resultSummary),
-  };
+  return { alreadyFinalized: result.alreadyFinalized === true, finalizationId, month, resultSummary: objectValue(result.resultSummary) };
 }
