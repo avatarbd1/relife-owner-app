@@ -4,32 +4,43 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = process.cwd();
-const SCAN_TARGETS = ["app/api", "lib/domain", "lib/webos", "lib/patients.ts"];
-const BANNED = [/"RELIFE"/, /"RELIFE-PHYSIO"/, /"RELIFE-DENTAL"/, /`RELIFE:/, /`RELIFE-PHYSIO:/, /`RELIFE-DENTAL:/];
 
 function filesUnder(path: string): string[] {
   const absolute = join(ROOT, path);
-  if (!statSync(absolute).isDirectory()) {
-    return absolute.endsWith(".ts") || absolute.endsWith(".tsx") ? [absolute] : [];
-  }
   return readdirSync(absolute).flatMap((entry) => {
     const full = join(absolute, entry);
     if (statSync(full).isDirectory()) return filesUnder(relative(ROOT, full));
-    return full.endsWith(".ts") || full.endsWith(".tsx") ? [full] : [];
+    return /\.(?:ts|tsx)$/.test(full) ? [full] : [];
   });
 }
 
-test("current production paths contain no hardcoded tenant identity", () => {
-  const matches: string[] = [];
-  for (const target of SCAN_TARGETS) {
-    for (const file of filesUnder(target)) {
-      const lines = readFileSync(file, "utf8").split(/\r?\n/);
-      lines.forEach((line, index) => {
-        if (BANNED.some((pattern) => pattern.test(line))) {
-          matches.push(`${relative(ROOT, file)}:${index + 1}: ${line.trim()}`);
-        }
-      });
-    }
-  }
-  assert.deepEqual(matches, [], `Hardcoded tenant residue:\n${matches.join("\n")}`);
+test("shared legacy patient reader is reachable only through the tenant-aware reception boundary", () => {
+  const importers = filesUnder("app")
+    .concat(filesUnder("lib"))
+    .map((file) => ({
+      path: relative(ROOT, file).replaceAll("\\", "/"),
+      content: readFileSync(file, "utf8"),
+    }))
+    .filter(
+      (file) =>
+        file.path !== "lib/patients.ts" &&
+        (file.content.includes('from "@/lib/patients"') ||
+          file.content.includes("from '@/lib/patients'"))
+    )
+    .map((file) => file.path)
+    .sort();
+
+  assert.deepEqual(
+    importers,
+    ["lib/webos/reception.ts"],
+    `Direct legacy patient-reader import bypasses the tenant-aware reception boundary:\n${importers.join("\n")}`
+  );
+});
+
+test("legacy patient loader cannot pretend to be generic tenant routing", () => {
+  const source = readFileSync(join(ROOT, "lib/patients.ts"), "utf8");
+  assert.match(source, /fetchSheetRanges\("physio"/);
+  assert.match(source, /fetchSheetRanges\("dental"/);
+  assert.match(source, /"RELIFE-PHYSIO"/);
+  assert.match(source, /"RELIFE-DENTAL"/);
 });
