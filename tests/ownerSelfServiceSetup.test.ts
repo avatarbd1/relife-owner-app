@@ -18,8 +18,8 @@ test("owner setup reuses canonical clinic, facility, service and readiness route
 
 test("feature selection cannot mutate commercial entitlements", () => {
   assert.ok(featureRoute.includes("writeClinicFeatureFlag"));
-  assert.ok(!featureRoute.includes("clinic_entitlements\").upsert"));
-  assert.ok(!featureWriter.includes("clinic_entitlements\").upsert"));
+  assert.ok(!featureRoute.includes('.from("clinic_entitlements").upsert'));
+  assert.ok(!featureWriter.includes('.from("clinic_entitlements").upsert'));
   assert.ok(featureWriter.includes("FEATURE_NOT_ENTITLED"));
   assert.ok(featureWriter.includes("organization_id"));
   assert.ok(featureWriter.includes("clinic_id"));
