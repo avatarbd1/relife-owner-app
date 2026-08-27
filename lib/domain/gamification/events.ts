@@ -5,6 +5,8 @@ import {
   gamificationSupabaseConfigured,
   recordVerifiedGamificationEvent,
 } from "@/lib/data/supabaseGamification";
+import { hasTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import type { TenantScope } from "@/lib/domain/tenancy/policy";
 import type { AccessContext } from "@/lib/webos/access";
 import {
   getWebStaffDirectory,
@@ -20,7 +22,11 @@ type GamificationRoleContext =
   | "Dentist";
 type ActorEventPurpose = "reception" | "attendance";
 
-export interface AppointmentCompletionGamificationInput {
+type TenantBoundGamificationInput = {
+  tenant: TenantScope;
+};
+
+export interface AppointmentCompletionGamificationInput extends TenantBoundGamificationInput {
   appointmentId: string;
   patientId: string;
   department: ClinicDepartment;
@@ -32,7 +38,7 @@ export interface AppointmentCompletionGamificationInput {
   previousStatus: string;
 }
 
-export interface TreatmentDocumentationGamificationInput {
+export interface TreatmentDocumentationGamificationInput extends TenantBoundGamificationInput {
   treatmentId: string;
   patientId: string;
   department: ClinicDepartment;
@@ -42,7 +48,7 @@ export interface TreatmentDocumentationGamificationInput {
   sourceType: "clinical_session" | "chamber_completion";
 }
 
-export interface CashReconciliationGamificationInput {
+export interface CashReconciliationGamificationInput extends TenantBoundGamificationInput {
   movementId: string;
   department: ClinicDepartment;
   staffReference: string;
@@ -51,7 +57,7 @@ export interface CashReconciliationGamificationInput {
   actorContext: AccessContext;
 }
 
-export interface ActorWorkGamificationInput {
+export interface ActorWorkGamificationInput extends TenantBoundGamificationInput {
   context: AccessContext;
   department: ClinicDepartment;
   purpose: ActorEventPurpose;
@@ -75,6 +81,7 @@ export interface GamificationEventOutcome {
     | "recorded"
     | "duplicate"
     | "not_configured"
+    | "feature_disabled"
     | "clinician_unresolved"
     | "staff_unresolved"
     | "actor_role_unresolved"
@@ -204,6 +211,32 @@ export async function resolveAppointmentClinician(
   return byName.length === 1 ? byName[0] : null;
 }
 
+async function gamificationFeatureEnabled(tenant: TenantScope): Promise<boolean> {
+  if (!gamificationSupabaseConfigured()) return false;
+  try {
+    return await hasTenantFeature(tenant, "optional.gamification");
+  } catch (error) {
+    console.error("Gamification feature decision unavailable", { tenant, error });
+    return false;
+  }
+}
+
+function unavailableOutcome(
+  staffId: string | null,
+  reason: "not_configured" | "feature_disabled"
+): GamificationEventOutcome {
+  return { recorded: false, duplicate: false, eventId: null, staffId, reason };
+}
+
+async function projectionAvailable(
+  tenant: TenantScope,
+  staffId: string | null
+): Promise<GamificationEventOutcome | null> {
+  if (!gamificationSupabaseConfigured()) return unavailableOutcome(staffId, "not_configured");
+  if (!(await gamificationFeatureEnabled(tenant))) return unavailableOutcome(staffId, "feature_disabled");
+  return null;
+}
+
 /**
  * Post-commit projection for canonical work performed by the current actor.
  * XP is never supplied by this app helper; the Edge Function calculates it
@@ -212,15 +245,8 @@ export async function resolveAppointmentClinician(
 export async function recordActorWorkGamification(
   input: ActorWorkGamificationInput
 ): Promise<GamificationEventOutcome> {
-  if (!gamificationSupabaseConfigured()) {
-    return {
-      recorded: false,
-      duplicate: false,
-      eventId: null,
-      staffId: input.context.staffId,
-      reason: "not_configured",
-    };
-  }
+  const unavailable = await projectionAvailable(input.tenant, input.context.staffId);
+  if (unavailable) return unavailable;
 
   const roleContext = actorGamificationRole(input.context, input.purpose);
   if (!roleContext) {
@@ -234,7 +260,7 @@ export async function recordActorWorkGamification(
   }
 
   try {
-    const result = await recordVerifiedGamificationEvent({
+    const result = await recordVerifiedGamificationEvent(input.tenant, {
       requestId: `gam-${randomUUID()}`,
       staffId: input.context.staffId,
       department: input.department,
@@ -276,22 +302,12 @@ export async function recordActorWorkGamification(
   }
 }
 
-/**
- * Project a canonical human-verified treatment note to the immutable scoring
- * event stream. The clinical note stays authoritative; projection is fail-soft.
- */
+/** Project a canonical human-verified treatment note to the scoring stream. */
 export async function recordTreatmentDocumentationGamification(
   input: TreatmentDocumentationGamificationInput
 ): Promise<GamificationEventOutcome> {
-  if (!gamificationSupabaseConfigured()) {
-    return {
-      recorded: false,
-      duplicate: false,
-      eventId: null,
-      staffId: null,
-      reason: "not_configured",
-    };
-  }
+  const unavailable = await projectionAvailable(input.tenant, null);
+  if (unavailable) return unavailable;
 
   let clinician: WebStaffIdentity | null = null;
   try {
@@ -309,7 +325,7 @@ export async function recordTreatmentDocumentationGamification(
       };
     }
 
-    const result = await recordVerifiedGamificationEvent({
+    const result = await recordVerifiedGamificationEvent(input.tenant, {
       requestId: `gam-${randomUUID()}`,
       staffId: clinician.staffId,
       department: input.department,
@@ -355,23 +371,12 @@ export async function recordTreatmentDocumentationGamification(
   }
 }
 
-/**
- * Project a human-confirmed cash handover result to Receptionist scoring. The
- * staff being measured is the cash originator (`Moved_By`), never the approver.
- * Monetary amounts are deliberately not copied into the Gamification payload.
- */
+/** Project a human-confirmed cash handover result to Receptionist scoring. */
 export async function recordCashReconciliationGamification(
   input: CashReconciliationGamificationInput
 ): Promise<GamificationEventOutcome> {
-  if (!gamificationSupabaseConfigured()) {
-    return {
-      recorded: false,
-      duplicate: false,
-      eventId: null,
-      staffId: null,
-      reason: "not_configured",
-    };
-  }
+  const unavailable = await projectionAvailable(input.tenant, null);
+  if (unavailable) return unavailable;
 
   let receptionist: WebStaffIdentity | null = null;
   try {
@@ -394,7 +399,7 @@ export async function recordCashReconciliationGamification(
     const eventType = exact
       ? "cash_reconciliation_exact"
       : "cash_reconciliation_mismatch";
-    const result = await recordVerifiedGamificationEvent({
+    const result = await recordVerifiedGamificationEvent(input.tenant, {
       requestId: `gam-${randomUUID()}`,
       staffId: receptionist.staffId,
       department: input.department,
@@ -442,23 +447,12 @@ export async function recordCashReconciliationGamification(
   }
 }
 
-/**
- * Post-commit gamification projection for a verified appointment completion.
- * The deterministic eventKey makes retries idempotent. Any projection failure
- * is contained here so a successful clinic mutation is never turned into a 500.
- */
+/** Post-commit projection for a verified appointment completion. */
 export async function recordAppointmentCompletionGamification(
   input: AppointmentCompletionGamificationInput
 ): Promise<GamificationEventOutcome> {
-  if (!gamificationSupabaseConfigured()) {
-    return {
-      recorded: false,
-      duplicate: false,
-      eventId: null,
-      staffId: null,
-      reason: "not_configured",
-    };
-  }
+  const unavailable = await projectionAvailable(input.tenant, null);
+  if (unavailable) return unavailable;
 
   let clinician: WebStaffIdentity | null = null;
   try {
@@ -476,7 +470,7 @@ export async function recordAppointmentCompletionGamification(
       };
     }
 
-    const result = await recordVerifiedGamificationEvent({
+    const result = await recordVerifiedGamificationEvent(input.tenant, {
       requestId: `gam-${randomUUID()}`,
       staffId: clinician.staffId,
       department: input.department,
