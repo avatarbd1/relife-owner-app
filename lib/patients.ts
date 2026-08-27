@@ -176,7 +176,7 @@ export async function getPatientFinancialPosition(
     return { billedServices: null, outstanding: null };
   }
   try {
-    const patients = patientsInScope(await loadPatients(), scope);
+    const patients = patientsInScope(await getPatients(), scope);
     const outstanding = Math.round(
       patients.reduce((sum, patient) => sum + patient.due, 0) * 100
     ) / 100;
