@@ -46,7 +46,7 @@ test("Patient registration serializes the full department create path and invali
 
 test("Patient update resolves authorized department then uses the canonical patient lock", () => {
   const route = source("app/api/patients/[patientId]/route.ts");
-  const resolve = route.indexOf("getPatientForContext(access, decodedPatientId)");
+  const resolve = route.indexOf("getPatientForContext(access, decodedPatientId, tenant.organizationId, tenant.clinicId)");
   const lock = route.indexOf("patient:${patient.department}:${decodedPatientId}");
   const update = route.indexOf("updatePatientProfile(access, tenant.organizationId, tenant.clinicId, decodedPatientId");
   const invalidate = route.indexOf("invalidatePatientsCache()");
@@ -61,7 +61,8 @@ test("Patient update resolves authorized department then uses the canonical pati
 test("Patient Hub exposes the canonical authorized workspace from one patient file", () => {
   const page = source("app/(dashboard)/patients/[patientId]/page.tsx");
 
-  assert.match(page, /getPatientForContext\(context, decodeURIComponent\(patientId\)\)/);
+  assert.match(page, /requireCurrentTenantAccessContext/);
+  assert.match(page, /getPatientForContext\(context, decodeURIComponent\(patientId\), tenant\.organizationId, tenant\.clinicId\)/);
   assert.match(page, /\{patient\.fullName\}/);
   assert.match(page, /\{patient\.patientId\}/);
   assert.match(page, /\{patient\.department\}/);

@@ -3,9 +3,10 @@ import ChamberAlertListener from "@/components/ChamberAlertListener";
 import InteractionLayer from "@/components/InteractionLayer";
 import KeyboardShortcutsLayer from "@/components/KeyboardShortcutsLayer";
 import ProfileMenu from "@/components/ProfileMenu";
+import ClinicSwitcher from "@/components/ClinicSwitcher";
 import { IS_LIVE_DATA } from "@/lib/data";
 import { actionsForRoles, type WebRole } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentAccessContext, requireCurrentTenantContext } from "@/lib/webos/currentUser";
 
 function displayRole(role: WebRole): string {
   return role === "Dental_Assistant" ? "Dental Assistant" : role;
@@ -24,6 +25,7 @@ export default async function DashboardLayout({
     context.departmentAccess.includes("All");
   const canChamber = hasPhysioAccess && actions.includes("chamber.read");
   const isOwner = context.roles.includes("Owner");
+  const tenant = isOwner ? await requireCurrentTenantContext() : null;
 
   return (
     <div className="flex min-h-dvh w-full flex-col bg-slate-50">
@@ -39,6 +41,14 @@ export default async function DashboardLayout({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            {isOwner ? (
+              <ClinicSwitcher current={{
+                organizationId: tenant!.organizationId,
+                organizationName: tenant!.organizationName,
+                clinicId: tenant!.clinicId,
+                clinicName: tenant!.clinicName,
+              }} />
+            ) : null}
             {!IS_LIVE_DATA && (
               <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-[9px] font-semibold text-amber-300 ring-1 ring-amber-300/10">
                 Sample

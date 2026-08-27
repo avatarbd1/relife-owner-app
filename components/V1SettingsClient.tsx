@@ -64,11 +64,13 @@ export default function V1SettingsClient({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [clinicConfiguration, setClinicConfiguration] = useState<null | {
-    profile: { clinicName: string; branchName: string; timezone: string; currency: string } | null;
+    profile: { clinicName: string; clinicType: string; branchName: string; address: string; phone: string; email: string; logoUrl: string; timezone: string; currency: string; locale: string } | null;
     operatingHours: Array<{ dayOfWeek: number; isOpen: boolean; opensAt: string | null; closesAt: string | null }>;
     services: Array<{ serviceCode: string; displayName: string; price: number; isActive: boolean }>;
   }>(null);
   const [configurationError, setConfigurationError] = useState("");
+  const [configurationBusy, setConfigurationBusy] = useState(false);
+  const [configurationMessage, setConfigurationMessage] = useState("");
 
   useEffect(() => {
     if (!isOwner) return;
@@ -83,6 +85,48 @@ export default function V1SettingsClient({
       .catch(() => active && setConfigurationError("Clinic configuration is unavailable; no default schedule or price was substituted."));
     return () => { active = false; };
   }, [isOwner]);
+
+  function updateClinicProfile(field: string, value: string) {
+    setClinicConfiguration((current) => current?.profile ? {
+      ...current,
+      profile: { ...current.profile, [field]: value },
+    } : current);
+  }
+
+  function updateHour(dayOfWeek: number, field: "isOpen" | "opensAt" | "closesAt", value: boolean | string) {
+    setClinicConfiguration((current) => current ? {
+      ...current,
+      operatingHours: current.operatingHours.map((day) => day.dayOfWeek === dayOfWeek ? {
+        ...day,
+        [field]: value,
+        ...(field === "isOpen" && value === false ? { opensAt: null, closesAt: null } : {}),
+        ...(field === "isOpen" && value === true && !day.opensAt ? { opensAt: "09:00", closesAt: "17:00" } : {}),
+      } : day),
+    } : current);
+  }
+
+  async function saveClinicConfiguration() {
+    if (!clinicConfiguration?.profile || configurationBusy) return;
+    setConfigurationBusy(true);
+    setConfigurationError("");
+    setConfigurationMessage("");
+    try {
+      const response = await fetch("/api/settings/clinic", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profile: clinicConfiguration.profile, operatingHours: clinicConfiguration.operatingHours }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(String(payload.error || "CONFIGURATION_WRITE_FAILED"));
+      setClinicConfiguration(payload.configuration);
+      setConfigurationMessage("Clinic configuration updated");
+      router.refresh();
+    } catch (saveError) {
+      setConfigurationError(saveError instanceof Error ? saveError.message : "Clinic configuration could not be saved.");
+    } finally {
+      setConfigurationBusy(false);
+    }
+  }
 
   const dirty = fullName.trim() !== initialProfile.fullName || phone.trim() !== initialProfile.phone;
 
@@ -176,11 +220,35 @@ export default function V1SettingsClient({
 
       {isOwner ? (
         <Card title="Clinic">
-          <div className="px-4 py-3">
-            <p className="text-sm font-semibold text-slate-900">{clinicConfiguration?.profile?.clinicName || "Clinic profile not configured"}</p>
-            <p className="mt-0.5 text-xs text-slate-500">{clinicConfiguration?.profile ? `${clinicConfiguration.profile.branchName || "Main branch"} · ${clinicConfiguration.profile.timezone} · ${clinicConfiguration.profile.currency}` : "Configuration fails closed until an authorized owner completes it."}</p>
-            {configurationError ? <p className="mt-1 text-[11px] text-red-600">{configurationError}</p> : null}
-          </div>
+          {clinicConfiguration?.profile ? (
+            <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
+              {([
+                ["clinicName", "Clinic name"], ["branchName", "Branch"], ["address", "Address"],
+                ["phone", "Clinic phone"], ["email", "Clinic email"], ["logoUrl", "Logo URL"],
+                ["timezone", "Timezone"], ["currency", "Currency"],
+              ] as const).map(([field, label]) => (
+                <label key={field} className={field === "address" || field === "logoUrl" ? "sm:col-span-2" : ""}>
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{label}</span>
+                  <input
+                    value={clinicConfiguration.profile?.[field] || ""}
+                    onChange={(event) => updateClinicProfile(field, event.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-slate-500"
+                    maxLength={field === "address" || field === "logoUrl" ? 500 : 160}
+                  />
+                </label>
+              ))}
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Clinic type</span>
+                <select value={clinicConfiguration.profile.clinicType} onChange={(event) => updateClinicProfile("clinicType", event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm">
+                  <option value="physiotherapy">Physiotherapy</option><option value="dental">Dental</option><option value="doctor_chamber">Doctor chamber</option><option value="other">Other</option>
+                </select>
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Locale</span>
+                <input value={clinicConfiguration.profile.locale} onChange={(event) => updateClinicProfile("locale", event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm" maxLength={20} />
+              </label>
+            </div>
+          ) : <p className="px-4 py-3 text-xs text-red-600">Clinic profile is not configured. No Relife defaults were substituted.</p>}
           <Row
             href="/security/staff-access"
             icon="staff"
@@ -194,7 +262,16 @@ export default function V1SettingsClient({
               </span>
               <div>
                 <p className="text-sm font-semibold text-slate-900">Working hours</p>
-                <p className="mt-0.5 text-xs leading-5 text-slate-500">{clinicConfiguration ? clinicConfiguration.operatingHours.map((day) => day.isOpen ? `${day.dayOfWeek}: ${day.opensAt?.slice(0,5)}–${day.closesAt?.slice(0,5)}` : `${day.dayOfWeek}: Closed`).join(" · ") || "Not configured" : "Loading tenant configuration…"}</p>
+                <div className="mt-2 space-y-2">
+                  {clinicConfiguration?.operatingHours.map((day) => (
+                    <div key={day.dayOfWeek} className="grid grid-cols-[3rem_4rem_1fr_1fr] items-center gap-2 text-xs">
+                      <span>Day {day.dayOfWeek}</span>
+                      <input type="checkbox" aria-label={`Day ${day.dayOfWeek} open`} checked={day.isOpen} onChange={(event) => updateHour(day.dayOfWeek, "isOpen", event.target.checked)} />
+                      <input type="time" aria-label={`Day ${day.dayOfWeek} opens`} disabled={!day.isOpen} value={day.opensAt?.slice(0, 5) || ""} onChange={(event) => updateHour(day.dayOfWeek, "opensAt", event.target.value)} className="h-9 rounded-lg border border-slate-200 px-2 disabled:bg-slate-50" />
+                      <input type="time" aria-label={`Day ${day.dayOfWeek} closes`} disabled={!day.isOpen} value={day.closesAt?.slice(0, 5) || ""} onChange={(event) => updateHour(day.dayOfWeek, "closesAt", event.target.value)} className="h-9 rounded-lg border border-slate-200 px-2 disabled:bg-slate-50" />
+                    </div>
+                  )) || <p>Loading tenant configuration…</p>}
+                </div>
                 <p className="text-[11px] leading-4 text-slate-400">Clinic timezone and the seven-day schedule are read from the canonical configuration.</p>
               </div>
             </div>
@@ -209,6 +286,13 @@ export default function V1SettingsClient({
                 <p className="mt-0.5 text-xs leading-5 text-slate-500">{clinicConfiguration ? clinicConfiguration.services.filter((service) => service.isActive).map((service) => `${service.displayName} · ${clinicConfiguration.profile?.currency || ""} ${service.price}`).join(" · ") || "No active services configured" : "Loading tenant services…"}</p>
               </div>
             </div>
+          </div>
+          <div className="border-t border-slate-100 p-4">
+            {configurationError ? <p className="mb-2 text-xs font-medium text-red-600">{configurationError}</p> : null}
+            {configurationMessage ? <p className="mb-2 text-xs font-medium text-emerald-700">{configurationMessage}</p> : null}
+            <button type="button" onClick={saveClinicConfiguration} disabled={!clinicConfiguration?.profile || configurationBusy} className="h-11 w-full rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-40">
+              {configurationBusy ? "Saving…" : "Save clinic configuration"}
+            </button>
           </div>
         </Card>
       ) : null}
