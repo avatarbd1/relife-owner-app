@@ -51,7 +51,7 @@ export async function PUT(request: NextRequest) {
     // the new configuration are explicitly deactivated so shrinking 6 rooms to 2 (or
     // switching to a room-less clinic) cannot leave old resources active at runtime.
     const existing = await readClinicConfiguration(context.tenant);
-    const staleRooms = existing.rooms
+    const staleRooms = (existing.rooms || [])
       .filter((row) => !requestedRoomCodes.has(row.roomCode))
       .map((row) => ({
         roomCode: row.roomCode,
@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest) {
         isActive: false,
         sortOrder: row.sortOrder,
       }));
-    const staleResources = existing.resources
+    const staleResources = (existing.resources || [])
       .filter((row) => !requestedResourceCodes.has(row.resourceCode))
       .map((row) => ({
         resourceCode: row.resourceCode,
