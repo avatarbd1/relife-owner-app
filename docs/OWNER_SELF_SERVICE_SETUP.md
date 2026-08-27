@@ -64,6 +64,17 @@ No browser route records privileged release evidence or calls the activation RPC
 - Final clinic activation remains a privileged readiness-gated platform operation; service-role credentials are never exposed to the browser.
 - Existing clinic, facility, service, staff, finance, import, and readiness canonical paths are reused rather than duplicated.
 
+## Non-production user-flow verification
+
+`tests/ownerSelfServiceUserFlow.test.ts` functionally executes the bounded handoff flow in the repository CI harness rather than relying only on source-text assertions. It verifies:
+
+- Clinic Owner can use the existing settings authority for Physio and Dental while `System Admin` does not gain patient or cash authority;
+- Dental patient import may omit phone, valid Physio data passes, and invalid Physio data is blocked before platform review;
+- a fully valid dataset produces an exact-tenant `READY_FOR_PLATFORM_IMPORT_REVIEW` receipt with no mutation authority for the Clinic Owner;
+- readiness produces `READY_FOR_PLATFORM_VERIFICATION` while browser readiness-evidence, entitlement, and activation authorities remain denied.
+
+This is non-production functional verification. It does not replace post-merge live smoke verification against the deployed Owner App and does not mutate a real clinic.
+
 ## Rollback
 
 Revert this UX/handoff slice. It adds no migration and changes no production schema. Handoff receipts are response metadata only and perform no writes. Existing tenant configuration rows written by a Clinic Owner through canonical settings APIs remain valid tenant data and do not require destructive rollback.
