@@ -8,6 +8,12 @@
 - Google Sheets remains the current operational source of truth during the App-primary migration.
 - Supabase remains available for distributed locking and finance shadow/audit. A future Supabase-primary database migration, if desired, is a separate controlled project.
 
+## Phase B — configuration core authority
+
+Phase B makes the Phase A Supabase configuration tables authoritative only for clinic profile/settings, weekly operating hours, feature/entitlement resolution, clinic service catalog/pricing, and this bounded readiness slice. Existing staff self-profile remains on the canonical Sheets staff writer; operational patient, appointment, clinical, finance and workforce authorities are unchanged. There is no second writer for a single user action.
+
+Canonical server access is `lib/data/clinicConfiguration.ts`; normalization and fail-closed decisions are in `lib/domain/tenancy/configurationCore.ts`. Reads and writes bind both `organization_id + clinic_id`; configuration management reuses `settings.manage`, and membership/permission denial remains separate from entitlement denial. No production migration or data write was performed by this PR.
+
 ## Current production-safety facts
 
 - `withMutationLock()` defaults to distributed lock mode (`required`) and uses the Supabase/Postgres lease-lock Edge Function when configured.

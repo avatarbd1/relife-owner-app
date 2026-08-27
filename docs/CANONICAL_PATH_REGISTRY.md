@@ -21,6 +21,7 @@ This registry is a discovery gate, not a replacement for source inspection. Sear
 | Verified XP events | canonical operational writer → `lib/domain/gamification/events.ts` → `lib/data/supabaseGamification.ts` → `relife-gamification-api` | existing source action + server Edge authentication | Supabase `performance_events` + append-only `xp_ledger`; exact issue #159 Staff_ID cohort |
 | Weekly score snapshots | `app/api/v1/gamification/weekly/finalize` → `lib/data/supabaseWeeklyGamification.ts` → `relife-weekly-gamification-finalizer` | `performance.weekly.finalize` (Owner manual recovery; cron separately authenticated) | Supabase `weekly_gamification_finalizations` + `weekly_performance` |
 | Monthly Reward Credit finalization | `app/api/v1/gamification/monthly/finalize` → existing weekly-finalizer adapter/Edge authority | `performance.weekly.finalize`, plus explicit Owner role | Published Sheets `Staff_Shifts` opportunity snapshot + Supabase `monthly_gamification_finalizations` + append-only `reward_credit_ledger` (issue #159) |
+| Clinic configuration core | `app/api/settings/clinic` / `app/api/settings/services` → `lib/data/clinicConfiguration.ts` → `lib/domain/tenancy/configurationCore.ts` | existing `settings.manage` for mutations; authenticated tenant membership for reads | Phase A `relife.clinic_settings`, `clinic_operating_hours`, `feature_catalog`, `clinic_feature_flags`, `clinic_entitlements`, `clinic_services` plus `relife.clinics` name/timezone/lifecycle |
 
 ## Mandatory discovery evidence
 

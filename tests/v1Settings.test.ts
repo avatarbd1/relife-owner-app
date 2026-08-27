@@ -22,7 +22,10 @@ test("minimal settings expose only real current workflows", () => {
   assert.match(client, /\/security\/passkeys/);
   assert.match(client, /\/security\/staff-access/);
   assert.match(client, /isOwner \?/);
-  assert.match(client, /9 AM–1 PM · 3 PM–9 PM/);
+  assert.match(client, /\/api\/settings\/clinic/);
+  assert.match(client, /operatingHours/);
+  assert.match(client, /services\.filter/);
+  assert.doesNotMatch(client, /9 AM–1 PM · 3 PM–9 PM/);
   assert.match(client, /No fake email switches/);
   assert.doesNotMatch(client, /Change password/);
   assert.doesNotMatch(client, /Profile picture/);

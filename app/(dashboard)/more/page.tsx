@@ -1,20 +1,25 @@
 import { PageHeading, Section, ActionRow } from "@/components/WorkspaceUI";
 import { actionsForRoles, canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { featureDecision } from "@/lib/domain/tenancy/configurationCore";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 export default async function MorePage() {
-  const context = await requireCurrentAccessContext();
+  const { access: context, tenant } = await requireCurrentTenantAccessContext();
+  const configuration = await readClinicConfiguration(tenant);
+  const enabled = (key: string) => featureDecision(configuration, key).ok;
   const actions = new Set(actionsForRoles(context.roles));
   const isOwner = context.roles.includes("Owner");
 
-  const canReports =
-    actions.has("report.read_operational") || actions.has("report.read_financial");
-  const canPerformance = actions.has("performance.read_self");
+  const canReports = enabled("core.reports") &&
+    (actions.has("report.read_operational") || actions.has("report.read_financial"));
+  const canPerformance = enabled("optional.gamification") && actions.has("performance.read_self");
   const canWeeklyFinalization = actions.has("performance.weekly.finalize");
-  const canAudit =
+  const canAudit = enabled("optional.audit_viewer") && (
     canPerform(context, "audit.read", "Physio") ||
-    canPerform(context, "audit.read", "Dental");
-  const canInventory = canPerform(context, "inventory.read", "Physio");
+    canPerform(context, "audit.read", "Dental")
+  );
+  const canInventory = enabled("optional.inventory") && canPerform(context, "inventory.read", "Physio");
   const canTools =
     canPerform(context, "clinical.read", "Physio") ||
     canInventory ||
