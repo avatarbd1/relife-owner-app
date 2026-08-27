@@ -36,3 +36,26 @@ The authoritative compatibility ratchet remains the named ledger in `tests/phase
 This does not claim full onboarding readiness or multi-clinic productization. Generic appointment capacity, `ROOM_CAPACITY`, `BED-1..4`, booking-time resource allocation, Chamber runtime allocation, finance configuration, import/export, platform admin, and production deployment/migration execution remain deferred. The repository migration-baseline drift also remains unresolved.
 
 Phase C may start after this PR is merged; its booking/facility work must consume Phase A resources/configuration without changing the Phase B profile/service authority.
+
+## Fail-closed readiness preserved from Phase A
+
+Phase A's readiness route carried five checks. Three of them — `departmentDataScopedToClinic`, `tenantFiltersPresentInReaders`, `explicitTenantParametersInWriters` — were deliberately reported as `false` with warnings because nothing evaluated them, and they sat inside the readiness conjunction so `isReady` could not become true while they were unverified.
+
+The first Phase B integration replaced the check set and dropped all three. Phase B does not evaluate them either, so removing them would have let `isReady` succeed on evidence nobody had gathered. They are restored to the response and remain inside `Object.values(checks).every(Boolean)`, with their warnings, and a regression test now asserts they stay visible and false.
+
+## Tenant isolation gap closed
+
+`resolveClinicConfiguration` swept operating hours, flags, entitlements and services for cross-tenant rows but not the profile. The profile supplies clinic name, timezone and lifecycle, so a profile belonging to another clinic would have passed isolation and then driven all three. It is now included in the sweep, proven by two executed tests: a contaminated snapshot fails with `CROSS_TENANT_CONFIGURATION_ROW`, and the same clinic is reported not ready.
+
+`tenantSafeConfigurationLookup` in the readiness route was widened to match, covering profile, hours, flags, entitlements and services rather than hours and services alone.
+
+## Verification on the integrated branch
+
+- `npm run test` — **857 pass, 0 fail**
+- `npm run lint` — **0 errors**, 47 warnings, all pre-existing
+- `npm run build` — compiled successfully
+- `npx tsc --noEmit` — exit 0
+- compatibility ratchet — 4 pass, debt unchanged at 113 across 28 files
+- `git diff --check` — clean
+
+Free local PostgreSQL 16.13 was used to apply the Phase A migration to a clean baseline and execute every configuration query shape as `service_role`, including an overlapping `SVC-1` priced 800 in one clinic and 1500 in another, and a cross-tenant probe returning zero foreign rows. Cluster stopped and data directory removed. Production was never touched and no paid resource was created. **Real Supabase Advisors were not run**; they require the hosted project and this branch adds no migration.

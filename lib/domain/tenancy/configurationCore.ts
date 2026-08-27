@@ -107,7 +107,11 @@ export function resolveClinicConfiguration(
   if (snapshot.scope.organizationId !== tenant.organizationId || snapshot.scope.clinicId !== tenant.clinicId) {
     return { ok: false, reason: "not_authorized", details: ["TENANT_SCOPE_MISMATCH"] };
   }
+  // The profile is a tenant-owned row like any other. Omitting it here meant a
+  // profile belonging to another clinic would pass the isolation check and then
+  // supply this clinic's name, timezone and lifecycle.
   const tenantRows = [
+    ...(snapshot.profile ? [snapshot.profile] : []),
     ...snapshot.operatingHours,
     ...snapshot.flags,
     ...snapshot.entitlements,

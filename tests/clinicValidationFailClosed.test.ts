@@ -28,3 +28,27 @@ test("Phase B readiness reports real configuration checks and bounded scope", ()
 test("Phase B readiness fails closed unless every advertised check passes", () => {
   assert.match(route, /Object\.values\(checks\)\.every\(Boolean\) && errors\.length === 0/);
 });
+
+test("Phase B keeps the unevaluated Phase A readiness markers visible and false", () => {
+  // Phase A deliberately reported these as false with warnings so readiness
+  // could not become true while nobody had evaluated them. Phase B does not
+  // evaluate them either, so removing them from the response would let isReady
+  // succeed on evidence that was never gathered.
+  for (const marker of [
+    "departmentDataScopedToClinic: false",
+    "tenantFiltersPresentInReaders: false",
+    "explicitTenantParametersInWriters: false",
+  ]) {
+    assert.ok(route.includes(marker), `${marker} must remain in the readiness response`);
+  }
+
+  // isReady is the conjunction over every check, so a false marker blocks it.
+  assert.match(route, /isReady: Object\.values\(checks\)\.every\(Boolean\) && errors\.length === 0/);
+});
+
+test("Phase B tenant-safe lookup covers every tenant-owned configuration collection", () => {
+  assert.match(
+    route,
+    /tenantSafeConfigurationLookup:[\s\S]*?configuration\.profile[\s\S]*?configuration\.operatingHours[\s\S]*?configuration\.flags[\s\S]*?configuration\.entitlements[\s\S]*?configuration\.services/
+  );
+});

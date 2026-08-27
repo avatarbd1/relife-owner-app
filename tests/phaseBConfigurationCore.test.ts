@@ -43,3 +43,30 @@ test("same local service identifier safely coexists with clinic-specific price",
 test("inactive service does not satisfy readiness", () => assert.match(configurationReadiness(snapshot(A, { services: [service(A, { isActive: false })] }), true).reasons.join(";"), /active service/));
 test("permission denial remains separate from entitlement denial", () => { const denied = configurationReadiness(snapshot(), false); assert.ok(denied.reasons.includes("authorized membership missing")); const result = featureDecision(snapshot(A, { entitlements: [] }), "core.services", NOW); assert.equal(result.ok, false); if (!result.ok) assert.equal(result.reason, "not_entitled"); });
 test("readiness returns explicit success", () => assert.deepEqual(configurationReadiness(snapshot(), true), { readyForPhaseBScope: true, reasons: [] }));
+
+test("a profile belonging to another clinic fails the tenant isolation check", () => {
+  // The profile supplies clinic name, timezone and lifecycle. Leaving it out of
+  // the tenant-row sweep meant another clinic's profile could drive all three.
+  const contaminated = snapshot(A, { profile: { ...snapshot(B).profile! } });
+  const resolved = resolveClinicConfiguration(A, contaminated);
+
+  assert.equal(resolved.ok, false);
+  assert.equal(resolved.ok === false && resolved.reason, "not_authorized");
+  assert.deepEqual(
+    resolved.ok === false ? resolved.details : [],
+    ["CROSS_TENANT_CONFIGURATION_ROW"]
+  );
+});
+
+test("a clinic with a foreign profile is not ready", () => {
+  const contaminated = snapshot(A, { profile: { ...snapshot(B).profile! } });
+  const readiness = configurationReadiness(contaminated, true);
+
+  assert.equal(readiness.readyForPhaseBScope, false);
+  assert.ok(readiness.reasons.includes("CROSS_TENANT_CONFIGURATION_ROW"));
+});
+
+test("an own-tenant profile still resolves", () => {
+  const resolved = resolveClinicConfiguration(A, snapshot(A));
+  assert.equal(resolved.ok, true);
+});

@@ -39,11 +39,18 @@ export async function POST(request: NextRequest) {
       clinicProfileConfigured: Boolean(configuration.profile), operatingHoursConfigured: configuration.operatingHours.length === 7,
       featureConfigurationConsistent: !phaseB.reasons.some((reason) => reason.startsWith("feature ")),
       requiredServicesConfigured: !phaseB.reasons.includes("enabled services workflow requires an active service"),
-      tenantSafeConfigurationLookup: configuration.scope.organizationId === organizationId && configuration.scope.clinicId === clinicId && configuration.operatingHours.every((row) => row.organizationId === organizationId && row.clinicId === clinicId) && configuration.services.every((row) => row.organizationId === organizationId && row.clinicId === clinicId),
+      tenantSafeConfigurationLookup: configuration.scope.organizationId === organizationId && configuration.scope.clinicId === clinicId && [...(configuration.profile ? [configuration.profile] : []), ...configuration.operatingHours, ...configuration.flags, ...configuration.entitlements, ...configuration.services].every((row) => row.organizationId === organizationId && row.clinicId === clinicId),
+      // Phase A kept these visible and unevaluated so readiness could not become
+      // true while they were unverified. Phase B does not evaluate them either,
+      // so they stay false: dropping them from the response would let isReady
+      // succeed on evidence nobody has gathered.
+      departmentDataScopedToClinic: false,
+      tenantFiltersPresentInReaders: false,
+      explicitTenantParametersInWriters: false,
     };
     const errors = [...phaseB.reasons];
     if (!checks.organizationExists) errors.unshift("organization not found"); if (!checks.clinicExists) errors.unshift("clinic not found in organization");
-    return NextResponse.json({ ok: true, isReady: Object.values(checks).every(Boolean) && errors.length === 0, phase: "B_CONFIGURATION_CORE", checks, errors, warnings: ["This validates the Phase B configuration slice only; facility/booking runtime, finance, imports and full activation remain deferred."] });
+    return NextResponse.json({ ok: true, isReady: Object.values(checks).every(Boolean) && errors.length === 0, phase: "B_CONFIGURATION_CORE", checks, errors, warnings: ["This validates the Phase B configuration slice only; facility/booking runtime, finance, imports and full activation remain deferred.", "Department data scoping has not been verified by this runtime validator", "Reader tenant filtering has not been verified by this runtime validator", "Writer tenant parameter coverage has not been verified by this runtime validator"] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "VALIDATION_FAILED";
     return NextResponse.json({ ok: false, error: message }, { status: /ACCESS|TENANT_SCOPE/.test(message) ? 403 : 500 });
