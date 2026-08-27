@@ -4,16 +4,16 @@ import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 const steps = [
   ["1", "Business / Organization", "/settings", "Confirm organization ownership and selected clinic."],
-  ["2", "Clinic Profile", "/settings", "Clinic identity, timezone, currency and operating hours."],
-  ["3", "Facility / Resources", "/settings", "Rooms, beds, chairs, machines and booking resources."],
-  ["4", "Services / Prices", "/settings", "Tenant-owned service catalog and pricing."],
+  ["2", "Clinic Profile", "/onboarding/setup", "Clinic identity, timezone, currency and operating hours."],
+  ["3", "Facility / Resources", "/onboarding/setup", "Rooms, beds, chairs, machines and booking resources."],
+  ["4", "Services / Prices", "/onboarding/setup", "Tenant-owned service catalog and pricing."],
   ["5", "Staff / Roles", "/security/staff-access", "Membership, roles and department access."],
-  ["6", "Booking Rules", "/settings", "Simple, capacity or resource booking configuration."],
-  ["7", "Finance", "/finance", "Basic finance entitlement and configured workflows."],
-  ["8", "Feature Selection", "/settings", "Enable only purchased/configured modules."],
-  ["9", "Existing Data Import", "/onboarding#import", "Validate CSV mappings before any mutation."],
-  ["10", "Readiness Validation", "/onboarding#readiness", "Fail-closed activation evidence across tenant, schema and provisioning checks."],
-  ["11", "Activate Clinic", "/onboarding#activation", "Activation remains blocked until every required readiness check is PASS."],
+  ["6", "Booking Rules", "/onboarding/setup", "Simple, capacity or resource booking configuration."],
+  ["7", "Finance", "/finance", "Use the clinic's entitled finance workflows."],
+  ["8", "Feature Selection", "/onboarding/setup", "Enable only modules already included in the clinic plan."],
+  ["9", "Existing Data Import", "/onboarding/setup", "Map and validate CSV data before any mutation."],
+  ["10", "Readiness Validation", "/onboarding/setup", "Run fail-closed tenant, schema and provisioning checks."],
+  ["11", "Activation Gate", "/onboarding/setup", "Activation stays privileged and is eligible only after readiness passes."],
 ] as const;
 
 export default async function OnboardingPage() {
@@ -23,12 +23,17 @@ export default async function OnboardingPage() {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5">
       <header className="px-1 pt-1">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Phase F · Onboarding</p>
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Owner onboarding</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Clinic activation checklist</h1>
         <p className="mt-1 text-sm leading-5 text-slate-500">
-          {tenant.organizationSlug} · {tenant.clinicSlug}. Configuration stays tenant-scoped; activation fails closed until readiness evidence is complete.
+          {tenant.organizationSlug} · {tenant.clinicSlug}. Normal clinic differences are configured as tenant data; no clinic-specific code branch is required.
         </p>
       </header>
+
+      <Link href="/onboarding/setup" className="block rounded-2xl bg-slate-950 px-5 py-4 text-white shadow-sm">
+        <span className="block text-base font-bold">Open self-service setup</span>
+        <span className="mt-1 block text-sm text-slate-300">Profile, hours, facility, booking, services, features, import validation and readiness in one place →</span>
+      </Link>
 
       <ol className="space-y-3">
         {steps.map(([number, title, href, description]) => (
@@ -45,14 +50,8 @@ export default async function OnboardingPage() {
         ))}
       </ol>
 
-      <section id="import" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        Import preview is validation-only. It validates every row and performs no mutation. A canonical mutation executor must be separately reviewed before imported records can be committed.
-      </section>
-      <section id="readiness" className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-        Readiness endpoint: <code>POST /api/setup/clinic-validation</code>. Missing runtime or database evidence remains UNVERIFIED, never PASS.
-      </section>
-      <section id="activation" className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-        Provisioning dry-run: <code>GET /api/onboarding/provisioning-dry-run</code>. Phase F does not activate a real Clinic #2; that proof belongs to Phase G.
+      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-5 text-amber-950">
+        Existing-data import remains validation-only until a separately reviewed canonical mutation executor exists. The browser also never receives service-role credentials or plan-entitlement authority.
       </section>
     </div>
   );
