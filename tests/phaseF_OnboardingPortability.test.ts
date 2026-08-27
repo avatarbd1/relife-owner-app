@@ -88,15 +88,30 @@ test("F3 readiness rejects cross-tenant configuration rows", async () => {
 });
 
 test("F2 patient and appointment validation reject malformed required data", () => {
-  assert.equal(validatePatientRow({ name: "", phone: "123" }).valid, false);
+  assert.equal(validatePatientRow({ name: "", phone: "123", department: "Physio", gender: "" }).valid, false);
   assert.equal(validateAppointmentRow({ patientId: "P-1", date: "2026-02-31", time: "25:99" }).valid, false);
 });
 
+test("F2 patient validation matches canonical department, Dental phone, and Physio gender rules", () => {
+  assert.equal(validatePatientRow({ name: "Dental Patient", department: "Dental", phone: "", gender: "" }).valid, true);
+  assert.equal(validatePatientRow({ name: "Dental Patient", department: "Dental", phone: "123", gender: "" }).valid, false);
+  assert.equal(validatePatientRow({ name: "Physio Patient", department: "Physio", phone: "", gender: "" }).valid, false);
+  assert.equal(validatePatientRow({ name: "Physio Patient", department: "Physio", phone: "", gender: "Female" }).valid, true);
+  assert.equal(validatePatientRow({ name: "Patient", department: "Other", phone: "", gender: "Male" }).valid, false);
+});
+
 test("F2 full import analysis blocks invalid rows outside preview window", () => {
-  const rows = Array.from({ length: 11 }, (_, index) => ({ name: `Patient ${index}`, phone: index === 10 ? "123" : "+8801234567890" }));
+  const rows = Array.from({ length: 11 }, (_, index) => ({
+    name: `Patient ${index}`,
+    phone: index === 10 ? "123" : "+8801234567890",
+    department: "Physio",
+    gender: "Male",
+  }));
   const mappings = [
     { sourceIndex: 0, sourceHeader: "name", targetField: "name" },
     { sourceIndex: 1, sourceHeader: "phone", targetField: "phone" },
+    { sourceIndex: 2, sourceHeader: "department", targetField: "department" },
+    { sourceIndex: 3, sourceHeader: "gender", targetField: "gender" },
   ];
   const analysis = analyzeImportRows("patients", rows, mappings, 10);
   assert.equal(analysis.preview.length, 10);
@@ -115,9 +130,11 @@ test("F2 duplicate and unsupported mappings fail closed", () => {
 });
 
 test("F2 preview preserves mapped row numbers and tenant session rejects mismatch", () => {
-  const preview = buildImportPreview("patients", [{ name: "John", phone: "+8801234567890" }], [
+  const preview = buildImportPreview("patients", [{ name: "John", phone: "+8801234567890", department: "Physio", gender: "Male" }], [
     { sourceIndex: 0, sourceHeader: "name", targetField: "name" },
     { sourceIndex: 1, sourceHeader: "phone", targetField: "phone" },
+    { sourceIndex: 2, sourceHeader: "department", targetField: "department" },
+    { sourceIndex: 3, sourceHeader: "gender", targetField: "gender" },
   ]);
   assert.equal(preview[0].rowNumber, 2);
   const errors = validateImportSession({ organizationId: "org-1", clinicId: "clinic-1" }, {

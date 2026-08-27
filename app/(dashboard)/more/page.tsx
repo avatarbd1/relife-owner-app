@@ -154,6 +154,14 @@ export default async function MorePage() {
       )}
 
       <Section title="Account & app">
+        {isOwner && (
+          <ActionRow
+            href="/onboarding"
+            icon="approval"
+            title="Clinic setup"
+            subtitle="Profile, rooms, booking, services, features, import and readiness"
+          />
+        )}
         <ActionRow
           href="/settings"
           icon="staff"
