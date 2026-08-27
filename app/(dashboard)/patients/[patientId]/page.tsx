@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/FeedbackUI";
 import { getUnifiedPatientAppointmentsForContext } from "@/lib/domain/appointments/read";
 import { formatBDT } from "@/lib/format";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { getPatientReportsForContext } from "@/lib/webos/reports";
 import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
@@ -26,12 +26,12 @@ export default async function PatientFilePage({
   params: Promise<{ patientId: string }>;
   searchParams?: Promise<{ edit?: string }>;
 }) {
-  const context = await requireCurrentAccessContext();
+  const { access: context, tenant } = await requireCurrentTenantAccessContext();
   const [{ patientId }, query] = await Promise.all([
     params,
     searchParams ? searchParams : Promise.resolve({} as { edit?: string }),
   ]);
-  const patient = await getPatientForContext(context, decodeURIComponent(patientId));
+  const patient = await getPatientForContext(context, decodeURIComponent(patientId), tenant.organizationId, tenant.clinicId);
   if (!patient || patient.department === "All") notFound();
 
   const canEditPatient = canPerform(context, "patient.update", patient.department);

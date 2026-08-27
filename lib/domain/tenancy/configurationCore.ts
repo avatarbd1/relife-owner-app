@@ -1,4 +1,4 @@
-import { clinicMayServe, resolveFeature, type ClinicEntitlement, type ClinicFeatureFlag, type FeatureCatalogEntry } from "./clinicConfiguration.ts";
+import { clinicMayServe, resolveFeature, validateBookingConfig, type ClinicBookingConfig, type ClinicEntitlement, type ClinicFeatureFlag, type ClinicResource, type FeatureCatalogEntry } from "./clinicConfiguration.ts";
 import { requireTenantScope, type TenantScope } from "./policy.ts";
 
 export type ConfigurationFailure =
@@ -56,6 +56,16 @@ export interface ClinicConfigurationSnapshot {
   flags: ClinicFeatureFlag[];
   entitlements: ClinicEntitlement[];
   services: ClinicServiceConfiguration[];
+  rooms?: ClinicRoomConfiguration[];
+  resources?: ClinicResource[];
+  booking?: ClinicBookingConfig | null;
+}
+
+export interface ClinicRoomConfiguration extends TenantScope {
+  roomCode: string;
+  displayName: string;
+  isActive: boolean;
+  sortOrder: number;
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
@@ -116,6 +126,9 @@ export function resolveClinicConfiguration(
     ...snapshot.flags,
     ...snapshot.entitlements,
     ...snapshot.services,
+    ...(snapshot.rooms || []),
+    ...(snapshot.resources || []),
+    ...(snapshot.booking ? [snapshot.booking] : []),
   ];
   if (tenantRows.some((row) => row.organizationId !== tenant.organizationId || row.clinicId !== tenant.clinicId)) {
     return { ok: false, reason: "not_authorized", details: ["CROSS_TENANT_CONFIGURATION_ROW"] };
@@ -165,4 +178,14 @@ export function configurationReadiness(snapshot: ClinicConfigurationSnapshot, au
     reasons.push("enabled services workflow requires an active service");
   }
   return { readyForPhaseBScope: reasons.length === 0, reasons };
+}
+
+export function facilityBookingReadiness(snapshot: ClinicConfigurationSnapshot) {
+  const reasons: string[] = [];
+  if (!snapshot.booking) reasons.push("booking configuration missing");
+  else {
+    reasons.push(...validateBookingConfig(snapshot.booking).problems.map((problem) => `booking configuration: ${problem}`));
+    if (snapshot.booking.bookingMode === "specific_resource" && !(snapshot.resources || []).some((resource) => resource.isActive && resource.isBookable && !resource.isRuntimeOnly)) reasons.push("specific-resource booking requires an active bookable resource");
+  }
+  return { readyForPhaseCScope: reasons.length === 0, reasons };
 }

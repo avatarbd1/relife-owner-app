@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PHYSIO_CHAMBER_STARTS } from "@/lib/domain/chamber/hours";
 import { haptic } from "@/lib/interactions";
 
 type Clinician = {
@@ -34,19 +33,25 @@ type SlotValidation = {
   error: string;
 };
 
+type Facility = {
+  booking: { bookingMode: "simple" | "capacity" | "specific_resource"; defaultDurationMin: number; slotIntervalMin: number; providerRequired: boolean } | null;
+  operatingHours?: never;
+  resources: Array<{ resourceCode: string; displayName: string; isActive: boolean; isBookable: boolean; isRuntimeOnly: boolean }>;
+};
+
 function addDaysIso(startDate: string, days: number): string {
   const [year, month, day] = startDate.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day + days));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
-function dateLabel(value: string): string {
+function dateLabel(value: string, timeZone: string): string {
   const [year, month, day] = value.split("-").map(Number);
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
     month: "short",
-    timeZone: "Asia/Dhaka",
+    timeZone,
   }).format(new Date(Date.UTC(year, month - 1, day, 6)));
 }
 
@@ -77,7 +82,11 @@ export default function AppointmentCapacityForm({
     [startDate]
   );
   const [selectedDates, setSelectedDates] = useState<Set<string>>(() => new Set([startDate]));
-  const [time, setTime] = useState<string>(PHYSIO_CHAMBER_STARTS[0]);
+  const [time, setTime] = useState<string>("");
+  const [facility, setFacility] = useState<Facility | null>(null);
+  const [hours, setHours] = useState<Array<{ dayOfWeek: number; isOpen: boolean; opensAt: string | null; closesAt: string | null }>>([]);
+  const [timeZone, setTimeZone] = useState("UTC");
+  const [resourceCode, setResourceCode] = useState("");
   const [therapist, setTherapist] = useState("");
   const [remarks, setRemarks] = useState("");
   const [checks, setChecks] = useState<SlotValidation[]>([]);
@@ -89,7 +98,37 @@ export default function AppointmentCapacityForm({
   const dates = useMemo(() => [...selectedDates].sort(), [selectedDates]);
 
   useEffect(() => {
-    if (!dates.length || !time) {
+    let cancelled = false;
+    void fetch("/api/settings/clinic").then((response) => response.json()).then((payload) => {
+      if (!cancelled && payload.ok) { setHours(payload.configuration.operatingHours || []); setTimeZone(payload.configuration.profile?.timezone || "UTC"); }
+    }).catch(() => undefined);
+    void fetch("/api/settings/facility").then((response) => response.json()).then((payload) => {
+      if (!cancelled && payload.ok) setFacility(payload.facility);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  const availableSlots = useMemo(() => {
+    const config = facility?.booking;
+    if (!config || !dates.length) return [];
+    const minute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+    const slotsForDate = (date: string) => {
+      const [year, month, day] = date.split("-").map(Number);
+      const jsDay = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+      const row = hours.find((item) => item.dayOfWeek === (jsDay === 0 ? 7 : jsDay));
+      if (!row?.isOpen || !row.opensAt || !row.closesAt) return [];
+      const slots: string[] = [];
+      for (let value = minute(row.opensAt); value + config.defaultDurationMin <= minute(row.closesAt); value += config.slotIntervalMin) slots.push(`${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`);
+      return slots;
+    };
+    const [first, ...rest] = dates.map(slotsForDate);
+    return first.filter((slot) => rest.every((slots) => slots.includes(slot)));
+  }, [dates, facility, hours]);
+
+  const selectedTime = availableSlots.includes(time) ? time : availableSlots[0] || "";
+
+  useEffect(() => {
+    if (!dates.length || !selectedTime) {
       setChecks([]);
       return;
     }
@@ -108,9 +147,10 @@ export default function AppointmentCapacityForm({
                 action: "validate",
                 patientId: patient.patientId,
                 date,
-                time,
+                time: selectedTime,
                 therapist,
                 remarks,
+                resourceCode,
               }),
             });
             const payload = await response.json().catch(() => ({}));
@@ -141,7 +181,7 @@ export default function AppointmentCapacityForm({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [dates, patient.patientId, remarks, therapist, time]);
+  }, [dates, patient.patientId, remarks, resourceCode, selectedTime, therapist]);
 
   function toggleDate(date: string) {
     setSelectedDates((current) => {
@@ -177,9 +217,10 @@ export default function AppointmentCapacityForm({
             action: "create",
             patientId: patient.patientId,
             date,
-            time,
+            time: selectedTime,
             therapist,
             remarks,
+            resourceCode,
           }),
         });
         const payload = await response.json().catch(() => ({}));
@@ -212,9 +253,9 @@ export default function AppointmentCapacityForm({
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
-        <p className="text-xs font-bold text-emerald-950">Simple Physio booking · 60 ± 5 min</p>
+        <p className="text-xs font-bold text-emerald-950">Configured clinic booking · {facility?.booking?.defaultDurationMin || "—"} min</p>
         <p className="mt-1 text-[11px] leading-5 text-emerald-800">
-          Booking-এ শুধু gender-safe hourly capacity automatically check হবে। Bed, machine, treatment sequence বা machine time এখন ঠিক করতে হবে না—ওগুলো patient arrive করার পর Live Chamber handle করবে।
+          Clinic hours, interval and booking mode server configuration থেকে আসে। Live Chamber treatment-time operation আলাদাভাবে handle করে।
         </p>
       </div>
 
@@ -237,7 +278,7 @@ export default function AppointmentCapacityForm({
                     : "border-slate-200 bg-white text-slate-700"
                 }`}
               >
-                <span className="block text-[11px] font-bold">{dateLabel(date)}</span>
+                <span className="block text-[11px] font-bold">{dateLabel(date, timeZone)}</span>
                 <span className="mt-0.5 block text-[9px] opacity-60">{date}</span>
               </button>
             );
@@ -248,7 +289,7 @@ export default function AppointmentCapacityForm({
       <section>
         <p className="text-xs font-semibold text-slate-700">Appointment hour</p>
         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
-          {PHYSIO_CHAMBER_STARTS.map((slot) => (
+          {availableSlots.map((slot) => (
             <button
               key={slot}
               type="button"
@@ -258,7 +299,7 @@ export default function AppointmentCapacityForm({
                 haptic("tap");
               }}
               className={`min-h-11 rounded-xl border px-2 text-xs font-bold ${
-                time === slot
+                selectedTime === slot
                   ? "border-blue-700 bg-blue-700 text-white"
                   : "border-slate-200 bg-white text-slate-700"
               }`}
@@ -269,8 +310,18 @@ export default function AppointmentCapacityForm({
         </div>
       </section>
 
+      {facility?.booking?.bookingMode === "specific_resource" ? (
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-700">Resource · required</span>
+          <select value={resourceCode} onChange={(event) => setResourceCode(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900">
+            <option value="">Select configured resource</option>
+            {facility.resources.filter((item) => item.isActive && item.isBookable && !item.isRuntimeOnly).map((item) => <option key={item.resourceCode} value={item.resourceCode}>{item.displayName}</option>)}
+          </select>
+        </label>
+      ) : null}
+
       <label className="block">
-        <span className="text-xs font-semibold text-slate-700">Therapist · optional</span>
+        <span className="text-xs font-semibold text-slate-700">Therapist · {facility?.booking?.providerRequired ? "required" : "optional"}</span>
         <select
           value={therapist}
           onChange={(event) => setTherapist(event.target.value)}
@@ -302,7 +353,7 @@ export default function AppointmentCapacityForm({
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-bold text-slate-900">
-                  {dateLabel(item.date)} · {timeLabel(time)}
+                  {dateLabel(item.date, timeZone)} · {timeLabel(selectedTime)}
                 </p>
                 <span
                   className={`text-[10px] font-bold ${

@@ -8,13 +8,14 @@ function source(path: string): string {
 
 const bookingUi = source("components/AppointmentCapacityForm.tsx");
 const bookingDomain = source("lib/domain/appointments/capacityBooking.ts");
+const configuredBooking = source("lib/domain/appointments/configuredBooking.ts");
 const hours = source("lib/domain/chamber/hours.ts");
 const chamberBoard = source("lib/domain/chamber/board.ts");
 const chamberCapacityUi = source("components/ChamberCapacityBoard.tsx");
 const chamberPage = source("app/(dashboard)/chamber/page.tsx");
 
-describe("Physio booking hour and four-patient capacity parity", () => {
-  it("uses the same 9-1 and 3-9 hourly starts in booking and Chamber schedule views", () => {
+describe("configured booking and legacy Chamber schedule separation", () => {
+  it("keeps legacy Chamber starts local to runtime while booking reads configuration", () => {
     for (const time of [
       "09:00",
       "10:00",
@@ -33,22 +34,23 @@ describe("Physio booking hour and four-patient capacity parity", () => {
     equal(hours.includes('"14:00"'), false);
     ok(hours.includes("PHYSIO_CHAMBER_DAILY_CAPACITY"));
     ok(hours.includes("PHYSIO_CHAMBER_STARTS.length * PHYSIO_CHAMBER_BED_IDS.length"));
-    ok(bookingUi.includes("PHYSIO_CHAMBER_STARTS"));
+    ok(bookingUi.includes('/api/settings/facility'));
+    ok(bookingUi.includes("slotIntervalMin"));
     ok(chamberBoard.includes("PHYSIO_CHAMBER_STARTS.map"));
   });
 
-  it("rejects Physio starts outside the canonical Chamber schedule", () => {
-    ok(bookingDomain.includes("isPhysioChamberStart(input.time)"));
-    ok(bookingDomain.includes('throw new Error("INVALID_SLOT")'));
+  it("rejects starts outside clinic hours and interval", () => {
+    ok(configuredBooking.includes("outside configured operating hours"));
+    ok(configuredBooking.includes("slot does not match configured interval"));
   });
 
-  it("counts four general-treatment places without pre-assigning a bed", () => {
+  it("uses configured capacity and optional booking-time resource assignment", () => {
     ok(hours.includes('"BED-1"'));
     ok(hours.includes('"BED-4"'));
     equal(hours.includes('"TRACTION-BED"'), false);
-    ok(bookingDomain.includes("overlapping.length >= 4"));
-    ok(bookingDomain.includes('message: "Physio treatment capacity is full for this hour."'));
-    ok(bookingDomain.includes('Assigned_Bed_ID: ""'));
+    ok(configuredBooking.includes("maxSimultaneous"));
+    ok(configuredBooking.includes("configured resource is required and unavailable"));
+    ok(bookingDomain.includes('Assigned_Bed_ID: input.resourceCode || ""'));
     ok(bookingDomain.includes('Timeline_ID: ""'));
     ok(chamberCapacityUi.includes("Hard block happens only when gender/room capacity or duplicate-patient conflict is unsafe"));
     ok(chamberPage.includes("Booking capacity"));

@@ -17,7 +17,7 @@ export default async function ClinicalPage({
   const { access, tenant } = tenantContext;
   const { patientId } = await params;
   const decodedId = decodeURIComponent(patientId);
-  const patient = await getPatientForContext(access, decodedId);
+  const patient = await getPatientForContext(access, decodedId, tenant.organizationId, tenant.clinicId);
   if (!patient || patient.department === "All") notFound();
 
   const ownerOnlyClinicalView =

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { requireTenantScope, type TenantScope } from "@/lib/domain/tenancy/policy";
+import { requireAuthorizedTenantSelection } from "@/lib/domain/tenancy/tenantSelection";
 
 const DEFAULT_TENANT_CONTEXT_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-tenant-context";
@@ -28,6 +29,7 @@ type TenantPayload = {
     clinicName?: unknown;
     timezone?: unknown;
   };
+  tenants?: TenantPayload["tenant"][];
 };
 
 function tenantContextSecret(): string {
@@ -52,6 +54,22 @@ function cleanStaffId(value: string): string {
   return staffId;
 }
 
+function parseTenant(payload: NonNullable<TenantPayload["tenant"]>): Omit<StaffTenantContext, "staffId"> {
+  const scope = requireTenantScope({
+    organizationId: cleanText(payload.organizationId),
+    clinicId: cleanText(payload.clinicId),
+  });
+  const organizationSlug = cleanText(payload.organizationSlug);
+  const organizationName = cleanText(payload.organizationName);
+  const clinicSlug = cleanText(payload.clinicSlug);
+  const clinicName = cleanText(payload.clinicName);
+  const timezone = cleanText(payload.timezone);
+  if (!organizationSlug || !organizationName || !clinicSlug || !clinicName || !timezone) {
+    throw new Error("TENANT_CONTEXT_INCOMPLETE");
+  }
+  return { ...scope, organizationSlug, organizationName, clinicSlug, clinicName, timezone };
+}
+
 export function parseStaffTenantPayload(
   requestedStaffId: string,
   payload: TenantPayload
@@ -65,35 +83,36 @@ export function parseStaffTenantPayload(
     throw new Error("TENANT_CONTEXT_STAFF_MISMATCH");
   }
 
-  const scope = requireTenantScope({
-    organizationId: cleanText(payload.tenant.organizationId),
-    clinicId: cleanText(payload.tenant.clinicId),
-  });
-  const organizationSlug = cleanText(payload.tenant.organizationSlug);
-  const organizationName = cleanText(payload.tenant.organizationName);
-  const clinicSlug = cleanText(payload.tenant.clinicSlug);
-  const clinicName = cleanText(payload.tenant.clinicName);
-  const timezone = cleanText(payload.tenant.timezone);
+  return { ...parseTenant(payload.tenant), staffId };
+}
 
-  if (!organizationSlug || !organizationName || !clinicSlug || !clinicName || !timezone) {
-    throw new Error("TENANT_CONTEXT_INCOMPLETE");
-  }
+export type StaffTenantResolution = {
+  selected: StaffTenantContext;
+  available: StaffTenantContext[];
+};
 
-  return {
-    ...scope,
-    staffId,
-    organizationSlug,
-    organizationName,
-    clinicSlug,
-    clinicName,
-    timezone,
-  };
+export function parseStaffTenantResolution(requestedStaffId: string, payload: TenantPayload): StaffTenantResolution {
+  const selected = parseStaffTenantPayload(requestedStaffId, payload);
+  const rows = payload.tenants || [];
+  const available = rows.map((tenant) => ({ ...parseTenant(tenant || {}), staffId: selected.staffId }));
+  try { requireAuthorizedTenantSelection(available, selected); }
+  catch { throw new Error("TENANT_CONTEXT_SELECTION_MISMATCH"); }
+  return { selected, available };
 }
 
 export async function resolveStaffTenantContext(
-  rawStaffId: string
+  rawStaffId: string,
+  requestedScope?: TenantScope | null
 ): Promise<StaffTenantContext> {
+  return (await resolveStaffTenantContexts(rawStaffId, requestedScope)).selected;
+}
+
+export async function resolveStaffTenantContexts(
+  rawStaffId: string,
+  requestedScope?: TenantScope | null
+): Promise<StaffTenantResolution> {
   const staffId = cleanStaffId(rawStaffId);
+  const scope = requestedScope ? requireTenantScope(requestedScope) : null;
   const url = (
     process.env.RELIFE_SUPABASE_TENANT_CONTEXT_URL || DEFAULT_TENANT_CONTEXT_URL
   ).trim();
@@ -107,7 +126,7 @@ export async function resolveStaffTenantContext(
         "content-type": "application/json",
         "x-relife-lock-key": tenantContextSecret(),
       },
-      body: JSON.stringify({ staffId }),
+      body: JSON.stringify({ staffId, ...(scope ? { organizationId: scope.organizationId, clinicId: scope.clinicId } : {}) }),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -115,7 +134,7 @@ export async function resolveStaffTenantContext(
     if (!response.ok) {
       throw new Error(cleanText(payload.error) || `TENANT_CONTEXT_HTTP_${response.status}`);
     }
-    return parseStaffTenantPayload(staffId, payload);
+    return parseStaffTenantResolution(staffId, payload);
   } finally {
     clearTimeout(timeout);
   }

@@ -5,7 +5,8 @@ import FinanceOperationsClient from "@/components/FinanceOperationsClient";
 import { getFinanceHistorySnapshot } from "@/lib/webos/financeHistory";
 import { getFinanceOperationsSnapshot } from "@/lib/webos/financeOps";
 import { actionsForRoles } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 import type { Scope } from "@/lib/types";
 
@@ -21,7 +22,9 @@ export default async function FinanceOperationsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const cookieStore = await cookies();
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
+  await requireTenantFeature(tenantContext.tenant, "core.finance_basic");
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const [snapshot, history, params] = await Promise.all([
     getFinanceOperationsSnapshot(context, scope),

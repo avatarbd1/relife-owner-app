@@ -12,11 +12,9 @@ import {
   Section,
 } from "@/components/WorkspaceUI";
 import { getTodaysCollection } from "@/lib/calculations";
-import { getOwnerControlSnapshot } from "@/lib/controls";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import { getScopedCashPositionForAdminView } from "@/lib/scopedCash";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
+import { requireCurrentAccessContext, requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import {
   getAppointmentsForContext,
   todayDhaka,
@@ -52,18 +50,17 @@ export default async function HomePage() {
     );
   }
 
+  const { tenant } = await requireCurrentTenantAccessContext();
   const now = new Date();
   const today = todayDhaka();
-  const [cash, todays, appointments, controls, clinicalActivity] = await Promise.all([
+  const [cash, todays, appointments] = await Promise.all([
     getScopedCashPositionForAdminView("combined", now),
-    getTodaysCollection(now),
-    getAppointmentsForContext(context, "combined", today),
-    getOwnerControlSnapshot(),
-    getDailyClinicalActivity("combined", today),
+    getTodaysCollection(now, tenant.organizationId, tenant.clinicId),
+    getAppointmentsForContext(context, "combined", today, tenant.organizationId, tenant.clinicId),
   ]);
 
-  const todayPatientCount = clinicalActivity.patients;
-  const todaySessionCount = clinicalActivity.sessions;
+  const todayPatientCount = new Set(appointments.map((item) => item.patientId)).size;
+  const todaySessionCount = appointments.filter((item) => item.status.trim().toLowerCase() === "completed").length;
   const completed = appointments.filter(
     (item) => item.status.trim().toLowerCase() === "completed"
   ).length;
@@ -73,14 +70,12 @@ export default async function HomePage() {
     )
   ).length;
   const open = Math.max(0, appointments.length - completed - exceptions);
-  const pendingApprovals =
-    controls.pendingExpenses.length + controls.pendingCashMovements.length;
 
   return (
     <div className="mx-auto w-full max-w-5xl">
       <PageHeading
         title="Home"
-        subtitle={`${formatDateBn(now)} · Owner control tower`}
+        subtitle={`${formatDateBn(now)} · ${tenant.clinicName} · ${tenant.timezone}`}
         action={
           <Link
             href="/daily"
@@ -107,14 +102,6 @@ export default async function HomePage() {
                   Physio {formatBDT(todays.physio)} · Dental {formatBDT(todays.dental)}
                 </p>
               </div>
-              {pendingApprovals > 0 && (
-                <Link
-                  href="/finance#approvals"
-                  className="rounded-full bg-amber-300/15 px-3 py-1.5 text-[11px] font-semibold text-amber-200 ring-1 ring-amber-200/15"
-                >
-                  {pendingApprovals} pending
-                </Link>
-              )}
             </div>
 
             <div className="mt-5 grid grid-cols-3 gap-2.5 text-center">
@@ -149,17 +136,8 @@ export default async function HomePage() {
             </div>
           </section>
 
-          {(pendingApprovals > 0 || exceptions > 0) && (
+          {exceptions > 0 && (
             <Section title="Needs attention" subtitle="Only items that need an Owner decision">
-              {pendingApprovals > 0 && (
-                <ActionRow
-                  href="/finance#approvals"
-                  icon="approval"
-                  title="Approvals waiting"
-                  subtitle="Expense and cash handover decisions"
-                  meta={pendingApprovals}
-                />
-              )}
               {exceptions > 0 && (
                 <ActionRow
                   href={`/appointments?date=${encodeURIComponent(today)}&scope=combined&focus=exceptions`}
@@ -198,6 +176,13 @@ export default async function HomePage() {
               className="flex min-h-12 items-center justify-between border-t border-slate-100 px-4 text-xs font-semibold text-blue-800"
             >
               <span>Open Finance</span>
+              <span aria-hidden="true">→</span>
+            </Link>
+            <Link
+              href="/finance#approvals"
+              className="flex min-h-12 items-center justify-between border-t border-slate-100 px-4 text-xs font-semibold text-blue-800"
+            >
+              <span>Review approvals</span>
               <span aria-hidden="true">→</span>
             </Link>
           </Section>

@@ -3,7 +3,8 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { TenantScope } from "@/lib/domain/tenancy/policy";
 import { requireTenantScope } from "@/lib/domain/tenancy/policy";
-import type { ClinicConfigurationSnapshot, ClinicProfileConfiguration, ClinicServiceConfiguration, OperatingHourConfiguration } from "@/lib/domain/tenancy/configurationCore";
+import type { ClinicBookingConfig, ClinicResource } from "@/lib/domain/tenancy/clinicConfiguration";
+import type { ClinicConfigurationSnapshot, ClinicProfileConfiguration, ClinicRoomConfiguration, ClinicServiceConfiguration, OperatingHourConfiguration } from "@/lib/domain/tenancy/configurationCore";
 
 function adminClient(): SupabaseClient {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
@@ -25,7 +26,7 @@ export async function readClinicConfiguration(scope: TenantScope, client = admin
   const tenant = requireTenantScope(scope);
   const relife = client.schema("relife");
   const scoped = dbScope(tenant);
-  const [clinic, settings, hours, catalog, flags, grants, services] = await Promise.all([
+  const [clinic, settings, hours, catalog, flags, grants, services, rooms, resources, booking] = await Promise.all([
     relife.from("clinics").select("id,name,timezone,status").eq("organization_id", scoped.organization_id).eq("id", scoped.clinic_id).maybeSingle(),
     relife.from("clinic_settings").select("*").match(scoped).maybeSingle(),
     relife.from("clinic_operating_hours").select("*").match(scoped).order("day_of_week"),
@@ -33,8 +34,11 @@ export async function readClinicConfiguration(scope: TenantScope, client = admin
     relife.from("clinic_feature_flags").select("feature_key,enabled,organization_id,clinic_id").match(scoped),
     relife.from("clinic_entitlements").select("feature_key,status,effective_from,effective_until,organization_id,clinic_id").match(scoped),
     relife.from("clinic_services").select("*").match(scoped).order("display_name"),
+    relife.from("clinic_rooms").select("*").match(scoped).order("sort_order"),
+    relife.from("clinic_resources").select("*").match(scoped).order("sort_order"),
+    relife.from("clinic_booking_config").select("*").match(scoped).maybeSingle(),
   ]);
-  for (const [result, name] of [[clinic,"CLINIC_READ"],[settings,"SETTINGS_READ"],[hours,"HOURS_READ"],[catalog,"CATALOG_READ"],[flags,"FLAGS_READ"],[grants,"ENTITLEMENTS_READ"],[services,"SERVICES_READ"]] as const) ensure(result.error, name);
+  for (const [result, name] of [[clinic,"CLINIC_READ"],[settings,"SETTINGS_READ"],[hours,"HOURS_READ"],[catalog,"CATALOG_READ"],[flags,"FLAGS_READ"],[grants,"ENTITLEMENTS_READ"],[services,"SERVICES_READ"],[rooms,"ROOMS_READ"],[resources,"RESOURCES_READ"],[booking,"BOOKING_READ"]] as const) ensure(result.error, name);
   const c = clinic.data as Record<string, unknown> | null;
   const s = settings.data as Record<string, unknown> | null;
   const profile: ClinicProfileConfiguration | null = c && s ? {
@@ -48,7 +52,24 @@ export async function readClinicConfiguration(scope: TenantScope, client = admin
     flags: ((flags.data || []) as Record<string, unknown>[]).map((r) => ({ ...tenant, featureKey: String(r.feature_key), enabled: Boolean(r.enabled) })),
     entitlements: ((grants.data || []) as Record<string, unknown>[]).map((r) => ({ ...tenant, featureKey: String(r.feature_key), status: r.status as "active" | "suspended" | "revoked", effectiveFrom: new Date(String(r.effective_from)), effectiveUntil: r.effective_until ? new Date(String(r.effective_until)) : null })),
     services: ((services.data || []) as Record<string, unknown>[]).map((r): ClinicServiceConfiguration => ({ ...tenant, serviceCode: String(r.service_code), displayName: String(r.display_name), department: r.department as ClinicServiceConfiguration["department"], price: Number(r.price), durationMin: Number(r.duration_min), requiresBooking: Boolean(r.requires_booking), requiresProvider: Boolean(r.requires_provider), requiresResource: Boolean(r.requires_resource), discountApplicable: Boolean(r.discount_applicable), taxApplicable: Boolean(r.tax_applicable), packageEligible: Boolean(r.package_eligible), isActive: Boolean(r.is_active) })),
+    rooms: ((rooms.data || []) as Record<string, unknown>[]).map((r): ClinicRoomConfiguration => ({ ...tenant, roomCode: String(r.room_code), displayName: String(r.display_name), isActive: Boolean(r.is_active), sortOrder: Number(r.sort_order) })),
+    resources: ((resources.data || []) as Record<string, unknown>[]).map((r): ClinicResource => ({ ...tenant, resourceCode: String(r.resource_code), displayName: String(r.display_name), resourceType: r.resource_type as ClinicResource["resourceType"], roomCode: r.room_code ? String(r.room_code) : null, capacity: Number(r.capacity), genderRestriction: (r.gender_restriction || null) as ClinicResource["genderRestriction"], isBookable: Boolean(r.is_bookable), isRuntimeOnly: Boolean(r.is_runtime_only), isActive: Boolean(r.is_active) })),
+    booking: booking.data ? mapBooking(tenant, booking.data as Record<string, unknown>) : null,
   };
+}
+
+function mapBooking(scope: TenantScope, r: Record<string, unknown>): ClinicBookingConfig {
+  return { ...scope, bookingMode: r.booking_mode as ClinicBookingConfig["bookingMode"], defaultDurationMin: Number(r.default_duration_min), slotIntervalMin: Number(r.slot_interval_min), maxSimultaneous: r.max_simultaneous === null ? null : Number(r.max_simultaneous), providerRequired: Boolean(r.provider_required), resourceRequired: Boolean(r.resource_required), blockDuplicatePatientOverlap: Boolean(r.block_duplicate_patient_overlap), allowWalkIn: Boolean(r.allow_walk_in), cancellationNoticeMin: Number(r.cancellation_notice_min), lateArrivalGraceMin: Number(r.late_arrival_grace_min), capacityRules: (r.capacity_rules && typeof r.capacity_rules === "object" ? r.capacity_rules : {}) as Record<string, unknown> };
+}
+
+export async function writeFacilityConfiguration(scope: TenantScope, input: { rooms: Omit<ClinicRoomConfiguration, keyof TenantScope>[]; resources: Omit<ClinicResource, keyof TenantScope>[]; booking: Omit<ClinicBookingConfig, keyof TenantScope> }, client = adminClient()) {
+  const tenant = requireTenantScope(scope); const scoped = dbScope(tenant); const relife = client.schema("relife");
+  const roomRows = input.rooms.map((r) => ({ ...scoped, room_code: r.roomCode, display_name: r.displayName, is_active: r.isActive, sort_order: r.sortOrder }));
+  if (roomRows.length) ensure((await relife.from("clinic_rooms").upsert(roomRows, { onConflict: "organization_id,clinic_id,room_code" })).error, "ROOMS_WRITE");
+  const resourceRows = input.resources.map((r) => ({ ...scoped, resource_code: r.resourceCode, display_name: r.displayName, resource_type: r.resourceType, room_code: r.roomCode, capacity: r.capacity, gender_restriction: r.genderRestriction, is_bookable: r.isBookable, is_runtime_only: r.isRuntimeOnly, is_active: r.isActive }));
+  if (resourceRows.length) ensure((await relife.from("clinic_resources").upsert(resourceRows, { onConflict: "organization_id,clinic_id,resource_code" })).error, "RESOURCES_WRITE");
+  const b = input.booking;
+  ensure((await relife.from("clinic_booking_config").upsert({ ...scoped, booking_mode: b.bookingMode, default_duration_min: b.defaultDurationMin, slot_interval_min: b.slotIntervalMin, max_simultaneous: b.maxSimultaneous, provider_required: b.providerRequired, resource_required: b.resourceRequired, block_duplicate_patient_overlap: b.blockDuplicatePatientOverlap, allow_walk_in: b.allowWalkIn, cancellation_notice_min: b.cancellationNoticeMin, late_arrival_grace_min: b.lateArrivalGraceMin, capacity_rules: b.capacityRules }, { onConflict: "organization_id,clinic_id" })).error, "BOOKING_WRITE");
 }
 
 export async function writeClinicProfile(scope: TenantScope, profile: Omit<ClinicProfileConfiguration, keyof TenantScope | "lifecycle">, actor: string, client = adminClient()) {

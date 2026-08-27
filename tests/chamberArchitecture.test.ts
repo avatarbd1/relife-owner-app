@@ -16,7 +16,7 @@ test("canonical Physio booking stays on capacityBooking, not fixed-bed schedulin
   assert.doesNotMatch(route, /chamberFixedHour/);
   assert.doesNotMatch(route, /appointmentScheduling/);
 
-  assert.match(capacity, /GENERAL_SESSION_MIN = 60/);
+  assert.match(capacity, /resolveConfiguredBooking/);
   assert.match(capacity, /GENERAL_TOLERANCE_MIN = 5/);
   assert.match(capacity, /machineReservationsCreated: false/);
   assert.doesNotMatch(capacity, /25_Machine_Reservations/);

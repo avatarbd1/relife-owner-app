@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import PatientsClient from "@/components/PatientsClient";
 import { formatBDT } from "@/lib/format";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
 import {
@@ -45,7 +45,7 @@ export default async function PatientsPage({
 }: {
   searchParams?: Promise<{ view?: string }>;
 }) {
-  const context = await requireCurrentAccessContext();
+  const { access: context, tenant } = await requireCurrentTenantAccessContext();
   const cookieStore = await cookies();
   const params = searchParams ? await searchParams : {};
   const scope = context.roles.includes("Owner")
@@ -55,7 +55,7 @@ export default async function PatientsPage({
   const todayView = clinician && params.view === "today";
 
   const [allPatients, createDepartments, identity] = await Promise.all([
-    getVisiblePatients(context, scope),
+    getVisiblePatients(context, scope, tenant.organizationId, tenant.clinicId),
     allowedPatientCreateDepartments(context),
     clinician ? getActiveWebStaffById(context.staffId) : Promise.resolve(null),
   ]);
@@ -63,7 +63,7 @@ export default async function PatientsPage({
   let patients = allPatients;
   let todayPatientCount = 0;
   if (clinician && identity) {
-    const appointments = await getAppointmentsForContext(context, scope, todayDhaka());
+    const appointments = await getAppointmentsForContext(context, scope, todayDhaka(), tenant.organizationId, tenant.clinicId);
     const myTodayIds = new Set(
       appointments
         .filter((appointment) =>

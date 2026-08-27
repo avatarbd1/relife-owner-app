@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import {
   updateManagedStaff,
   type StaffMutationInput,
@@ -11,6 +12,7 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "ACCESS_DENIED" || message === "OWNER_PROFILE_IMMUTABLE") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
+  if (message.startsWith("FEATURE_ACCESS_DENIED:")) return NextResponse.json({ ok: false, error: message }, { status: 403 });
   if (message === "STAFF_NOT_FOUND") {
     return NextResponse.json({ ok: false, error: message }, { status: 404 });
   }
@@ -53,6 +55,7 @@ export async function PATCH(
       requireCurrentTenantAccessContext(),
       params,
     ]);
+    await requireTenantFeature(tenantContext.tenant, "core.staff");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });

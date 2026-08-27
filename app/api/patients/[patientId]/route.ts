@@ -48,7 +48,7 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
 
-    const patient = await getPatientForContext(access, decodedPatientId);
+    const patient = await getPatientForContext(access, decodedPatientId, tenant.organizationId, tenant.clinicId);
     if (!patient || patient.department === "All") {
       return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
     }

@@ -5,6 +5,7 @@ import {
 } from "@/lib/domain/appointments/capacityBooking";
 import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
 import { withMutationLock } from "@/lib/webos/mutationLock";
@@ -17,6 +18,7 @@ function errorResponse(error: unknown): NextResponse {
   if (message === "ACCESS_DENIED") {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
+  if (message.startsWith("FEATURE_ACCESS_DENIED:")) return NextResponse.json({ ok: false, error: message }, { status: 403 });
   if (message === "PATIENT_NOT_FOUND") {
     return NextResponse.json({ ok: false, error: message }, { status: 404 });
   }
@@ -68,7 +70,7 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     }
-    const patient = await getPatientForContext(access, String(body.patientId || ""));
+    const patient = await getPatientForContext(access, String(body.patientId || ""), tenant.organizationId, tenant.clinicId);
     if (!patient || patient.department === "All") {
       return NextResponse.json({ ok: false, error: "PATIENT_NOT_FOUND" }, { status: 404 });
     }
@@ -78,11 +80,12 @@ export async function POST(request: NextRequest) {
     validateTenantScope(access, tenant, "appointment.create");
 
     assertCanPerform(access, "appointment.create", patient.department);
+    await requireTenantFeature(tenant, "core.appointments");
 
     const isPhysio = patient.department === "Physio";
     const lockKey = isPhysio
-      ? `capacity-booking:${String(body.date || "")}`
-      : `appointment-create:${String(body.date || "")}`;
+      ? `capacity-booking:${tenant.organizationId}:${tenant.clinicId}:${String(body.date || "")}`
+      : `appointment-create:${tenant.organizationId}:${tenant.clinicId}:${String(body.date || "")}`;
 
     const result = await withMutationLock(lockKey, () => {
       if (isPhysio) {
@@ -92,6 +95,7 @@ export async function POST(request: NextRequest) {
           time: String(body.time || ""),
           therapist: String(body.therapist || ""),
           remarks: String(body.remarks || ""),
+          resourceCode: String(body.resourceCode || "").trim() || undefined,
         });
       }
       return createAppointment(access, tenant.organizationId, tenant.clinicId, {
