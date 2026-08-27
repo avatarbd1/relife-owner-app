@@ -64,10 +64,53 @@ export async function getScopedCashPosition(
   });
 }
 
-export async function getScopedCashPositionForAdminView(
+const RELIFE_CANONICAL_ORGANIZATION = "relife";
+const RELIFE_CANONICAL_CLINIC = "amtali-main";
+
+function addPositions(
+  left: ScopedCashPosition,
+  right: ScopedCashPosition
+): ScopedCashPosition {
+  return {
+    reception: left.reception + right.reception,
+    homeTreasury: left.homeTreasury + right.homeTreasury,
+    bank: left.bank + right.bank,
+    total: left.total + right.total,
+  };
+}
+
+/**
+ * Authenticated tenant view for the current finance UI.
+ *
+ * Relife's current Sheets ledgers still carry the reviewed legacy department
+ * identities RELIFE-PHYSIO / RELIFE-DENTAL. Accept them only after the caller
+ * has resolved the canonical relife/amtali-main tenant. This is a bounded
+ * migration adapter, not a silent tenant default.
+ */
+export async function getScopedCashPositionForTenantView(
   scope: Scope,
-  now: Date = new Date()
+  now: Date,
+  organizationId: string,
+  clinicId: string
 ): Promise<ScopedCashPosition> {
-  const clinic = scope === "dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO";
-  return getScopedCashPosition(scope, now, "RELIFE", clinic);
+  const isRelifeTenant =
+    organizationId === RELIFE_CANONICAL_ORGANIZATION &&
+    clinicId === RELIFE_CANONICAL_CLINIC;
+
+  if (!isRelifeTenant) {
+    return getScopedCashPosition(scope, now, organizationId, clinicId);
+  }
+
+  if (scope === "physio") {
+    return getScopedCashPosition("physio", now, "RELIFE", "RELIFE-PHYSIO");
+  }
+  if (scope === "dental") {
+    return getScopedCashPosition("dental", now, "RELIFE", "RELIFE-DENTAL");
+  }
+
+  const [physio, dental] = await Promise.all([
+    getScopedCashPosition("physio", now, "RELIFE", "RELIFE-PHYSIO"),
+    getScopedCashPosition("dental", now, "RELIFE", "RELIFE-DENTAL"),
+  ]);
+  return addPositions(physio, dental);
 }
