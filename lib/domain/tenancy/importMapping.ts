@@ -95,14 +95,33 @@ function isValidPrice(value: unknown): boolean {
   return Number.isFinite(num) && num >= 0;
 }
 
+function normalizeDepartment(value: unknown): "Physio" | "Dental" | null {
+  const department = String(value || "").trim().toLowerCase();
+  if (department === "physio") return "Physio";
+  if (department === "dental") return "Dental";
+  return null;
+}
+
+function normalizeGender(value: unknown): "Male" | "Female" | "" | null {
+  const gender = String(value || "").trim().toLowerCase();
+  if (!gender) return "";
+  if (gender === "male" || gender === "m") return "Male";
+  if (gender === "female" || gender === "f") return "Female";
+  return null;
+}
+
 export function validatePatientRow(row: Record<string, string>): { valid: boolean; issues: string[] } {
   const issues: string[] = [];
   const name = (row.name || "").trim();
   const phone = (row.phone || "").trim();
+  const department = normalizeDepartment(row.department);
+  const gender = normalizeGender(row.gender);
   if (!name) issues.push("name required");
-  if (!phone) issues.push("phone required");
-  else if (!isValidPhoneNumber(phone)) issues.push("invalid phone format");
+  if (!department) issues.push("department must be Physio or Dental");
+  if (phone && !isValidPhoneNumber(phone)) issues.push("invalid phone format");
   if (row.email && !isValidEmail(row.email)) issues.push("invalid email format");
+  if (gender === null) issues.push("gender must be Male or Female when provided");
+  if (department === "Physio" && gender !== "Male" && gender !== "Female") issues.push("Physio gender must be Male or Female");
   return { valid: issues.length === 0, issues };
 }
 
