@@ -1,8 +1,16 @@
-# Relife tenant foundation
+# Relife Clinic OS tenant foundation
 
-The target architecture is one shared multi-tenant codebase prepared for the first 20 production Physio clinics. Relife is the first organization/tenant to migrate onto that same canonical contract; it is not a permanent single-clinic exception.
+The authoritative product and rollout contract is `docs/TWENTY_CLINIC_PRODUCTION_CONTRACT.md`.
 
-The detailed rollout contract is `docs/TWENTY_CLINIC_PRODUCTION_CONTRACT.md`.
+That master contract governs clinic configuration, feature flags, facility/resources, booking modes, owner access, storage/data ownership, onboarding, readiness, tenant isolation, and commercial rollout. Where historical tenancy notes or older rollout assumptions conflict with the master contract, the master contract wins.
+
+## Target architecture
+
+Relife Clinic OS is one shared configurable multi-tenant codebase and runtime.
+
+Relife is a flagship/reference tenant using the same canonical tenant contract as commercial clinics. Relife-specific workflows must not become universal defaults.
+
+Normal clinic differences — such as clinic type, room count, bed/resource count, services/prices, staff, booking mode, finance options, Chamber, gamification, salary, or other modules — must be represented as data/configuration rather than source-code conditions.
 
 ## Current compatibility state
 
@@ -19,24 +27,32 @@ Every tenant-owned runtime read/write must use explicit `organization_id` and `c
 
 Do not create production helpers or admin views that silently inject a fixed Relife clinic. If legacy data needs compatibility, keep it in a named migration/adapter boundary with an explicit removal path.
 
+## Canonical data/storage direction
+
+- Supabase/Postgres is the target primary operational and configuration store for tenant data.
+- Managed Drive/storage owns file/media payloads, with tenant-scoped metadata and authorized access.
+- Google Sheets remains a legacy/import/export/reporting compatibility source and is not the canonical realtime database for new commercial clinics.
+- One clinic must not require its own Supabase project, Render service, or code branch.
+
 ## Required before Clinic #2 is activated
 
-1. Complete T4 DB/privileged-path tenant hardening for the actual runtime architecture; do not assume ordinary RLS protects `service_role`/BYPASSRLS traffic.
+1. Complete DB/privileged-path tenant hardening for the actual runtime architecture; do not assume ordinary RLS protects `service_role`/BYPASSRLS traffic.
 2. Resolve active clinic from authenticated membership/context on every tenant-owned request.
 3. Pass `organization_id` and `clinic_id` explicitly on every tenant-owned transactional write and query.
-4. Enforce both tenant keys in Edge Function bootstrap/conflict/read/update paths where the schema carries both columns.
-5. Complete T5: replace/widen legacy globally unique business-key constraints where different clinics may reuse local IDs such as patient IDs or Chamber resource IDs.
+4. Enforce both tenant keys in privileged/Edge Function bootstrap/conflict/read/update paths where the schema carries both columns.
+5. Replace/widen legacy globally unique business-key constraints where different clinics may reuse local IDs such as patient IDs or Chamber resource IDs.
 6. Fix and harden clinic onboarding/readiness validation so it verifies the requested staff membership and every required readiness gate.
-7. Make clinic provisioning configuration/data-driven, including staff membership and operational data-source/storage mapping; onboarding a clinic must not require source-code conditions.
+7. Make clinic provisioning configuration/data-driven, including staff membership, facility/resources, services/pricing, booking rules, finance configuration, feature flags, and operational data-source/storage mapping. Onboarding a normal clinic must not require source-code conditions.
 8. Add deterministic cross-tenant tests proving one clinic cannot read, mutate, reserve, export, fetch media, or audit another clinic's data.
-9. Execute a real Clinic #2 isolation smoke, then prove repeatability on Clinics #3–#5 before batching Clinics #6–#20.
-10. Keep Finance ledger invariants independent from tenant routing; tenant scope must never change accounting semantics.
+9. Execute a real Clinic #2 isolation and operational smoke using the master onboarding mechanism.
+10. Prove repeatability on Clinics #3-#5 without source-code changes for ordinary clinic differences before batching Clinics #6-#20.
+11. Keep Finance ledger invariants independent from tenant routing; tenant scope must never change accounting semantics.
 
-## First-20 rollout sequence
+## Governing rollout sequence
 
-`T4 -> onboarding/readiness hardening -> T5 -> generic provisioning -> Clinic #2 real isolation -> Clinics #3-#5 repeatability -> Clinics #6-#20 rollout`
+`Tenant hardening -> multi-clinic constraints -> configuration core -> generic facility/resource model -> configurable booking -> staff/finance configuration -> owner UX -> onboarding/readiness -> real Clinic #2 isolation -> Clinics #3-#5 repeatability -> Clinics #6-#20 commercial rollout`
 
-50/100-clinic performance tuning is deliberately out of scope until the first-20 gate is closed.
+Performance tuning for materially larger scales is deliberately deferred until the repeatability/commercial-readiness gate is closed unless real evidence requires it earlier.
 
 ## Migration source of truth
 
