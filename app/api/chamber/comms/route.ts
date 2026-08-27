@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
@@ -15,7 +16,11 @@ const PHYSIO_EMERGENCY_MARKER = "CALL:ALL:PHYSIO";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "CHAMBER_COMMS_FAILED";
-  if (message === "ACCESS_DENIED" || message === "CALL_TARGET_MISMATCH") {
+  if (
+    message === "ACCESS_DENIED" ||
+    message === "CALL_TARGET_MISMATCH" ||
+    message.startsWith("FEATURE_ACCESS_DENIED:")
+  ) {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
   if (message === "EQUIPMENT_REQUEST_NOT_FOUND" || message === "CALL_NOT_FOUND") {
@@ -36,11 +41,11 @@ function errorResponse(error: unknown): NextResponse {
 
 export async function GET() {
   try {
-    // T2-02: Require full tenant-aware context for chamber operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.comms.read");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const snapshot = await getChamberCommsSnapshot(access);
     return NextResponse.json({ ok: true, ...snapshot });
   } catch (error) {
@@ -53,11 +58,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
   try {
-    // T2-02: Require full tenant-aware context for chamber operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.comms.run");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
