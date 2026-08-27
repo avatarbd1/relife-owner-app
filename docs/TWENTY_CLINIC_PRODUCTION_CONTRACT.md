@@ -1,106 +1,689 @@
-# Relife Owner App — Canonical 20-Clinic Production Contract
+# Relife Clinic OS — Master Product & Rollout Contract
 
-Status: OWNER-SELECTED PRODUCT DIRECTION
+Status: OWNER-SELECTED AUTHORITATIVE MASTER PLAN
 
-This document is the authoritative local product contract for preparing Relife Owner App for the first 20 production clinics. It overrides stale single-clinic assumptions in historical notes, branches, comments, seed fixtures, and compatibility code.
+This document is the authoritative product, tenancy, onboarding, configuration, and rollout contract for Relife Clinic OS.
 
-## Product target
+It replaces conflicting or narrower historical rollout/product plans, including assumptions that every client clinic should copy Relife's room, bed, Chamber, finance, gamification, or other internal workflows.
 
-- One multi-tenant codebase.
-- One shared application runtime; do not create one Render service, Supabase project, or code branch per clinic.
-- First commercial rollout target: 20 Physio clinics.
-- Relife Dental remains an internal/pilot clinical module and may be used as a second-clinic isolation test, but Dental feature expansion does not block the first 20 Physio-clinic rollout.
-- Relife is not a permanent legacy exception. Existing Relife data must be migrated/normalized into the same canonical tenant contract used by every new clinic.
+Historical notes, branches, issues, comments, fixtures, migration documents, and compatibility code may remain as implementation history, but they must not override this contract. Where old plans conflict with this document, this document wins.
 
-## Canonical identity model
+## 1. Product target
 
-Runtime business logic must use explicit `organizationId + clinicId` resolved from authenticated tenant membership/context.
+Relife Clinic OS is one configurable multi-tenant clinic platform.
 
-- `organization_id` identifies the organization/tenant boundary.
-- `clinic_id` identifies the clinic boundary inside that organization.
-- Department (`Physio`, `Dental`, etc.) is authorization/business scope, not a substitute for `clinic_id`.
-- `RELIFE-PHYSIO` / `RELIFE-DENTAL` may exist only where they are verified legacy Sheets ledger/department identifiers. They must not be treated as universal runtime tenant defaults or new-clinic primary keys.
+- One shared application codebase.
+- One shared application runtime.
+- One primary shared Supabase project/database for production tenant data unless a future Owner decision explicitly changes the infrastructure model.
+- Shared managed storage/Drive may be used for files/media with strict tenant metadata and access control.
+- Do not create one Render service, Supabase project, code branch, or hard-coded product fork per clinic.
+- New clinics must be onboarded through configuration/data, not source-code edits.
+- Relife is a flagship/reference tenant with advanced configuration, not a permanent special-case product fork.
+- A client clinic receives only the core and optional modules it needs.
 
-## No-special-case rule
+## 2. Canonical tenant identity
 
-Do not add new production helpers, routes, readers, writers, dashboards, or admin views that silently inject `RELIFE`, `RELIFE-PHYSIO`, `RELIFE-DENTAL`, `amtali-main`, or any fixed clinic identity.
+Runtime tenant-owned business logic must use explicit `organization_id + clinic_id` resolved from authenticated tenant membership/context.
 
-If legacy Relife data requires compatibility:
+- `organization_id` identifies the client organization/business boundary.
+- `clinic_id` identifies one clinic/branch inside that organization.
+- Department is authorization/business scope and never replaces clinic identity.
+- Missing, blank, ambiguous, or mismatched tenant identity fails closed.
+- No authenticated tenant runtime path may silently inject a Relife-specific clinic identity.
 
-1. keep compatibility at an explicit migration/adapter boundary;
-2. make the boundary named and auditable;
-3. never let authenticated tenant runtime paths depend on the compatibility default;
-4. provide a removal/migration path;
-5. do not create a new per-clinic conditional branch.
+A single organization may own multiple clinics/branches. Authorized organization owners may switch between clinics and, when explicitly permitted, view consolidated organization-level summaries.
 
-Seed/test fixtures may use fixed IDs only when clearly test-only and when production code cannot inherit those defaults.
+## 3. Core data ownership and storage model
 
-## Runtime isolation invariant
+### Supabase/Postgres — primary operational data
 
-Every tenant-owned read/write must either:
+The target source of truth for transactional and configuration data includes at least:
 
-- receive explicit `organizationId + clinicId` from the canonical tenant context; or
-- operate in a deliberately documented system-admin/control boundary with independent authorization and audit semantics.
+- organizations
+- clinics
+- memberships
+- roles/permissions
+- clinic settings
+- feature flags / entitlements
+- rooms
+- resources
+- services and prices
+- staff
+- patients
+- appointments
+- payments
+- expenses
+- packages where enabled
+- clinical/runtime records where enabled
+- audit records
+- readiness/provisioning state
 
-For tenant-owned data, missing, blank, ambiguous, or mismatched tenant identity fails closed.
+Every tenant-owned row must be tenant scoped where applicable.
 
-Department access checks are additive to tenant checks; department scope never replaces tenant isolation.
+### Google Drive / managed file storage
 
-## First-20 rollout gates
+Files/media may include:
 
-### T4 — DB / privileged-path tenant hardening
-Complete independent database/privileged-path protection required for the actual runtime architecture. Do not claim ordinary RLS protects `service_role`/BYPASSRLS traffic. Every active privileged tenant path must enforce the dual tenant key before Clinic #2 activation.
+- reports
+- images
+- X-rays
+- scans
+- PDFs
+- attachments
 
-### T5 — Multi-clinic schema constraints
-Audit and migrate globally unique business keys, foreign keys, indexes, and constraints so two clinics can safely reuse clinic-local identifiers. Prefer explicit composite tenant keys where required. Every migration needs deterministic tests and rollback.
+Database records must store tenant-scoped ownership/reference metadata. File access must be authorized through the same tenant boundary and must not rely on obscurity of a shared folder URL.
 
-### Provisioning — code-free clinic onboarding
-A new clinic must be provisioned through data/configuration, not source-code edits. The provisioning contract must cover at least:
+### Google Sheets
 
-- organization/clinic records;
-- staff membership and role/department access;
-- clinic-specific operational data-source mapping;
-- required Sheets/workbook/schema readiness;
-- required storage/media configuration;
-- validation and rollback/dry-run evidence.
+Google Sheets is not the canonical real-time database for new commercial clinics.
 
-### T6 — real Clinic #2 isolation proof
-Clinic #2 is the first production-style gate. Prove Clinic A cannot read, write, export, reserve, operate, audit, or fetch media belonging to Clinic B, while explicitly authorized Owner/System-Admin behavior still works.
+Sheets may be used for:
 
-### Repeatability gate
-After Clinic #2 passes, onboard Clinics #3–#5 using the same mechanism without code changes. Only then batch Clinics #6–#20.
+- legacy compatibility
+- data import
+- data export
+- reporting/admin compatibility
+- verified migration boundaries
 
-## Readiness definition
+A clinic may have clinic-specific spreadsheet/workbook mappings when required, but `one clinic = one Sheet database` is not the target architecture.
 
-The system is `20-CLINIC READY` only when:
+## 4. New client / organization configuration
 
-- T4 is closed on current main;
-- T5 constraints are applied and rollback-tested;
-- clinic onboarding is generic and configuration-driven;
-- staff membership is deterministic and fail-closed;
-- data-source/storage mapping is clinic-aware;
-- Clinic #2 real isolation smoke passes;
-- Clinics #3–#5 prove repeatable onboarding without code changes;
-- the same runbook can provision Clinics #6–#20;
-- no active production path relies on an undocumented Relife-only tenant fallback.
+Creating a new client organization must require configuration, not code changes.
 
-## Current verified blockers / audit targets
+Platform Admin collects or configures:
 
-The following are known blockers or review targets as of the contract creation base (`82db274c`):
+- organization/business name
+- owner name
+- owner mobile
+- owner email where available
+- billing contact
+- subscription/plan assignment
+- activation/start date
+- organization status
 
-1. T4 is still active and not closed.
-2. T5 multi-clinic key/constraint work is not complete.
-3. `app/api/setup/clinic-validation/route.ts` does not reliably prove the requested staff member owns the active membership: the helper receives `staffId` but the current query only checks whether any active clinic membership exists.
-4. The same clinic-validation route can compute `isReady` without requiring all advertised readiness checks, including `crossTenantIsolationVerified` and `explicitTenantParametersInWriters`.
-5. Compatibility/admin finance helpers introduced during pre-T4 hardening inject fixed Relife tenant IDs (`getCashMovementsForAdminView`, `getScopedCashPositionForAdminView`). These are not acceptable as the long-term multi-clinic admin model and must be replaced by explicit tenant-aware/system-admin aggregation semantics.
-6. Historical tenant progress documentation contains stale/contradictory intermediate status and must not override current main or this contract.
+The system generates the canonical `organization_id`.
 
-These findings are not permission to make unrelated rewrites. Fix them in bounded reviewed slices against current main.
+## 5. Clinic profile configuration
 
-## Out of scope until first 20 clinics are ready
+For each clinic/branch configure:
 
-- 50/100-clinic performance tuning;
-- broad Dental feature expansion;
-- unrelated SMS/Undo/backlog work;
-- speculative infrastructure rewrites;
-- one-database-per-clinic or one-service-per-clinic architecture without a new Owner decision.
+- clinic name
+- clinic type
+- branch name
+- address
+- phone
+- email where applicable
+- logo/branding where applicable
+- currency
+- timezone
+- opening days
+- opening time
+- closing time
+- weekly holidays
+- clinic status
+
+The system generates the canonical `clinic_id`.
+
+## 6. Clinic templates
+
+Templates are configuration presets only, never hard-coded product forks.
+
+Initial template categories may include:
+
+- Physiotherapy
+- Dental
+- Doctor Chamber
+- Other clinic/service business types when approved
+
+A template sets sensible defaults, but every enabled feature must remain configuration-driven.
+
+Example Physiotherapy defaults:
+
+- Patients ON
+- Appointments ON
+- Staff ON
+- Services ON
+- Basic Finance ON
+- Reports ON
+- Clinical optional
+- Room/resource management optional
+- Live Chamber optional
+- Packages optional
+
+## 7. Facility and resource configuration
+
+Room, bed, chair, machine, or other physical-resource structure must never be assumed from Relife.
+
+A clinic may have:
+
+- no rooms/resources
+- one room
+- six rooms
+- twelve beds
+- dental chairs
+- cabins
+- treatment tables
+- machines/equipment
+- other configured resources
+
+Canonical facility hierarchy:
+
+`Organization -> Clinic -> Room/Area -> Resource`
+
+Resource types may include:
+
+- BED
+- DENTAL_CHAIR
+- TREATMENT_TABLE
+- CABIN
+- ROOM
+- MACHINE
+- OTHER
+
+Each room/resource may have:
+
+- display name
+- type
+- parent room/area
+- active/inactive state
+- capacity
+- optional gender restriction
+- bookable flag
+- runtime-use-only flag
+
+Bulk configuration must support workflows such as:
+
+`6 rooms -> 2 beds each -> auto-create 12 beds`
+
+After auto-creation, authorized users may rename, deactivate, add, or reorganize resources without code changes.
+
+## 8. Booking configuration
+
+Booking must be generic and clinic-configurable.
+
+Supported booking modes:
+
+### A. Simple/provider booking
+
+For clinics that do not need rooms/beds/resources.
+
+`Patient -> Date -> Time -> Provider -> Confirm`
+
+### B. Capacity booking
+
+The system enforces configured simultaneous capacity without pre-assigning a specific physical resource at booking time.
+
+This is the preferred default for general Physiotherapy workflows where exact bed assignment belongs to treatment runtime, not appointment creation.
+
+### C. Specific-resource booking
+
+For clinics that genuinely reserve a specific room/chair/bed/resource during booking.
+
+`Patient -> Date -> Time -> Provider/Resource -> Confirm`
+
+This mode must be opt-in, not assumed globally.
+
+Booking configuration may include:
+
+- default appointment duration
+- slot interval
+- maximum simultaneous bookings
+- provider required yes/no
+- resource required yes/no
+- duplicate-patient overlap blocking
+- cancellation rules
+- late-arrival rules
+- walk-in support
+- booking notes
+- clinic-specific capacity/gender safety rules where applicable
+
+## 9. Service and pricing configuration
+
+Each clinic controls its own catalog.
+
+A service may include:
+
+- service name
+- department
+- price
+- duration
+- active/inactive state
+- requires booking
+- requires provider
+- requires resource
+- discount/tax applicability
+- package eligibility
+
+Relife prices or service names must never become universal defaults for commercial clients.
+
+## 10. Package configuration
+
+Packages are optional.
+
+Where enabled, configure:
+
+- package name
+- session count
+- validity
+- price
+- discount
+- applicable services
+- cancellation/refund rules
+
+## 11. Staff configuration
+
+Each staff member may include:
+
+- name
+- mobile
+- email/login
+- role
+- department
+- clinic/branch membership
+- active/inactive state
+- login enabled yes/no
+- joining date
+- salary configuration where enabled
+- appointment-provider flag
+
+Roles may include:
+
+- Clinic Owner
+- Manager
+- Receptionist
+- Therapist
+- Doctor/Dentist
+- Assistant
+- Accountant
+- Viewer
+
+Roles do not replace permission checks. Membership and permission evaluation must remain deterministic and tenant scoped.
+
+## 12. Permission model
+
+Permissions must separate tenant ownership from functional access.
+
+Example capabilities:
+
+- patient registration/read/update
+- appointment create/update/cancel
+- payment collection
+- expense access
+- finance reports
+- clinical notes
+- staff management
+- settings management
+- audit viewing
+
+Clinic Owner normally has broad access to the clinic(s) they own, subject to platform security policy.
+
+Receptionist, therapist, clinician, accountant, and other roles receive only required capabilities.
+
+No role may cross an unauthorized organization/clinic boundary.
+
+## 13. Patient registration configuration
+
+Recommended required/default fields:
+
+- patient name
+- mobile
+- gender where required by workflow
+- age or date of birth
+- auto-generated clinic-local patient ID
+
+Optional fields may include:
+
+- address
+- guardian
+- occupation
+- referral source
+- emergency contact
+- national ID
+- blood group
+- approved custom fields in a future bounded implementation
+
+Clinic-local patient IDs may be reused across different clinics only when database constraints remain tenant scoped.
+
+## 14. Finance configuration
+
+Core finance must remain generic.
+
+Configure per clinic:
+
+- currency
+- payment methods
+- income categories
+- expense categories
+- opening cash balance where required
+- outstanding receivables/payables for migration where required
+
+Optional finance modules may include:
+
+- salary
+- staff advance
+- cash custody
+- approvals
+- petty cash
+- advanced owner finance
+- clinic-specific treasury/cash-flow workflows
+
+Relife-specific Home Treasury behavior is not a universal client default. It must remain a Relife configuration or an explicitly enabled advanced finance workflow.
+
+Finance accounting invariants remain independent from tenant routing.
+
+## 15. Feature flags and entitlements
+
+Every clinic must have explicit feature configuration.
+
+### Core default modules
+
+- Dashboard
+- Patients
+- Appointments
+- Staff
+- Services
+- Basic Finance
+- Reports
+- Profile/Settings
+
+### Optional modules
+
+- Live Chamber
+- Room/Bed Runtime
+- Clinical Notes
+- Treatment Plans
+- Packages
+- Attendance
+- Salary
+- Inventory
+- SMS
+- Notifications
+- Files/Documents
+- Audit Viewer
+- Advanced Finance
+- Machines
+- Gamification
+- Rewards
+- Live Chat
+
+Disabled features must not clutter normal client navigation and must not create unnecessary runtime/realtime/data load.
+
+Feature flags and commercial plan entitlements should be modeled separately so the platform can distinguish product capability from what a client has purchased/enabled.
+
+## 16. Relife configuration
+
+Relife runs on the same canonical tenant model.
+
+Relife may enable a richer configuration, including advanced Physio workflows, Chamber runtime, machines, packages, attendance, salary, advanced finance, gamification, or other approved internal features.
+
+Relife-specific behavior must not leak into another clinic unless that clinic explicitly enables/configures the same capability.
+
+## 17. Owner experience
+
+A Clinic Owner must be able to log in and see authorized clinic data such as:
+
+- dashboard summary
+- patients
+- appointments
+- finance
+- staff
+- reports
+- clinic settings
+
+Patient views may include, subject to enabled modules and permissions:
+
+- profile
+- contact/demographic data
+- appointment history
+- treatment/clinical records
+- payment history
+- outstanding amounts
+- attached reports/files
+
+A multi-branch owner must have a clinic switcher. Consolidated `All Clinics` views require explicit organization-level authorization and tenant-safe aggregation.
+
+## 18. Platform Admin boundary
+
+Platform Admin is not the same role as Clinic Owner.
+
+Platform Admin may manage:
+
+- organizations
+- clinics
+- subscriptions/plans
+- activation status
+- readiness
+- feature entitlements
+- support status
+- infrastructure/storage usage
+- system errors
+- security/audit alerts
+
+Routine support screens should not expose unrestricted patient clinical details. Elevated support access, where genuinely required, must be explicit, least-privilege, time-bounded where feasible, and audited.
+
+## 19. Existing data import
+
+New clients may start fresh or import existing data.
+
+Supported onboarding path should include:
+
+- CSV/Excel upload where supported
+- Google Sheet mapping where required
+- column mapping
+- validation preview
+- deterministic import
+- rollback/failure evidence
+- audit trail
+
+Imports must not bypass tenant isolation or business invariants.
+
+## 20. Client data export
+
+Authorized clinic owners should be able to export their own clinic data in supported formats.
+
+Target export areas include:
+
+- patients
+- appointments
+- finance
+- staff
+- reports
+
+Full tenant export/portability may be implemented as a later bounded capability, but no export may cross tenant boundaries.
+
+## 21. Clinic lifecycle
+
+Canonical clinic lifecycle states:
+
+- draft
+- setup
+- ready
+- active
+- suspended
+- archived
+
+Suspension must not silently delete tenant data.
+
+## 22. Code-free onboarding wizard
+
+Target onboarding flow:
+
+1. Business / Organization
+2. Clinic Profile
+3. Facility / Rooms / Resources
+4. Services / Prices
+5. Staff / Roles / Memberships
+6. Booking Rules
+7. Finance Configuration
+8. Feature Selection
+9. Existing Data Import or Skip
+10. Review / Readiness Validation
+11. Activate Clinic
+
+Once the productization work is complete, onboarding a normal new clinic must not require programmer intervention or source-code conditions.
+
+## 23. Readiness gate
+
+A clinic may not become production-active until required readiness checks pass.
+
+Readiness must verify at least:
+
+- valid organization
+- valid clinic
+- correct owner/staff membership
+- deterministic role/permission mapping
+- valid booking configuration
+- valid data/storage mapping
+- required finance configuration
+- required schema readiness
+- explicit tenant parameters in active runtime paths
+- no fixed Relife fallback in the clinic activation path
+- cross-tenant isolation verification
+- rollback/dry-run evidence for provisioning/migration where required
+
+Readiness must fail closed on missing or ambiguous evidence.
+
+## 24. Security and isolation invariants
+
+Clinic A must not be able to read, mutate, reserve, export, operate, audit, or fetch media belonging to Clinic B unless an explicitly authorized system-admin boundary permits a narrowly defined action.
+
+Every active tenant-owned runtime path must enforce the canonical tenant identity.
+
+Department authorization is additive to tenant isolation and never a substitute for it.
+
+Privileged/service-role/BYPASSRLS paths require independent tenant enforcement and audit semantics; ordinary RLS must not be assumed to protect privileged traffic.
+
+## 25. Productization implementation phases
+
+### Phase A — Tenant Foundation
+
+- organization/clinic identity
+- memberships
+- permissions
+- strict tenant isolation
+- privileged-path hardening
+- tenant-safe local business keys/constraints
+
+### Phase B — Configuration Core
+
+- clinic settings
+- feature flags
+- entitlements
+- services/pricing
+- operating hours
+- lifecycle/status
+
+### Phase C — Facility + Booking
+
+- generic room/resource model
+- bulk resource creation
+- simple booking
+- capacity booking
+- specific-resource booking only where enabled
+- clinic-specific booking rules
+
+### Phase D — Staff + Finance
+
+- staff provisioning
+- role/permission setup
+- basic finance configuration
+- optional finance modules
+
+### Phase E — Owner UX
+
+- tenant-scoped owner dashboard
+- patient access
+- clinic switcher
+- settings/configuration UI
+- organization-level aggregation where authorized
+
+### Phase F — Onboarding & Portability
+
+- onboarding wizard
+- import/mapping
+- readiness engine
+- export foundations
+- provisioning rollback/dry-run evidence
+
+### Phase G — Real Clinic #2 Proof
+
+Onboard a real production-style Clinic #2 using the canonical mechanism with no clinic-specific code branch.
+
+Prove Clinic #2 cannot cross tenant boundaries and can independently operate its configured core modules.
+
+### Phase H — Repeatability
+
+Onboard Clinics #3-#5 with the same mechanism and no source-code changes required for ordinary configuration differences.
+
+Only after this repeatability gate passes should Clinics #6-#20 be batched for commercial rollout.
+
+## 26. Required implementation rule
+
+Normal differences between clinics must be represented as data/configuration, not code conditionals.
+
+Examples that must not require source-code changes:
+
+- 1 room vs 6 rooms
+- 2 beds vs 12 beds
+- no beds at all
+- Physio vs Dental template
+- different services/prices
+- different appointment durations
+- different staff counts
+- different roles/permissions
+- Chamber ON/OFF
+- Gamification ON/OFF
+- Salary ON/OFF
+- Advanced Finance ON/OFF
+- existing-data import vs fresh start
+
+Code changes are reserved for new platform capabilities, not ordinary client onboarding.
+
+## 27. Migration and compatibility rule
+
+Existing Relife compatibility code may remain only where needed during migration.
+
+Any compatibility boundary must be:
+
+1. explicit and named;
+2. auditable;
+3. isolated from canonical tenant runtime logic;
+4. accompanied by a removal/migration path;
+5. forbidden from introducing new Relife-specific defaults into commercial tenant paths.
+
+## 28. Definition of commercial clinic readiness
+
+The platform is ready for repeatable commercial clinic onboarding only when:
+
+- tenant isolation is closed for active runtime paths;
+- multi-clinic local keys/constraints are safe;
+- clinic provisioning is configuration-driven;
+- staff membership/permissions are deterministic and fail closed;
+- facility/resource configuration is generic;
+- booking behavior is configurable;
+- feature flags work per clinic;
+- data-source/storage mapping is clinic aware;
+- Clinic #2 passes real isolation and operational smoke tests;
+- Clinics #3-#5 onboard with the same runbook and without source-code edits for normal differences;
+- the same mechanism can provision Clinics #6-#20;
+- no active commercial path depends on an undocumented Relife-only fallback.
+
+## 29. Out of scope until the repeatability gate is closed
+
+Unless required to complete the master plan above, defer:
+
+- speculative 50/100-clinic performance tuning
+- broad unrelated feature expansion
+- new one-off Relife-only workflows
+- per-clinic infrastructure forks
+- unrelated SMS/Undo/backlog work
+- speculative rewrites that do not advance configuration-driven onboarding, isolation, or commercial readiness
+
+## 30. Governing rollout sequence
+
+The governing execution order is:
+
+`Tenant hardening -> multi-clinic constraints -> configuration core -> generic facility/resource model -> configurable booking -> staff/finance configuration -> owner UX -> onboarding/readiness -> real Clinic #2 isolation -> Clinics #3-#5 repeatability -> Clinics #6-#20 commercial rollout`
+
+All future implementation plans, Claude/ChatGPT task prompts, PR reviews, acceptance criteria, and merge decisions for clinic productization must be evaluated against this contract.
