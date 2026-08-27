@@ -6,9 +6,13 @@ import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
-function errorResponse(error: unknown): NextResponse {
+export function paymentErrorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "PAYMENT_CREATE_FAILED";
-  if (message === "ACCESS_DENIED") {
+  if (
+    message === "ACCESS_DENIED" ||
+    message === "DEPARTMENT_ACCESS_DENIED" ||
+    message.startsWith("TENANT_SCOPE_DENIED:")
+  ) {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
   if (message === "PATIENT_NOT_FOUND") {
@@ -91,6 +95,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
-    return errorResponse(error);
+    return paymentErrorResponse(error);
   }
 }
