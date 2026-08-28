@@ -1,8 +1,11 @@
 import "server-only";
 
+import type { PlatformOwnerSnapshot } from "@/lib/data/platformOwner";
+
 const DEFAULT_PLATFORM_CONTROL_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-platform-control";
 const PLATFORM_CONTROL_TIMEOUT_MS = 10000;
+const HIDDEN_PROOF_ORGANIZATION_PREFIXES = ["phase-g-", "phase-h-"] as const;
 
 function platformControlSecret(): string {
   const secret = String(
@@ -21,6 +24,17 @@ function platformControlUrl(): string {
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "",
   ).trim().replace(/\/$/, "");
   return base ? `${base}/functions/v1/relife-platform-control` : DEFAULT_PLATFORM_CONTROL_URL;
+}
+
+function operationalPlatformSnapshot(snapshot: PlatformOwnerSnapshot): PlatformOwnerSnapshot {
+  return {
+    ...snapshot,
+    clinics: snapshot.clinics.filter((clinic) =>
+      !HIDDEN_PROOF_ORGANIZATION_PREFIXES.some((prefix) =>
+        clinic.organizationSlug.startsWith(prefix),
+      ),
+    ),
+  };
 }
 
 export async function callPlatformControl<T>(body: Record<string, unknown>): Promise<T> {
@@ -43,6 +57,11 @@ export async function callPlatformControl<T>(body: Record<string, unknown>): Pro
     } & T;
     if (!response.ok || payload.ok !== true) {
       throw new Error(String(payload.error || `PLATFORM_CONTROL_HTTP_${response.status}`));
+    }
+    const payloadRecord = payload as Record<string, unknown>;
+    const snapshot = payloadRecord.snapshot as PlatformOwnerSnapshot | undefined;
+    if (snapshot && Array.isArray(snapshot.clinics)) {
+      payloadRecord.snapshot = operationalPlatformSnapshot(snapshot);
     }
     return payload;
   } catch (error) {
