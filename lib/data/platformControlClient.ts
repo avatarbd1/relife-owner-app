@@ -2,10 +2,8 @@ import "server-only";
 
 const DEFAULT_PLATFORM_CONTROL_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-platform-control";
-// Supabase free-tier cold starts can exceed 10s even when the control operation
-// itself completes successfully. Keep enough headroom so the owner UI does not
-// surface a false timeout after provisioning has already committed.
-const PLATFORM_CONTROL_TIMEOUT_MS = 30000;
+const PLATFORM_CONTROL_TIMEOUT_MS = 10000;
+const PLATFORM_PROVISION_TIMEOUT_MS = 30000;
 
 function platformControlSecret(): string {
   const secret = String(
@@ -28,7 +26,10 @@ function platformControlUrl(): string {
 
 export async function callPlatformControl<T>(body: Record<string, unknown>): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PLATFORM_CONTROL_TIMEOUT_MS);
+  const timeoutMs = body.action === "provision"
+    ? PLATFORM_PROVISION_TIMEOUT_MS
+    : PLATFORM_CONTROL_TIMEOUT_MS;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(platformControlUrl(), {
       method: "POST",
