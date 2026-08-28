@@ -4,9 +4,8 @@ import {
   enrollmentCookieMaxAge,
   readStaffEnrollmentToken,
 } from "@/lib/staffEnrollment";
-import { listPasskeysForStaff } from "@/lib/webauthn";
 import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
-import { getActiveWebStaffById, toAccessContext } from "@/lib/webos/staffDirectory";
+import { getEnrollmentIdentity } from "@/lib/webos/enrollmentIdentity";
 
 export async function POST(request: NextRequest) {
   if (!isAllowedWebAuthnRequestOrigin(request)) {
@@ -14,29 +13,21 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  const claims = readStaffEnrollmentToken(
-    typeof body?.token === "string" ? body.token : null
-  );
+  const token = typeof body?.token === "string" ? body.token : null;
+  const claims = readStaffEnrollmentToken(token);
   if (!claims) {
     return NextResponse.json({ ok: false, error: "Setup link is invalid or expired" }, { status: 401 });
   }
 
   try {
-    const staff = await getActiveWebStaffById(claims.staffId);
-    if (!staff || !toAccessContext(staff)) {
+    const enrollment = await getEnrollmentIdentity(token);
+    if (!enrollment) {
       return NextResponse.json(
         { ok: false, error: "Staff access is inactive or incomplete" },
         { status: 403 }
       );
     }
-
-    const passkeys = await listPasskeysForStaff(staff.staffId);
-    if (passkeys.length !== claims.passkeyCount) {
-      return NextResponse.json(
-        { ok: false, error: "Setup link has already been used. Ask the owner for a new link." },
-        { status: 409 }
-      );
-    }
+    const { identity: staff } = enrollment;
 
     const response = NextResponse.json({
       ok: true,
@@ -47,7 +38,7 @@ export async function POST(request: NextRequest) {
         departments: staff.departmentAccess,
       },
     });
-    response.cookies.set(STAFF_ENROLL_COOKIE, body.token, {
+    response.cookies.set(STAFF_ENROLL_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
@@ -58,6 +49,13 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "STAFF_ENROLLMENT_START_FAILED";
     console.error("Staff enrollment start failed", message);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const status = message === "STAFF_ENROLLMENT_ALREADY_USED"
+      ? 409
+      : message === "STAFF_ENROLLMENT_ACCESS_DENIED"
+        ? 403
+        : message.startsWith("STAFF_ENROLLMENT")
+          ? 401
+          : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
