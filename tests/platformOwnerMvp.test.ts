@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPlatformOwnerStaffId, parsePlatformOwnerStaffIds } from "../lib/domain/platform/authority.ts";
+import {
+  isPlatformOwnerStaffId,
+  parsePlatformOwnerStaffIds,
+  postLoginPathForStaffId,
+} from "../lib/domain/platform/authority.ts";
 import {
   buildProvisioningPayload,
   CORE_FEATURE_KEYS,
@@ -29,6 +33,9 @@ test("platform authority is an explicit allowlist, not a tenant Owner role", () 
   assert.equal(isPlatformOwnerStaffId("ST001", "ST001,OPS02"), true);
   assert.equal(isPlatformOwnerStaffId("ST001", ""), false);
   assert.equal(isPlatformOwnerStaffId("OWN001", "ST001,OPS02"), false);
+  assert.equal(postLoginPathForStaffId("ST001", "ST001,OPS02"), "/platform");
+  assert.equal(postLoginPathForStaffId("OWN001", "ST001,OPS02"), "/home");
+  assert.equal(postLoginPathForStaffId("ST001", ""), "/home");
 });
 
 test("commercial plan prices and only approved premium minimums are defaulted", () => {
