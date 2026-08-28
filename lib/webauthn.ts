@@ -23,6 +23,7 @@ import {
   getSheetProperties,
 } from "@/lib/data/googleSheets";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
+import type { WebStaffIdentity } from "@/lib/webos/staffDirectory";
 
 export const WEBAUTHN_CHALLENGE_COOKIE = "relife_webauthn_challenge";
 export const WEBAUTHN_CHALLENGE_MAX_AGE = 5 * 60;
@@ -329,9 +330,12 @@ export async function revokePasskey(staffId: string, credentialId: string): Prom
 
 export async function beginPasskeyRegistration(
   staffId: string,
-  fullName: string
+  fullName: string,
+  authorizedIdentity?: WebStaffIdentity,
 ): Promise<{ options: Awaited<ReturnType<typeof generateRegistrationOptions>>; stateToken: string }> {
-  const activeStaff = await getActiveWebStaffById(staffId);
+  const activeStaff = authorizedIdentity?.staffId === staffId && authorizedIdentity.status === "Active"
+    ? authorizedIdentity
+    : await getActiveWebStaffById(staffId);
   if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
   const existing = (await readStoredPasskeys()).filter(
     (item) => item.staffId === staffId && isActive(item)
@@ -367,10 +371,13 @@ export async function finishPasskeyRegistration(
   staffId: string,
   state: ChallengeState,
   response: RegistrationResponseJSON,
-  displayNameInput?: string
+  displayNameInput?: string,
+  authorizedIdentity?: WebStaffIdentity,
 ): Promise<PasskeyMetadata> {
   if (state.type !== "register" || state.staffId !== staffId) throw new Error("WEBAUTHN_CHALLENGE_INVALID");
-  const activeStaff = await getActiveWebStaffById(staffId);
+  const activeStaff = authorizedIdentity?.staffId === staffId && authorizedIdentity.status === "Active"
+    ? authorizedIdentity
+    : await getActiveWebStaffById(staffId);
   if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
   const { rpID, origin } = webauthnConfig();
   const verification = await verifyRegistrationResponse({

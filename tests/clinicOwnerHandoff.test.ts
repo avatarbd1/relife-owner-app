@@ -21,6 +21,9 @@ const platformRoute = source("app/api/platform/clinics/route.ts");
 const handoffPanel = source("components/platform/ClinicOwnerAccessPanel.tsx");
 const platformPage = source("app/platform/page.tsx");
 const staffSetup = source("app/staff-setup/page.tsx");
+const webauthn = source("lib/webauthn.ts");
+const registerStart = source("app/api/auth/webauthn/register/start/route.ts");
+const registerVerify = source("app/api/auth/webauthn/register/verify/route.ts");
 
 test("owner handoff sources remain valid TypeScript syntax", () => {
   for (const code of [canonicalIdentity, enrollmentIdentity, enrollStart, currentUser, loginVerify, platformRoute, handoffPanel, platformPage, staffSetup]) {
@@ -50,6 +53,9 @@ test("first-device enrollment no longer requires the legacy Google Sheet staff d
   );
   assert.match(enrollStart, /getEnrollmentIdentity\(token\)/);
   assert.doesNotMatch(enrollStart, /getActiveWebStaffById|toAccessContext/);
+  assert.match(webauthn, /authorizedIdentity\?\.staffId === staffId/);
+  assert.match(registerStart, /identity\.fullName,\s*identity,/);
+  assert.match(registerVerify, /body\.displayName : undefined,\s*identity,/);
 });
 
 test("signed staff sessions prefer canonical tenant identity and keep legacy as fallback", () => {

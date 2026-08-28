@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
     }
     const { options, stateToken } = await beginPasskeyRegistration(
       identity.staffId,
-      identity.fullName
+      identity.fullName,
+      identity,
     );
     const response = NextResponse.json({ ok: true, options });
     response.cookies.set(WEBAUTHN_CHALLENGE_COOKIE, stateToken, {

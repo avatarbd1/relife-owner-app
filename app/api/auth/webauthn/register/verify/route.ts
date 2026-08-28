@@ -66,7 +66,8 @@ export async function POST(request: NextRequest) {
       identity.staffId,
       state,
       credential,
-      typeof body?.displayName === "string" ? body.displayName : undefined
+      typeof body?.displayName === "string" ? body.displayName : undefined,
+      identity,
     );
     const response = NextResponse.json({ ok: true, passkey });
     clearChallenge(response);
