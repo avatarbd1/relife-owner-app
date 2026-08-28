@@ -1,0 +1,1 @@
+Platform Owner authority is global and clinic-neutral. ST001 is no longer an active tenant binding in production.
