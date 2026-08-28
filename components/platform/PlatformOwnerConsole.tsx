@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  generateOwnerStaffId,
   PLATFORM_PLANS,
   type PlatformPlanCode,
   type ClinicType,
@@ -190,7 +191,6 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
   const [clinicName, setClinicName] = useState("");
   const [clinicSlug, setClinicSlug] = useState("");
   const [clinicType, setClinicType] = useState<ClinicType>("physiotherapy");
-  const [ownerStaffId, setOwnerStaffId] = useState("");
   const [planCode, setPlanCode] = useState<PlatformPlanCode>("starter");
   const [trialDays, setTrialDays] = useState(30);
   const [features, setFeatures] = useState<string[]>([...PLATFORM_PLANS.starter.defaultFeatureKeys]);
@@ -198,6 +198,10 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
   const [closesAt, setClosesAt] = useState("18:00");
   const [firstServiceName, setFirstServiceName] = useState("Consultation");
   const [firstServicePrice, setFirstServicePrice] = useState(0);
+  const automaticOwnerStaffId = useMemo(
+    () => clinicName.trim() ? generateOwnerStaffId(clinicName, clinicType) : "",
+    [clinicName, clinicType],
+  );
 
   async function mutate(body: unknown) {
     const payload = await jsonRequest("PATCH", body);
@@ -220,7 +224,6 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
         email: "",
         currency: "BDT",
         locale: "en",
-        ownerStaffId,
         planCode,
         trialDays,
         featureKeys: features,
@@ -232,7 +235,7 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
         firstServiceDurationMin: 30,
       });
       if (payload.snapshot) setSnapshot(payload.snapshot);
-      setOrganizationName(""); setOrganizationSlug(""); setClinicName(""); setClinicSlug(""); setOwnerStaffId("");
+      setOrganizationName(""); setOrganizationSlug(""); setClinicName(""); setClinicSlug("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Clinic creation failed");
     } finally { setBusy(false); }
@@ -257,7 +260,10 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
             <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicName} onChange={(e) => { setClinicName(e.target.value); if (!clinicSlug) setClinicSlug(slugify(e.target.value)); }} placeholder="Clinic name" />
             <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicSlug} onChange={(e) => setClinicSlug(slugify(e.target.value))} placeholder="clinic-slug" />
             <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicType} onChange={(e) => setClinicType(e.target.value as ClinicType)}>{CLINIC_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
-            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={ownerStaffId} onChange={(e) => setOwnerStaffId(e.target.value)} placeholder="Owner Staff ID" />
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Owner ID · automatic</p>
+              <p className="mt-0.5 font-mono text-sm font-semibold text-slate-800" aria-live="polite">{automaticOwnerStaffId || "Clinic name দিলে তৈরি হবে"}</p>
+            </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
             <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={planCode} onChange={(e) => { const plan = e.target.value as PlatformPlanCode; setPlanCode(plan); setFeatures([...PLATFORM_PLANS[plan].defaultFeatureKeys]); }}>{Object.values(PLATFORM_PLANS).map((plan) => <option key={plan.code} value={plan.code}>{plan.label} — ৳{plan.priceBdt}/mo</option>)}</select>
