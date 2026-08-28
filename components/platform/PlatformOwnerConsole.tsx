@@ -99,6 +99,7 @@ function ClinicCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [ownerSetup, setOwnerSetup] = useState<{ staffId: string; url: string } | null>(null);
   const [ownerStaffId, setOwnerStaffId] = useState(clinic.ownerStaffIds[0] || "");
   const [planCode, setPlanCode] = useState<PlatformPlanCode>((clinic.planCode as PlatformPlanCode) || "starter");
   const [trialDays, setTrialDays] = useState(30);
@@ -107,6 +108,7 @@ function ClinicCard({
   const [clinicName, setClinicName] = useState(clinic.clinicName);
   const [clinicType, setClinicType] = useState<ClinicType>(clinic.clinicType || "other");
   const [timezone, setTimezone] = useState(clinic.timezone || "Asia/Dhaka");
+  const scope = { organizationId: clinic.organizationId, clinicId: clinic.clinicId };
 
   async function run(body: unknown) {
     setBusy(true); setError("");
@@ -115,7 +117,19 @@ function ClinicCard({
     finally { setBusy(false); }
   }
 
-  const scope = { organizationId: clinic.organizationId, clinicId: clinic.clinicId };
+  async function generateOwnerSetupLink() {
+    setBusy(true); setError(""); setOwnerSetup(null);
+    try {
+      const payload = await jsonRequest("PATCH", { action: "owner_setup_link", ...scope });
+      if (!payload.ownerSetupUrl || !payload.ownerStaffId) {
+        throw new Error("PLATFORM_OWNER_SETUP_LINK_UNAVAILABLE");
+      }
+      setOwnerSetup({ staffId: payload.ownerStaffId, url: payload.ownerSetupUrl });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Owner setup link failed");
+    } finally { setBusy(false); }
+  }
+
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -156,8 +170,18 @@ function ClinicCard({
           </section>
 
           <section>
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Owner assignment</p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Owner assignment & setup</p>
             <div className="flex gap-2"><input className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm" value={ownerStaffId} onChange={(e) => setOwnerStaffId(e.target.value)} placeholder="Owner Staff ID" /><button disabled={busy} onClick={() => run({ action: "owner", ...scope, ownerStaffId })} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Assign</button></div>
+            <button type="button" disabled={busy || clinic.ownerStaffIds.length !== 1} onClick={generateOwnerSetupLink} className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 disabled:opacity-50">{ownerSetup ? "Regenerate owner setup link" : "Generate owner setup link"}</button>
+            <p className="mt-1 text-[10px] text-slate-400">Read-only handoff. The link is bound to this clinic and expires in 10 minutes.</p>
+            {ownerSetup && (
+              <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
+                <p className="font-bold">Owner setup link ready</p>
+                <p className="mt-1">Owner ID: <span className="font-mono font-semibold">{ownerSetup.staffId}</span></p>
+                <a href={ownerSetup.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded-lg bg-emerald-700 px-3 py-2 font-semibold text-white">Open owner setup</a>
+                <p className="mt-2 break-all text-[10px] text-emerald-700">{ownerSetup.url}</p>
+              </div>
+            )}
           </section>
 
           <section>
