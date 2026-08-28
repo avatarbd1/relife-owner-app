@@ -8,7 +8,7 @@ import {
 import { postLoginPathForStaffId } from "@/lib/domain/platform/authority";
 import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import { getCanonicalActiveWebStaffById } from "@/lib/webos/canonicalStaffIdentity";
-import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
+import { getActiveWebStaffById, type WebStaffIdentity } from "@/lib/webos/staffDirectory";
 import {
   finishPasskeyAuthentication,
   readChallengeState,
@@ -23,6 +23,14 @@ function clearChallenge(response: NextResponse) {
     path: "/api/auth/webauthn",
     maxAge: 0,
   });
+}
+
+async function getLegacyLoginIdentity(staffId: string): Promise<WebStaffIdentity | null> {
+  try {
+    return await getActiveWebStaffById(staffId);
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -47,8 +55,8 @@ export async function POST(request: NextRequest) {
     }
     const { staffId } = await finishPasskeyAuthentication(state, credential);
     const identity =
-      (await getActiveWebStaffById(staffId)) ||
-      (await getCanonicalActiveWebStaffById(staffId));
+      (await getCanonicalActiveWebStaffById(staffId)) ||
+      (await getLegacyLoginIdentity(staffId));
     if (!identity) {
       const inactive = NextResponse.json(
         { ok: false, error: "STAFF_ACCESS_INACTIVE_OR_CLINIC_NOT_ACTIVE" },
