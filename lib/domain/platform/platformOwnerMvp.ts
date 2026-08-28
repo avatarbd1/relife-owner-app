@@ -46,7 +46,7 @@ export interface PlatformClinicProvisioningInput {
   email?: string;
   currency?: string;
   locale?: string;
-  ownerStaffId: string;
+  ownerStaffId?: string;
   planCode: PlatformPlanCode;
   trialDays: number;
   featureKeys?: string[];
@@ -60,6 +60,7 @@ export interface PlatformClinicProvisioningInput {
 }
 
 export interface NormalizedPlatformClinicProvisioningInput extends PlatformClinicProvisioningInput {
+  ownerStaffId: string;
   branchName: string;
   address: string;
   phone: string;
@@ -89,6 +90,32 @@ function serviceCode(value: string): string {
   return result || "SERVICE_1";
 }
 
+function clinicStaffCode(clinicName: string): string {
+  const firstWord = text(clinicName).toUpperCase().match(/[A-Z0-9]+/)?.[0] || "CLINIC";
+  if (firstWord.length <= 3) return firstWord.padEnd(3, "X");
+  const consonants = firstWord.replace(/[AEIOU]/g, "");
+  let code = consonants.slice(0, 3);
+  if (code.length < 3) {
+    for (const character of firstWord) {
+      if (code.length >= 3) break;
+      if (!code.includes(character)) code += character;
+    }
+  }
+  return code.padEnd(3, "X").slice(0, 3);
+}
+
+function clinicTypeStaffCode(clinicType: ClinicType): string {
+  if (clinicType === "physiotherapy") return "PT";
+  if (clinicType === "dental") return "DT";
+  if (clinicType === "doctor_chamber") return "DC";
+  return "OT";
+}
+
+export function generateOwnerStaffId(clinicName: string, clinicType: ClinicType, serial = 1): string {
+  const safeSerial = Number.isInteger(serial) && serial > 0 ? serial : 1;
+  return `${clinicStaffCode(clinicName)}-${clinicTypeStaffCode(clinicType)}-${String(safeSerial).padStart(3, "0")}`;
+}
+
 export function isPlatformPlanCode(value: unknown): value is PlatformPlanCode {
   return typeof value === "string" && (PLATFORM_PLAN_CODES as readonly string[]).includes(value);
 }
@@ -98,7 +125,8 @@ export function normalizePlatformClinicProvisioningInput(raw: PlatformClinicProv
   const organizationSlug = text(raw.organizationSlug).toLowerCase();
   const clinicName = text(raw.clinicName);
   const clinicSlug = text(raw.clinicSlug).toLowerCase();
-  const ownerStaffId = text(raw.ownerStaffId);
+  const clinicType = raw.clinicType || "other";
+  const ownerStaffId = text(raw.ownerStaffId) || generateOwnerStaffId(clinicName, clinicType);
   const timezone = text(raw.timezone || "Asia/Dhaka");
   if (!organizationName || !clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
   if (!SLUG.test(organizationSlug) || !SLUG.test(clinicSlug)) throw new Error("PLATFORM_CLINIC_SLUG_INVALID");
@@ -126,7 +154,7 @@ export function normalizePlatformClinicProvisioningInput(raw: PlatformClinicProv
     organizationSlug,
     clinicName,
     clinicSlug,
-    clinicType: raw.clinicType || "other",
+    clinicType,
     timezone,
     branchName: text(raw.branchName) || clinicName,
     address: text(raw.address),
