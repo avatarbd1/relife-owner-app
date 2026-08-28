@@ -65,7 +65,7 @@ test("server adapter never silently falls back to Relife tenant IDs", () => {
 });
 
 test("legacy Relife staff identity is tenant-bound before transitional fallback", () => {
-  assert.match(currentUser, /isPlatformOwner\(staffId\).*return null/s);
+  assert.match(currentUser, /isPlatformOwner\(staffId\)[\s\S]*?return null/);
   assert.match(currentUser, /resolveStaffTenantContext\(staffId, await currentTenantSelection\(\)\)/);
   assert.match(currentUser, /if \(message === "TENANT_BINDING_NOT_FOUND"\) return null/);
   assert.match(currentUser, /getTenantScopedWebStaffIdentity\(staffId, tenant\)/);
