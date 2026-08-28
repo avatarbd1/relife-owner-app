@@ -6,8 +6,10 @@ import {
   resolveStaffTenantContext,
   type StaffTenantContext,
 } from "@/lib/domain/tenancy/staffTenantContext";
+import type { TenantScope } from "@/lib/domain/tenancy/policy";
 import type { AccessContext } from "@/lib/webos/access";
 import { ACTIVE_TENANT_COOKIE, parseTenantSelection } from "@/lib/domain/tenancy/tenantSelection";
+import { getCanonicalActiveWebStaffById } from "@/lib/webos/canonicalStaffIdentity";
 import {
   getActiveWebStaffById,
   toAccessContext,
@@ -28,19 +30,25 @@ export function isOwnerTenantCutoverEnforced(): boolean {
   return process.env.RELIFE_TENANT_CUTOVER_ENFORCED?.trim().toLowerCase() === "true";
 }
 
-async function enforceOwnerTenantBinding(identity: WebStaffIdentity): Promise<void> {
+async function enforceOwnerTenantBinding(
+  identity: WebStaffIdentity,
+  requestedScope?: TenantScope | null,
+): Promise<void> {
   if (!isOwnerTenantCutoverEnforced() || !identity.roles.includes("Owner")) return;
   // The resolver is fail-closed: missing, inactive, or ambiguous Tenant/Clinic
   // bindings reject the Owner session before any downstream operational action.
-  await resolveStaffTenantContext(identity.staffId);
+  await resolveStaffTenantContext(identity.staffId, requestedScope);
 }
 
 export async function getCurrentStaffIdentity(): Promise<WebStaffIdentity | null> {
   const staffId = await currentSessionStaffId();
   if (!staffId) return null;
-  const identity = await getActiveWebStaffById(staffId);
+  const requestedScope = await currentTenantSelection();
+  const identity =
+    (await getActiveWebStaffById(staffId)) ||
+    (await getCanonicalActiveWebStaffById(staffId, requestedScope));
   if (!identity) return null;
-  await enforceOwnerTenantBinding(identity);
+  await enforceOwnerTenantBinding(identity, requestedScope);
   return identity;
 }
 
