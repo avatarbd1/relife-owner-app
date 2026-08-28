@@ -4,7 +4,7 @@ import FinanceLedgerClient from "@/components/FinanceLedgerClient";
 import { StatusBadge } from "@/components/FeedbackUI";
 import type { FinanceLedgerKind } from "@/lib/webos/financeLedgers";
 import { canOpenFinanceLedger, getFinanceLedgerSnapshot } from "@/lib/webos/financeLedgers";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 const SCOPE_LABEL = { combined: "Combined", physio: "Physio", dental: "Dental" } as const;
@@ -18,9 +18,10 @@ export default async function FinanceLedgerPage({
   title: string;
   subtitle: string;
 }) {
-  const [context, cookieStore] = await Promise.all([requireCurrentAccessContext(), cookies()]);
+  const [tenantContext, cookieStore] = await Promise.all([requireCurrentTenantAccessContext(), cookies()]);
+  const context = tenantContext.access;
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
-  const snapshot = await getFinanceLedgerSnapshot(context, scope);
+  const snapshot = await getFinanceLedgerSnapshot(context, scope, tenantContext.tenant);
 
   if (!canOpenFinanceLedger(snapshot, kind)) {
     return (
