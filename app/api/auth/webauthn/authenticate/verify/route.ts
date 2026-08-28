@@ -7,6 +7,8 @@ import {
 } from "@/lib/auth";
 import { postLoginPathForStaffId } from "@/lib/domain/platform/authority";
 import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
+import { getCanonicalActiveWebStaffById } from "@/lib/webos/canonicalStaffIdentity";
+import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
 import {
   finishPasskeyAuthentication,
   readChallengeState,
@@ -44,6 +46,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_CREDENTIAL" }, { status: 400 });
     }
     const { staffId } = await finishPasskeyAuthentication(state, credential);
+    const identity =
+      (await getActiveWebStaffById(staffId)) ||
+      (await getCanonicalActiveWebStaffById(staffId));
+    if (!identity) {
+      const inactive = NextResponse.json(
+        { ok: false, error: "STAFF_ACCESS_INACTIVE_OR_CLINIC_NOT_ACTIVE" },
+        { status: 403 },
+      );
+      clearChallenge(inactive);
+      return inactive;
+    }
+
     const response = NextResponse.json({
       ok: true,
       next: postLoginPathForStaffId(
