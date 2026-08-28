@@ -40,6 +40,20 @@ test("platform provisioning returns a tenant-scoped owner setup link", () => {
   const route = source("app/api/platform/clinics/route.ts");
   assert.match(route, /ownerSetupUrl/);
   assert.match(route, /provisionedOwnerStaffId/);
-  assert.match(route, /createStaffEnrollmentToken[\s\S]*scope/);
+  assert.match(route, /createOwnerSetupUrl\(provisionedOwnerStaffId, scope\)/);
   assert.match(route, /new URL\("\/staff-setup"/);
+});
+
+test("existing clinic setup links resolve one owner from the exact tenant snapshot without mutation", () => {
+  const route = source("app/api/platform/clinics/route.ts");
+  const consoleSource = source("components/platform/PlatformOwnerConsole.tsx");
+  assert.match(route, /"owner_setup_link"/);
+  assert.match(route, /action: "snapshot"/);
+  assert.match(route, /row\.organizationId === scope\.organizationId && row\.clinicId === scope\.clinicId/);
+  assert.match(route, /clinic\.ownerStaffIds\.length === 0/);
+  assert.match(route, /clinic\.ownerStaffIds\.length !== 1/);
+  assert.match(route, /createOwnerSetupUrl\(ownerStaffId, scope\)/);
+  assert.match(consoleSource, /Generate owner setup link/);
+  assert.match(consoleSource, /Read-only handoff/);
+  assert.match(consoleSource, /expires in 10 minutes/);
 });
