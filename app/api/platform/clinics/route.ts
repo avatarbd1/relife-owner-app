@@ -9,21 +9,34 @@ import {
 } from "@/lib/domain/platform/platformOwnerMvp";
 import { requireTenantScope } from "@/lib/domain/tenancy/policy";
 import { requireCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
+import {
+  STAFF_ENROLL_MAX_AGE,
+  createStaffEnrollmentToken,
+} from "@/lib/staffEnrollment";
+import { listPasskeysForStaff } from "@/lib/webauthn";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+
+type OwnerSetupResponse = {
+  ownerStaffId: string;
+  setupPath: string;
+  expiresInSeconds: number;
+  clinicStatus: string;
+};
 
 type ControlResponse = {
   ok: true;
   snapshot: PlatformOwnerSnapshot;
   scope?: { organizationId: string; clinicId: string };
+  ownerSetup?: OwnerSetupResponse;
 };
 
 function fail(error: unknown) {
   const message = error instanceof Error ? error.message : "PLATFORM_OPERATION_FAILED";
   const status = /ACCESS_DENIED|NOT_AUTHORIZED/.test(message)
     ? 403
-    : /ALREADY_MANAGED/.test(message)
+    : /ALREADY_MANAGED|AMBIGUOUS/.test(message)
       ? 409
-      : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA|CANNOT_BE/.test(message)
+      : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA|CANNOT_BE|SUSPENDED/.test(message)
         ? 400
         : /NOT_FOUND/.test(message)
           ? 404
@@ -85,7 +98,7 @@ export async function POST(request: NextRequest) {
 }
 
 type PatchBody = {
-  action?: "profile" | "owner" | "commercial" | "activate" | "suspend";
+  action?: "profile" | "owner" | "commercial" | "activate" | "suspend" | "owner_setup_link";
   organizationId?: string;
   clinicId?: string;
   profile?: {
@@ -107,6 +120,44 @@ type PatchBody = {
   releaseSha?: string;
 };
 
+async function issueOwnerSetupLink(
+  actorStaffId: string,
+  scope: { organizationId: string; clinicId: string },
+): Promise<ControlResponse> {
+  const snapshotResult = await callPlatformControl<ControlResponse>({
+    action: "snapshot",
+    actorStaffId,
+  });
+  const clinic = snapshotResult.snapshot.clinics.find(
+    (row) => row.organizationId === scope.organizationId && row.clinicId === scope.clinicId,
+  );
+  if (!clinic) throw new Error("PLATFORM_CLINIC_NOT_FOUND");
+  if (clinic.clinicStatus === "suspended") {
+    throw new Error("PLATFORM_OWNER_SETUP_SUSPENDED_CLINIC");
+  }
+  if (clinic.ownerStaffIds.length === 0) {
+    throw new Error("PLATFORM_OWNER_ASSIGNMENT_REQUIRED");
+  }
+  if (clinic.ownerStaffIds.length !== 1) {
+    throw new Error("PLATFORM_OWNER_ASSIGNMENT_AMBIGUOUS");
+  }
+  const ownerStaffId = clinic.ownerStaffIds[0];
+  if (ownerStaffId === actorStaffId) {
+    throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
+  }
+  const passkeys = await listPasskeysForStaff(ownerStaffId);
+  const token = createStaffEnrollmentToken(ownerStaffId, passkeys.length);
+  return {
+    ...snapshotResult,
+    ownerSetup: {
+      ownerStaffId,
+      setupPath: `/staff-setup?token=${encodeURIComponent(token)}`,
+      expiresInSeconds: STAFF_ENROLL_MAX_AGE,
+      clinicStatus: clinic.clinicStatus,
+    },
+  };
+}
+
 export async function PATCH(request: NextRequest) {
   const rejected = originAllowed(request);
   if (rejected) return rejected;
@@ -115,6 +166,9 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json() as PatchBody;
     const scope = requireTenantScope({ organizationId: body.organizationId, clinicId: body.clinicId });
     if (!body.action) throw new Error("PLATFORM_ACTION_INVALID");
+    if (body.action === "owner_setup_link") {
+      return NextResponse.json(await issueOwnerSetupLink(owner.staffId, scope));
+    }
     if (body.action === "profile") {
       const clinicName = String(body.profile?.clinicName || "").trim();
       if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
