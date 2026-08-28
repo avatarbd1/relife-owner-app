@@ -10,6 +10,7 @@ const bridge = source("supabase/migrations/20260824043000_relife_tenant1_staff_b
 const correction = source("supabase/migrations/20260828073000_staff_default_tenant_invariant.sql");
 const clinicReadGrant = source("supabase/migrations/20260828082700_canonical_enrollment_clinic_read_grant.sql");
 const identityRpc = source("supabase/migrations/20260828085100_canonical_staff_identity_rpc.sql");
+const dataApiSchema = source("supabase/migrations/20260828094000_expose_relife_data_api_schema.sql");
 const phaseH = source("supabase/migrations/20260828020000_phase_h_repeatable_provisioning.sql");
 const platformControl = source("supabase/functions/relife-platform-control/index.ts");
 const tenantContext = source("supabase/functions/relife-tenant-context/index.ts");
@@ -63,4 +64,11 @@ test("canonical identity RPC is server-only, invoker-secured, and fails closed",
   assert.match(identityRpc, /revoke all on function[\s\S]+?from public, anon, authenticated/i);
   assert.match(identityRpc, /grant execute on function[\s\S]+?to service_role/i);
   assert.doesNotMatch(identityRpc, /grant execute[^;]+to (anon|authenticated)/i);
+});
+
+test("canonical relife readers have an explicit PostgREST schema contract", () => {
+  assert.match(dataApiSchema, /pgrst\.db_schemas\s*=\s*'public, storage, graphql_public, relife'/i);
+  assert.match(dataApiSchema, /notify pgrst, 'reload config'/i);
+  assert.match(dataApiSchema, /notify pgrst, 'reload schema'/i);
+  assert.doesNotMatch(dataApiSchema, /grant\s+all/i);
 });
