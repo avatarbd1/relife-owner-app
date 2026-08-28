@@ -35,11 +35,13 @@ function departmentBadge(department: PatientDepartment) {
 
 export default function PatientsClient({
   patients,
+  availableDepartments = ["Physio", "Dental"],
   showMoney = true,
   paymentDepartments = [],
   appointmentDepartments = [],
 }: {
   patients: PatientView[];
+  availableDepartments?: Array<"Physio" | "Dental">;
   showMoney?: boolean;
   paymentDepartments?: Array<"Physio" | "Dental">;
   appointmentDepartments?: Array<"Physio" | "Dental">;
@@ -71,8 +73,8 @@ export default function PatientsClient({
 
   const filters: Array<{ id: FilterDepartment; label: string; count: number }> = [
     { id: "All", label: "All", count: counts.all },
-    { id: "Physio", label: "Physio", count: counts.physio },
-    { id: "Dental", label: "Dental", count: counts.dental },
+    ...(availableDepartments.includes("Physio") ? [{ id: "Physio" as const, label: "Physio", count: counts.physio }] : []),
+    ...(availableDepartments.includes("Dental") ? [{ id: "Dental" as const, label: "Dental", count: counts.dental }] : []),
   ];
 
   const sortOptions: Array<{ value: SortMode; label: string }> = [
