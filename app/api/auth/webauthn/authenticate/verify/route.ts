@@ -6,6 +6,7 @@ import {
   createSessionToken,
 } from "@/lib/auth";
 import { postLoginPathForStaffId } from "@/lib/domain/platform/authority";
+import { requirePasskeyLoginAuthority } from "@/lib/webos/passkeyLoginAuthority";
 import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import {
   finishPasskeyAuthentication,
@@ -43,7 +44,12 @@ export async function POST(request: NextRequest) {
     if (!credential?.id) {
       return NextResponse.json({ ok: false, error: "INVALID_CREDENTIAL" }, { status: 400 });
     }
+
+    // The passkey proves control of the credential. Tenant authorization is
+    // a separate server-side gate before a session cookie can be issued.
     const { staffId } = await finishPasskeyAuthentication(state, credential);
+    await requirePasskeyLoginAuthority(staffId);
+
     const response = NextResponse.json({
       ok: true,
       next: postLoginPathForStaffId(
