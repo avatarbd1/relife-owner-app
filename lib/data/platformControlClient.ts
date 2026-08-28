@@ -2,7 +2,10 @@ import "server-only";
 
 const DEFAULT_PLATFORM_CONTROL_URL =
   "https://zpixvkfvmqzhmdacsezj.supabase.co/functions/v1/relife-platform-control";
-const PLATFORM_CONTROL_TIMEOUT_MS = 10000;
+// Supabase free-tier cold starts can exceed 10s even when the control operation
+// itself completes successfully. Keep enough headroom so the owner UI does not
+// surface a false timeout after provisioning has already committed.
+const PLATFORM_CONTROL_TIMEOUT_MS = 30000;
 
 function platformControlSecret(): string {
   const secret = String(
