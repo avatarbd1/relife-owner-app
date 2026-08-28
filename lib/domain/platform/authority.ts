@@ -7,3 +7,10 @@ export function isPlatformOwnerStaffId(staffId: unknown, allowlist: unknown): bo
   if (!candidate) return false;
   return parsePlatformOwnerStaffIds(allowlist).includes(candidate);
 }
+
+export function postLoginPathForStaffId(
+  staffId: unknown,
+  allowlist: unknown,
+): "/platform" | "/home" {
+  return isPlatformOwnerStaffId(staffId, allowlist) ? "/platform" : "/home";
+}
