@@ -7,9 +7,11 @@ import AppIcon from "@/components/AppIcon";
 export default function ProfileMenu({
   roleLabel,
   isOwner,
+  isPlatformOwner = false,
 }: {
   roleLabel: string;
   isOwner: boolean;
+  isPlatformOwner?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -76,6 +78,18 @@ export default function ProfileMenu({
         </div>
 
         <div className="p-1.5">
+          {isPlatformOwner && (
+            <Link
+              href="/platform"
+              role="menuitem"
+              tabIndex={open ? 0 : -1}
+              onClick={() => setOpen(false)}
+              className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold text-blue-700 transition active:bg-blue-50"
+            >
+              <span className="grid h-5 w-5 place-items-center rounded-md bg-blue-50 text-[10px] font-bold">P</span>
+              Platform Owner
+            </Link>
+          )}
           <Link
             href="/settings"
             role="menuitem"

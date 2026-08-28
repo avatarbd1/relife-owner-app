@@ -8,6 +8,7 @@ import { IS_LIVE_DATA } from "@/lib/data";
 import { hasTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { actionsForRoles, type WebRole } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { isCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
 
 function displayRole(role: WebRole): string {
   return role === "Dental_Assistant" ? "Dental Assistant" : role;
@@ -18,7 +19,10 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const current = await requireCurrentTenantAccessContext();
+  const [current, isPlatformOwner] = await Promise.all([
+    requireCurrentTenantAccessContext(),
+    isCurrentPlatformOwner(),
+  ]);
   const context = current.access;
   const tenant = current.tenant;
   const roleLabel = context.roles.map(displayRole).join(" · ");
@@ -60,7 +64,7 @@ export default async function DashboardLayout({
                 Sample
               </span>
             )}
-            <ProfileMenu roleLabel={roleLabel} isOwner={isOwner} />
+            <ProfileMenu roleLabel={roleLabel} isOwner={isOwner} isPlatformOwner={isPlatformOwner} />
           </div>
         </div>
       </header>

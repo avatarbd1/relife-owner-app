@@ -9,18 +9,22 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedNext = searchParams.get("next");
-  const next =
+  const requestedNextPath =
     requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")
       ? requestedNext
-      : "/home";
+      : null;
 
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ownerMode, setOwnerMode] = useState(false);
 
-  function completeLogin() {
-    router.replace(next);
+  function completeLogin(serverNext?: string) {
+    const safeServerNext =
+      serverNext && serverNext.startsWith("/") && !serverNext.startsWith("//")
+        ? serverNext
+        : "/home";
+    router.replace(requestedNextPath || safeServerNext);
     router.refresh();
   }
 
@@ -33,15 +37,16 @@ function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin: pinValue }),
       });
+      const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError("ভুল Owner PIN। আবার চেষ্টা করুন।");
         setPin("");
         return;
       }
 
-      // PIN verification is enough to establish the owner session. Do not block
-      // navigation on passkey/staff-directory reads; those can depend on Sheets.
-      completeLogin();
+      // Server selects Platform Owner vs tenant workspace from the authenticated
+      // staff identity. This does not require any active clinic tenant binding.
+      completeLogin(typeof payload?.next === "string" ? payload.next : undefined);
     } catch {
       setError("Network error. আবার চেষ্টা করুন।");
     } finally {

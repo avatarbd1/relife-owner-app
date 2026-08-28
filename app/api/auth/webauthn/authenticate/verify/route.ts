@@ -5,6 +5,7 @@ import {
   SESSION_MAX_AGE,
   createSessionToken,
 } from "@/lib/auth";
+import { postLoginPathForStaffId } from "@/lib/domain/platform/authority";
 import { isAllowedWebAuthnRequestOrigin } from "@/lib/webauthnRequest";
 import {
   finishPasskeyAuthentication,
@@ -43,7 +44,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "INVALID_CREDENTIAL" }, { status: 400 });
     }
     const { staffId } = await finishPasskeyAuthentication(state, credential);
-    const response = NextResponse.json({ ok: true });
+    const response = NextResponse.json({
+      ok: true,
+      next: postLoginPathForStaffId(
+        staffId,
+        process.env.PLATFORM_OWNER_STAFF_IDS,
+      ),
+    });
     response.cookies.set(SESSION_COOKIE, createSessionToken(staffId), {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

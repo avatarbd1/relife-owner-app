@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  DEFAULT_OWNER_STAFF_ID,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
   checkOwnerPin,
   createSessionToken,
 } from "@/lib/auth";
+import { postLoginPathForStaffId } from "@/lib/domain/platform/authority";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import {
   clearOwnerLoginThrottle,
@@ -77,7 +79,13 @@ export async function POST(request: NextRequest) {
     return unavailableResponse();
   }
 
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({
+    ok: true,
+    next: postLoginPathForStaffId(
+      DEFAULT_OWNER_STAFF_ID,
+      process.env.PLATFORM_OWNER_STAFF_IDS,
+    ),
+  });
   response.cookies.set(SESSION_COOKIE, createSessionToken(), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createSupabaseAdminClient } from "@/lib/data/supabaseAdmin";
 import { requireTenantScope, type TenantRoleCode, type TenantScope } from "@/lib/domain/tenancy/policy";
 
 export interface StoredStaffProvisioning extends TenantScope {
@@ -13,10 +14,11 @@ export interface StoredStaffProvisioning extends TenantScope {
 }
 
 function adminClient(): SupabaseClient {
-  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
-  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  if (!url || !key) throw new Error("STAFF_PROVISIONING_STORE_UNAVAILABLE");
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  try {
+    return createSupabaseAdminClient();
+  } catch {
+    throw new Error("STAFF_PROVISIONING_STORE_UNAVAILABLE");
+  }
 }
 
 function ensure(error: { message?: string } | null, operation: string): void {
