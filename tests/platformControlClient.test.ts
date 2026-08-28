@@ -16,3 +16,17 @@ test("platform control uses protected server-to-server edge boundary", async () 
   assert.match(client, /relife-platform-control/);
   assert.doesNotMatch(client, /SUPABASE_SERVICE_ROLE_KEY/);
 });
+
+test("Platform Owner page and API avoid Render-side Supabase admin dependency", async () => {
+  const [page, route] = await Promise.all([
+    source("app/platform/page.tsx"),
+    source("app/api/platform/clinics/route.ts"),
+  ]);
+  for (const content of [page, route]) {
+    assert.match(content, /callPlatformControl/);
+    assert.doesNotMatch(content, /createSupabaseAdminClient/);
+    assert.doesNotMatch(content, /listPlatformOwnerSnapshot/);
+  }
+  assert.match(page, /no clinic tenant binding/);
+  assert.match(route, /PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER/);
+});
