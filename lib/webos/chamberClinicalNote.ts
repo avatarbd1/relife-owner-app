@@ -405,6 +405,7 @@ export async function recordChamberCompletionTreatmentNote(
     )
   );
   await recordTreatmentDocumentationGamification({
+    tenant: { organizationId, clinicId },
     treatmentId,
     patientId: capture.patientId,
     department: "Physio",

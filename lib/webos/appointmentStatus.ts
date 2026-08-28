@@ -79,6 +79,8 @@ function dhakaNow(ref = new Date()) {
 
 async function projectCompletedAppointment(
   context: AccessContext,
+  organizationId: string,
+  clinicId: string,
   input: {
     appointmentId: string;
     department: ClinicDepartment;
@@ -92,6 +94,7 @@ async function projectCompletedAppointment(
 ): Promise<void> {
   const outcome = await recordAppointmentCompletionGamification({
     ...input,
+    tenant: { organizationId, clinicId },
     actorContext: context,
   });
   if (!outcome.recorded) {
@@ -118,9 +121,7 @@ export async function updateAppointmentStatus(
   const department = normalize(input.department) as ClinicDepartment;
   const status = normalize(input.status) as AppointmentStatus;
   if (!appointmentId) throw new Error("APPOINTMENT_NOT_FOUND");
-  if (!(["Physio", "Dental"] as string[]).includes(department)) {
-    throw new Error("INVALID_DEPARTMENT");
-  }
+  if (!(["Physio", "Dental"] as string[]).includes(department)) throw new Error("INVALID_DEPARTMENT");
   if (!APPOINTMENT_STATUSES.includes(status)) throw new Error("INVALID_APPOINTMENT_STATUS");
   assertCanPerform(context, "appointment.update", department);
 
@@ -149,17 +150,13 @@ export async function updateAppointmentStatus(
   if (rowOffset < 0) throw new Error("APPOINTMENT_NOT_FOUND");
   const row = rows[rowOffset + 1];
   const rowDepartment = at(row, departmentIdx);
-  if (rowDepartment && normalized(rowDepartment) !== normalized(department)) {
-    throw new Error("DEPARTMENT_MISMATCH");
-  }
+  if (rowDepartment && normalized(rowDepartment) !== normalized(department)) throw new Error("DEPARTMENT_MISMATCH");
   const previous = at(row, statusIdx) || "Scheduled";
   const now = dhakaNow();
 
-  // A repeated Completed mutation is also a safe repair opportunity. The
-  // deterministic event key in the Gamification API prevents duplicate XP.
   if (normalized(previous) === normalized(status)) {
     if (status === "Completed") {
-      await projectCompletedAppointment(context, {
+      await projectCompletedAppointment(context, organizationId, clinicId, {
         appointmentId,
         department,
         patientId: at(row, patientIdx),
@@ -175,20 +172,10 @@ export async function updateAppointmentStatus(
 
   const sheetRow = rowOffset + 2;
   const updates: Array<Promise<void>> = [
-    updateSheetValues(
-      workbook,
-      `'04_Appointments'!${columnLetter(statusIdx)}${sheetRow}`,
-      [[status]]
-    ),
+    updateSheetValues(workbook, `'04_Appointments'!${columnLetter(statusIdx)}${sheetRow}`, [[status]]),
   ];
   if (updatedIdx >= 0) {
-    updates.push(
-      updateSheetValues(
-        workbook,
-        `'04_Appointments'!${columnLetter(updatedIdx)}${sheetRow}`,
-        [[now.timestamp]]
-      )
-    );
+    updates.push(updateSheetValues(workbook, `'04_Appointments'!${columnLetter(updatedIdx)}${sheetRow}`, [[now.timestamp]]));
   }
   await Promise.all(updates);
 
@@ -223,7 +210,7 @@ export async function updateAppointmentStatus(
   }
 
   if (status === "Completed") {
-    await projectCompletedAppointment(context, {
+    await projectCompletedAppointment(context, organizationId, clinicId, {
       appointmentId,
       department,
       patientId: at(row, patientIdx),

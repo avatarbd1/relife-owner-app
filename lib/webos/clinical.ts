@@ -587,6 +587,7 @@ export async function recordTreatmentSession(
     )
   );
   await recordTreatmentDocumentationGamification({
+    tenant: { organizationId, clinicId },
     treatmentId,
     patientId: patient.patientId,
     department: "Physio",

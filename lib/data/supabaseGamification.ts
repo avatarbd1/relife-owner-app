@@ -1,9 +1,8 @@
 import "server-only";
 
-import {
-  RELIFE_SUPABASE_SCOPE,
-  type RelifeDepartment,
-} from "@/lib/config/relifeSystem";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { RelifeDepartment } from "@/lib/config/relifeSystem";
+import { requireTenantScope, type TenantScope } from "@/lib/domain/tenancy/policy";
 
 export type GamificationConfigDepartment = RelifeDepartment | "All";
 
@@ -86,17 +85,63 @@ function gamificationEdgeSecret(): string {
   ).trim();
 }
 
+function adminClient(): SupabaseClient {
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!url || !key) throw new Error("GAMIFICATION_TENANT_STORE_UNAVAILABLE");
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function resolveTenantSlugs(
+  scope: TenantScope,
+  client = adminClient()
+): Promise<{ organizationSlug: string; clinicSlug: string }> {
+  const tenant = requireTenantScope(scope);
+  const relife = client.schema("relife");
+  const [organization, clinic] = await Promise.all([
+    relife
+      .from("organizations")
+      .select("slug,status")
+      .eq("id", tenant.organizationId)
+      .maybeSingle(),
+    relife
+      .from("clinics")
+      .select("slug,status,organization_id")
+      .eq("organization_id", tenant.organizationId)
+      .eq("id", tenant.clinicId)
+      .maybeSingle(),
+  ]);
+  if (organization.error || clinic.error) {
+    throw new Error("GAMIFICATION_TENANT_RESOLUTION_FAILED");
+  }
+  const organizationSlug = String(organization.data?.slug || "").trim();
+  const clinicSlug = String(clinic.data?.slug || "").trim();
+  if (
+    !organizationSlug ||
+    !clinicSlug ||
+    String(organization.data?.status || "").toLowerCase() !== "active" ||
+    String(clinic.data?.status || "").toLowerCase() !== "active"
+  ) {
+    throw new Error("GAMIFICATION_TENANT_NOT_ACTIVE");
+  }
+  return { organizationSlug, clinicSlug };
+}
+
 export function gamificationSupabaseConfigured(): boolean {
   return Boolean(endpoint() && gamificationEdgeSecret());
 }
 
 async function callGamification<T>(
+  scope: TenantScope,
   action: string,
   payload: Record<string, unknown> = {},
   timeoutMs = 5_000
 ): Promise<T> {
   const secret = gamificationEdgeSecret();
   if (!secret) throw new Error("GAMIFICATION_EDGE_SECRET_MISSING");
+  const tenant = await resolveTenantSlugs(scope);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -109,8 +154,8 @@ async function callGamification<T>(
       },
       body: JSON.stringify({
         action,
-        organizationSlug: RELIFE_SUPABASE_SCOPE.organizationSlug,
-        clinicSlug: RELIFE_SUPABASE_SCOPE.clinicSlug,
+        organizationSlug: tenant.organizationSlug,
+        clinicSlug: tenant.clinicSlug,
         ...payload,
       }),
       cache: "no-store",
@@ -131,13 +176,14 @@ async function callGamification<T>(
 }
 
 export async function getGamificationConfig(
+  scope: TenantScope,
   department: GamificationConfigDepartment = "All"
 ): Promise<GamificationConfigSnapshot> {
   const result = await callGamification<{
     department?: unknown;
     configs?: unknown;
     versions?: unknown;
-  }>("config", { department });
+  }>(scope, "config", { department });
 
   const configs =
     result.configs && typeof result.configs === "object" && !Array.isArray(result.configs)
@@ -162,13 +208,17 @@ export async function getGamificationConfig(
   };
 }
 
-export async function getGamificationStaffSummary(input: {
-  staffId: string;
-  weekStart: string;
-  weekEnd: string;
-  today: string;
-}): Promise<GamificationStaffSummary> {
+export async function getGamificationStaffSummary(
+  scope: TenantScope,
+  input: {
+    staffId: string;
+    weekStart: string;
+    weekEnd: string;
+    today: string;
+  }
+): Promise<GamificationStaffSummary> {
   const result = await callGamification<Record<string, unknown>>(
+    scope,
     "staff_summary",
     input,
     3_000
@@ -229,6 +279,7 @@ export async function getGamificationStaffSummary(input: {
 }
 
 export async function recordVerifiedGamificationEvent(
+  scope: TenantScope,
   input: VerifiedGamificationEventInput
 ): Promise<VerifiedGamificationEventResult> {
   const result = await callGamification<{
@@ -236,6 +287,7 @@ export async function recordVerifiedGamificationEvent(
     xpAwarded?: unknown;
     duplicate?: unknown;
   }>(
+    scope,
     "record_verified_event",
     input as unknown as Record<string, unknown>,
     3_000

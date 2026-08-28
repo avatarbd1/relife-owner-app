@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { getChamberChatWorkspace } from "@/lib/webos/chamberChat";
@@ -105,7 +106,7 @@ function isOperationalMessage(value: string): boolean {
 function errorResponse(error: unknown): NextResponse {
   const message =
     error instanceof Error ? error.message : "CHAMBER_CONTEXT_CHAT_FAILED";
-  if (message === "ACCESS_DENIED") {
+  if (message === "ACCESS_DENIED" || message.startsWith("FEATURE_ACCESS_DENIED:")) {
     return NextResponse.json({ ok: false, error: message }, { status: 403 });
   }
   if (message === "CHAT_CONTEXT_NOT_FOUND") {
@@ -132,11 +133,11 @@ function errorResponse(error: unknown): NextResponse {
 
 export async function GET() {
   try {
-    // T2-02: Require full tenant-aware context for chamber operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.context-chat.read");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const workspace = await getChamberChatWorkspace(access);
     return NextResponse.json({ ok: true, ...workspace });
   } catch (error) {
@@ -153,11 +154,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // T2-02: Require full tenant-aware context for chamber operations
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateDepartmentAccess(access, "Physio");
     validateTenantScope(access, tenant, "chamber.context-chat.run");
+    await requireTenantFeature(tenant, "optional.live_chamber");
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json(

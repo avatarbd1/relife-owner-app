@@ -103,20 +103,23 @@ export default function BottomNav({
   roles,
   actions,
   hasPhysioAccess = false,
+  liveChamberEnabled = false,
 }: {
   roles: WebRole[];
   actions: WebAction[];
   hasPhysioAccess?: boolean;
+  liveChamberEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const [chamberPending, setChamberPending] = useState(0);
   const [isNavigating, setIsNavigating] = useState(false);
   const visibleItems = useMemo(() => {
     const actionSet = new Set(actions);
-    return ITEMS.filter((item) =>
-      item.visible(roles, actionSet, hasPhysioAccess)
-    );
-  }, [actions, hasPhysioAccess, roles]);
+    return ITEMS.filter((item) => {
+      if (item.href === "/chamber" && !liveChamberEnabled) return false;
+      return item.visible(roles, actionSet, hasPhysioAccess);
+    });
+  }, [actions, hasPhysioAccess, liveChamberEnabled, roles]);
 
   useEffect(() => {
     setIsNavigating(false);

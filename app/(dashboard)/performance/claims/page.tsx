@@ -23,7 +23,7 @@ export default async function RewardClaimsPage() {
   );
 
   const [rewardPolicy, directory, claimsResult, ledgerResult] = await Promise.all([
-    getPerformanceRewardPolicy(),
+    getPerformanceRewardPolicy(tenantContext.tenant),
     getWebStaffDirectory().catch(() => []),
     rewardClaimsConfigured()
       ? listRewardClaims({
@@ -39,7 +39,7 @@ export default async function RewardClaimsPage() {
         })
       : Promise.resolve({ claims: [], ok: false as const }),
     canRequest
-      ? getGamificationStaffSummary({
+      ? getGamificationStaffSummary(tenantContext.tenant, {
           staffId: context.staffId,
           weekStart: week.start,
           weekEnd: week.end,

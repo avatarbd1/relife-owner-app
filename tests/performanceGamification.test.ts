@@ -72,7 +72,7 @@ test("Reward Credit values come from Owner config and salary remains a separate 
   const config = source("lib/domain/gamification/config.ts");
 
   assert.match(rewards, /getPerformanceRewardPolicy/);
-  assert.match(rewards, /getGamificationConfig\("All"\)/);
+  assert.match(rewards, /getGamificationConfig\(tenant, "All"\)/);
   assert.match(rewards, /parseRewardRankConfig/);
   assert.match(rewards, /parseRewardCatalog/);
   assert.match(rewards, /parseWeeklyWinnerChoices/);

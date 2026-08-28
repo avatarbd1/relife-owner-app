@@ -43,7 +43,7 @@ test("non-Owner approval fails closed with 403 before Owner PIN can authorize", 
 test("missing tenant access context also fails closed with 403", () => {
   assert.match(
     route,
-    /try \{[\s\S]*?requireCurrentTenantAccessContext\(\)[\s\S]*?\} catch \{[\s\S]*?error: "ACCESS_DENIED"[\s\S]*?status: 403/
+    /try \{[\s\S]*?requireCurrentTenantAccessContext\(\)[\s\S]*?\} catch \(error\) \{[\s\S]*?status: 403/
   );
 });
 

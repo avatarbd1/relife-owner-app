@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
             ? "attendance_on_time"
             : "attendance_check_in";
         await recordActorWorkGamification({
+          tenant,
           context: access,
           department,
           purpose: "attendance",

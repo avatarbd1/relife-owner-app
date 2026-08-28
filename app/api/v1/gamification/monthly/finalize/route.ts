@@ -5,6 +5,7 @@ import {
   getMonthlyGamificationFinalization,
   type MonthlyRosterOpportunitySnapshot,
 } from "@/lib/data/supabaseWeeklyGamification";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { GAMIFICATION_ELIGIBLE_STAFF_IDS } from "@/lib/domain/gamification/monthlyPolicy";
 import { isValidRosterMonth } from "@/lib/domain/workforce/monthlyRoster";
 import { timeToMinutes } from "@/lib/domain/workforce/shiftPolicy";
@@ -13,7 +14,11 @@ import { assertCanPerform } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
-  if (message === "ACCESS_DENIED" || message === "OWNER_REQUIRED") return 403;
+  if (
+    message === "ACCESS_DENIED" ||
+    message === "OWNER_REQUIRED" ||
+    message.startsWith("FEATURE_ACCESS_DENIED:")
+  ) return 403;
   if (
     message === "ROSTER_MONTH_INVALID" ||
     message === "INVALID_MONTH" ||
@@ -56,6 +61,7 @@ function rosterOpportunity(
 export async function GET(request: NextRequest) {
   try {
     const tenantContext = await requireCurrentTenantAccessContext();
+    await requireTenantFeature(tenantContext.tenant, "optional.gamification");
     assertCanPerform(tenantContext.access, "performance.weekly.finalize", "All");
     const month = request.nextUrl.searchParams.get("month")?.trim() || undefined;
     if (month && !isValidRosterMonth(month)) throw new Error("ROSTER_MONTH_INVALID");
@@ -78,6 +84,7 @@ export async function POST(request: NextRequest) {
   }
   try {
     const tenantContext = await requireCurrentTenantAccessContext();
+    await requireTenantFeature(tenantContext.tenant, "optional.gamification");
     assertCanPerform(tenantContext.access, "performance.weekly.finalize", "All");
     if (!tenantContext.access.roles.includes("Owner")) throw new Error("OWNER_REQUIRED");
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;

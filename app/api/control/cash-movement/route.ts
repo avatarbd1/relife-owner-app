@@ -6,10 +6,12 @@ import {
 } from "@/lib/auth";
 import { decideCashMovement } from "@/lib/domain/finance/production";
 import type { Workbook } from "@/lib/data/googleSheets";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusForError(message: string): number {
+  if (message === "ACCESS_DENIED" || message.startsWith("FEATURE_ACCESS_DENIED:")) return 403;
   if (message === "CONTROL_NOT_FOUND") return 404;
   if (message === "CONTROL_ALREADY_DECIDED") return 409;
   if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") return 503;
@@ -27,12 +29,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  let context;
+  let tenantContext;
   try {
-    ({ access: context } = await requireCurrentTenantAccessContext());
+    tenantContext = await requireCurrentTenantAccessContext();
   } catch {
     return NextResponse.json({ ok: false, error: "ACCESS_DENIED" }, { status: 403 });
   }
+
+  try {
+    await requireTenantFeature(tenantContext.tenant, "optional.finance_advanced");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "FEATURE_ACCESS_DENIED";
+    return NextResponse.json({ ok: false, error: message }, { status: 403 });
+  }
+  const context = tenantContext.access;
 
   // Explicit Owner authorization check (before PIN check)
   if (!context.roles.includes("Owner")) {

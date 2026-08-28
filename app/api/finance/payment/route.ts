@@ -9,26 +9,11 @@ import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function errorResponse(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "PAYMENT_CREATE_FAILED";
-  if (message === "ACCESS_DENIED") {
-    return NextResponse.json({ ok: false, error: message }, { status: 403 });
-  }
+  if (message === "ACCESS_DENIED") return NextResponse.json({ ok: false, error: message }, { status: 403 });
   if (message.startsWith("FEATURE_ACCESS_DENIED:")) return NextResponse.json({ ok: false, error: message }, { status: 403 });
-  if (message === "PATIENT_NOT_FOUND") {
-    return NextResponse.json({ ok: false, error: message }, { status: 404 });
-  }
-  if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") {
-    return NextResponse.json({ ok: false, error: message }, { status: 503 });
-  }
-  if (
-    [
-      "INVALID_PATIENT_ID",
-      "INVALID_AMOUNT",
-      "EMPTY_PAYMENT",
-      "INVALID_PAYMENT_METHOD",
-      "INVALID_REQUEST_ID",
-      "DEPARTMENT_MISMATCH",
-    ].includes(message)
-  ) {
+  if (message === "PATIENT_NOT_FOUND") return NextResponse.json({ ok: false, error: message }, { status: 404 });
+  if (message === "SCHEMA_MISMATCH" || message === "FINANCE_DB_UNAVAILABLE") return NextResponse.json({ ok: false, error: message }, { status: 503 });
+  if (["INVALID_PATIENT_ID", "INVALID_AMOUNT", "EMPTY_PAYMENT", "INVALID_PAYMENT_METHOD", "INVALID_REQUEST_ID", "DEPARTMENT_MISMATCH"].includes(message)) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
   console.error("Finance payment create failed:", message);
@@ -43,22 +28,16 @@ function departmentFromPatientId(value: unknown): "Physio" | "Dental" | null {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAllowedRequestOrigin(request)) {
-    return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
-  }
+  if (!isAllowedRequestOrigin(request)) return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   try {
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
     validateTenantScope(access, tenant, "payment.create");
     await requireTenantFeature(tenant, "core.finance_basic");
     const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-    }
+    if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
     const department = departmentFromPatientId(body.patientId);
-    if (department) {
-      validateDepartmentAccess(access, department);
-    }
+    if (department) validateDepartmentAccess(access, department);
     const result = await createPayment(access, tenant.organizationId, tenant.clinicId, {
       patientId: body.patientId,
       amount: Number(body.amount),
@@ -73,6 +52,7 @@ export async function POST(request: NextRequest) {
 
     if (department) {
       await recordActorWorkGamification({
+        tenant,
         context: access,
         department,
         purpose: "reception",

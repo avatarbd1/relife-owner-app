@@ -6,9 +6,12 @@ import {
 } from "@/lib/auth";
 import { decideExpense } from "@/lib/domain/finance/production";
 import type { Workbook } from "@/lib/data/googleSheets";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusForError(message: string): number {
+  if (message === "ACCESS_DENIED" || message.startsWith("FEATURE_ACCESS_DENIED:")) return 403;
   if (message === "CONTROL_NOT_FOUND") return 404;
   if (message === "CONTROL_ALREADY_DECIDED") return 409;
   if (message.startsWith("CONTROL_CONFIG_")) return 503;
@@ -25,6 +28,19 @@ export async function POST(request: NextRequest) {
   const session = request.cookies.get(SESSION_COOKIE)?.value;
   if (!verifySessionToken(session)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  let tenantContext;
+  try {
+    tenantContext = await requireCurrentTenantAccessContext();
+    await requireTenantFeature(tenantContext.tenant, "optional.finance_advanced");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ACCESS_DENIED";
+    return NextResponse.json({ ok: false, error: message }, { status: 403 });
+  }
+  const context = tenantContext.access;
+  if (!context.roles.includes("Owner")) {
+    return NextResponse.json({ ok: false, error: "ACCESS_DENIED" }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);
@@ -52,7 +68,7 @@ export async function POST(request: NextRequest) {
       workbook: workbook as Workbook,
       expenseId: id,
       decision,
-      actorId: process.env.OWNER_DISPLAY_NAME || "Owner",
+      actorId: context.staffId,
       reason: decision === "reject" ? reason : undefined,
     });
     return NextResponse.json({ ok: true });
