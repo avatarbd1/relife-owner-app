@@ -1,11 +1,17 @@
 import crypto from "crypto";
+import type { TenantScope } from "@/lib/domain/tenancy/policy";
 
 export const STAFF_ENROLL_COOKIE = "relife_staff_enroll";
 export const STAFF_ENROLL_MAX_AGE = 10 * 60;
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STAFF_ID = /^[A-Za-z0-9_-]{2,64}$/;
+
 export interface StaffEnrollmentClaims {
   version: 1;
   staffId: string;
+  organizationId: string;
+  clinicId: string;
   passkeyCount: number;
   exp: number;
 }
@@ -30,12 +36,21 @@ function signaturesMatch(payload: string, signature: string): boolean {
 }
 
 export function createStaffEnrollmentToken(
-  staffId: string,
-  passkeyCount: number
+  rawStaffId: string,
+  passkeyCount: number,
+  scope: TenantScope,
 ): string {
+  const staffId = rawStaffId.trim();
+  const organizationId = scope.organizationId?.trim().toLowerCase() || "";
+  const clinicId = scope.clinicId?.trim().toLowerCase() || "";
+  if (!STAFF_ID.test(staffId) || !UUID.test(organizationId) || !UUID.test(clinicId)) {
+    throw new Error("STAFF_ENROLLMENT_TENANT_SCOPE_INVALID");
+  }
   const claims: StaffEnrollmentClaims = {
     version: 1,
-    staffId: staffId.trim(),
+    staffId,
+    organizationId,
+    clinicId,
     passkeyCount: Math.max(0, Math.trunc(passkeyCount)),
     exp: Math.floor(Date.now() / 1000) + STAFF_ENROLL_MAX_AGE,
   };
@@ -55,11 +70,16 @@ export function readStaffEnrollmentToken(
     const parsed = JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8")
     ) as Partial<StaffEnrollmentClaims>;
+    const staffId = String(parsed.staffId || "").trim();
+    const organizationId = String(parsed.organizationId || "").trim().toLowerCase();
+    const clinicId = String(parsed.clinicId || "").trim().toLowerCase();
     const exp = Number(parsed.exp);
     const passkeyCount = Number(parsed.passkeyCount);
     if (
       parsed.version !== 1 ||
-      !parsed.staffId ||
+      !STAFF_ID.test(staffId) ||
+      !UUID.test(organizationId) ||
+      !UUID.test(clinicId) ||
       !Number.isFinite(exp) ||
       exp <= Math.floor(Date.now() / 1000) ||
       !Number.isInteger(passkeyCount) ||
@@ -69,7 +89,9 @@ export function readStaffEnrollmentToken(
     }
     return {
       version: 1,
-      staffId: String(parsed.staffId).trim(),
+      staffId,
+      organizationId,
+      clinicId,
       passkeyCount,
       exp,
     };

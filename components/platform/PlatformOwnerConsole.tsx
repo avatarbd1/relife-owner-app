@@ -14,7 +14,13 @@ import type {
   PlatformOwnerSnapshot,
 } from "@/lib/data/platformOwner";
 
-type ApiResponse = { ok: boolean; error?: string; snapshot?: PlatformOwnerSnapshot };
+type ApiResponse = {
+  ok: boolean;
+  error?: string;
+  snapshot?: PlatformOwnerSnapshot;
+  ownerStaffId?: string | null;
+  ownerSetupUrl?: string | null;
+};
 
 const CLINIC_TYPES: Array<{ value: ClinicType; label: string }> = [
   { value: "physiotherapy", label: "Physiotherapy" },
@@ -190,6 +196,7 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
   const [address, setAddress] = useState("");
   const [planCode, setPlanCode] = useState<PlatformPlanCode>("starter");
   const [trialDays, setTrialDays] = useState(30);
+  const [ownerSetup, setOwnerSetup] = useState<{ staffId: string; url: string } | null>(null);
   const automaticOwnerStaffId = useMemo(
     () => clinicName.trim() ? generateOwnerStaffId(clinicName, clinicType) : "",
     [clinicName, clinicType],
@@ -205,7 +212,7 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
   }
 
   async function createClinic() {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setOwnerSetup(null);
     try {
       const payload = await jsonRequest("POST", {
         clinicName,
@@ -217,6 +224,9 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
         trialDays,
       });
       if (payload.snapshot) setSnapshot(payload.snapshot);
+      if (payload.ownerSetupUrl && payload.ownerStaffId) {
+        setOwnerSetup({ staffId: payload.ownerStaffId, url: payload.ownerSetupUrl });
+      }
       setClinicName("");
       setOrganizationName("");
       setPhone("");
@@ -242,6 +252,14 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
         <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-900">+ Add new clinic</summary>
         <div className="space-y-3 border-t border-slate-100 p-4">
           {error && <p className="rounded-xl bg-red-50 p-2.5 text-xs font-medium text-red-700">{error}</p>}
+          {ownerSetup && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
+              <p className="font-bold">Clinic created. Owner setup is ready.</p>
+              <p className="mt-1">Owner ID: <span className="font-mono font-semibold">{ownerSetup.staffId}</span></p>
+              <a href={ownerSetup.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded-lg bg-emerald-700 px-3 py-2 font-semibold text-white">Open owner setup</a>
+              <p className="mt-2 break-all text-[10px] text-emerald-700">{ownerSetup.url}</p>
+            </div>
+          )}
 
           <div className="grid gap-2 sm:grid-cols-2">
             <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicName} onChange={(e) => setClinicName(e.target.value)} placeholder="Clinic name" />

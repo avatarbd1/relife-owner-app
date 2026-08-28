@@ -142,8 +142,10 @@ function templateForClinicType(clinicType: ClinicType) {
     return {
       serviceName: "Physiotherapy Consultation",
       serviceDepartment: "Physio" as const,
-      rooms: [{ roomCode: "ROOM-01", displayName: "Treatment Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-      resources: [{ resourceCode: "BED-01", displayName: "Treatment Bed 1", resourceType: "BED", roomCode: "ROOM-01", capacity: 1, genderRestriction: null, isBookable: false, isRuntimeOnly: true, isActive: true, sortOrder: 1, notes: "Editable starter template" }],
+      // Facilities are clinic-owned configuration. A new Physio tenant starts
+      // neutral and the owner adds the real room/bed layout after onboarding.
+      rooms: [],
+      resources: [],
       bookingMode: "simple" as const,
       resourceRequired: false,
       maxSimultaneous: null,

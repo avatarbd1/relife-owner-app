@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { createStaffEnrollmentToken, STAFF_ENROLL_MAX_AGE } from "@/lib/staffEnrollment";
 import { listPasskeysForStaff, webauthnConfig } from "@/lib/webauthn";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
-import { getCurrentAccessContext } from "@/lib/webos/currentUser";
-import { getActiveWebStaffById, toAccessContext } from "@/lib/webos/staffDirectory";
+import { getCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { toAccessContext } from "@/lib/webos/staffDirectory";
+import { getTenantScopedWebStaffIdentity } from "@/lib/webos/tenantStaffDirectory";
 
 export async function POST(request: NextRequest) {
   if (!isAllowedRequestOrigin(request)) {
     return NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
   }
 
-  const context = await getCurrentAccessContext();
-  if (!context || !context.roles.includes("Owner")) {
+  const current = await getCurrentTenantAccessContext();
+  if (!current || !current.access.roles.includes("Owner")) {
     return NextResponse.json({ ok: false, error: "Owner access required" }, { status: 403 });
   }
 
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const staff = await getActiveWebStaffById(staffId);
+    const staff = await getTenantScopedWebStaffIdentity(staffId, current.tenant);
     if (!staff || !toAccessContext(staff)) {
       return NextResponse.json(
         { ok: false, error: "Staff access profile is incomplete or inactive" },
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     const passkeys = await listPasskeysForStaff(staff.staffId);
-    const token = createStaffEnrollmentToken(staff.staffId, passkeys.length);
+    const token = createStaffEnrollmentToken(staff.staffId, passkeys.length, current.tenant);
     const setupUrl = new URL("/staff-setup", webauthnConfig().origin);
     setupUrl.searchParams.set("token", token);
 

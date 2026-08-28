@@ -2,7 +2,8 @@ import "server-only";
 
 import { readStaffEnrollmentToken, type StaffEnrollmentClaims } from "@/lib/staffEnrollment";
 import { listPasskeysForStaff } from "@/lib/webauthn";
-import { getActiveWebStaffById, toAccessContext, type WebStaffIdentity } from "@/lib/webos/staffDirectory";
+import { toAccessContext, type WebStaffIdentity } from "@/lib/webos/staffDirectory";
+import { getTenantScopedWebStaffIdentity } from "@/lib/webos/tenantStaffDirectory";
 
 export interface EnrollmentIdentity {
   identity: WebStaffIdentity;
@@ -16,7 +17,10 @@ export async function getEnrollmentIdentity(
   const claims = readStaffEnrollmentToken(token);
   if (!claims) throw new Error("STAFF_ENROLLMENT_INVALID");
 
-  const identity = await getActiveWebStaffById(claims.staffId);
+  const identity = await getTenantScopedWebStaffIdentity(claims.staffId, {
+    organizationId: claims.organizationId,
+    clinicId: claims.clinicId,
+  });
   if (!identity || !toAccessContext(identity)) {
     throw new Error("STAFF_ENROLLMENT_ACCESS_DENIED");
   }
