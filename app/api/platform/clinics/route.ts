@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  activatePlatformClinic,
-  assignPlatformClinicOwner,
-  listPlatformOwnerSnapshot,
-  provisionPlatformClinic,
-  setPlatformClinicCommercial,
-  suspendPlatformClinic,
-} from "@/lib/data/platformOwner";
-import { patchPlatformClinicProfile } from "@/lib/data/platformClinicProfile";
+import { callPlatformControl } from "@/lib/data/platformControlClient";
+import type { PlatformOwnerSnapshot } from "@/lib/data/platformOwner";
 import {
   isPlatformPlanCode,
   normalizePlatformClinicProvisioningInput,
@@ -18,17 +11,23 @@ import { requireTenantScope } from "@/lib/domain/tenancy/policy";
 import { requireCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
+type ControlResponse = {
+  ok: true;
+  snapshot: PlatformOwnerSnapshot;
+  scope?: { organizationId: string; clinicId: string };
+};
+
 function fail(error: unknown) {
   const message = error instanceof Error ? error.message : "PLATFORM_OPERATION_FAILED";
   const status = /ACCESS_DENIED|NOT_AUTHORIZED/.test(message)
     ? 403
     : /ALREADY_MANAGED/.test(message)
       ? 409
-      : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA/.test(message)
+      : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA|CANNOT_BE/.test(message)
         ? 400
         : /NOT_FOUND/.test(message)
           ? 404
-          : /NOT_CONFIGURED|UNAVAILABLE/.test(message)
+          : /NOT_CONFIGURED|UNAVAILABLE|TIMEOUT|SECRET_MISSING|HTTP_5/.test(message)
             ? 503
             : 500;
   return NextResponse.json({ ok: false, error: message }, { status });
@@ -42,8 +41,12 @@ function originAllowed(request: NextRequest) {
 
 export async function GET() {
   try {
-    await requireCurrentPlatformOwner();
-    return NextResponse.json({ ok: true, snapshot: await listPlatformOwnerSnapshot() });
+    const owner = await requireCurrentPlatformOwner();
+    const result = await callPlatformControl<ControlResponse>({
+      action: "snapshot",
+      actorStaffId: owner.staffId,
+    });
+    return NextResponse.json(result);
   } catch (error) {
     return fail(error);
   }
@@ -56,15 +59,15 @@ export async function POST(request: NextRequest) {
     const owner = await requireCurrentPlatformOwner();
     const raw = await request.json() as PlatformClinicProvisioningInput;
     const input = normalizePlatformClinicProvisioningInput(raw);
-    const before = await listPlatformOwnerSnapshot();
-    const existing = before.clinics.find((clinic) =>
-      clinic.organizationSlug === input.organizationSlug && clinic.clinicSlug === input.clinicSlug
-    );
-    if (existing && ["active", "suspended"].includes(existing.clinicStatus)) {
-      throw new Error("PLATFORM_CLINIC_ALREADY_MANAGED");
+    if (input.ownerStaffId === owner.staffId) {
+      throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
     }
-    const scope = await provisionPlatformClinic(input, owner.staffId);
-    return NextResponse.json({ ok: true, scope, snapshot: await listPlatformOwnerSnapshot() });
+    const result = await callPlatformControl<ControlResponse>({
+      action: "provision",
+      actorStaffId: owner.staffId,
+      input,
+    });
+    return NextResponse.json(result);
   } catch (error) {
     return fail(error);
   }
@@ -100,35 +103,24 @@ export async function PATCH(request: NextRequest) {
     const owner = await requireCurrentPlatformOwner();
     const body = await request.json() as PatchBody;
     const scope = requireTenantScope({ organizationId: body.organizationId, clinicId: body.clinicId });
-    switch (body.action) {
-      case "profile": {
-        const profile = body.profile || {};
-        const clinicName = String(profile.clinicName || "").trim();
-        if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
-        await patchPlatformClinicProfile(scope, { ...profile, clinicName }, owner.staffId);
-        break;
-      }
-      case "owner":
-        await assignPlatformClinicOwner(scope, String(body.ownerStaffId || ""), owner.staffId);
-        break;
-      case "commercial":
-        if (!isPlatformPlanCode(body.planCode)) throw new Error("PLATFORM_PLAN_INVALID");
-        await setPlatformClinicCommercial(scope, {
-          planCode: body.planCode,
-          trialDays: Number(body.trialDays || 30),
-          featureKeys: Array.isArray(body.featureKeys) ? body.featureKeys : [],
-        }, owner.staffId);
-        break;
-      case "activate":
-        await activatePlatformClinic(scope, String(body.releaseSha || ""), owner.staffId);
-        break;
-      case "suspend":
-        await suspendPlatformClinic(scope, owner.staffId);
-        break;
-      default:
-        throw new Error("PLATFORM_ACTION_INVALID");
+    if (!body.action) throw new Error("PLATFORM_ACTION_INVALID");
+    if (body.action === "profile") {
+      const clinicName = String(body.profile?.clinicName || "").trim();
+      if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
     }
-    return NextResponse.json({ ok: true, snapshot: await listPlatformOwnerSnapshot() });
+    if (body.action === "owner") {
+      const ownerStaffId = String(body.ownerStaffId || "").trim();
+      if (ownerStaffId === owner.staffId) throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
+    }
+    if (body.action === "commercial" && !isPlatformPlanCode(body.planCode)) {
+      throw new Error("PLATFORM_PLAN_INVALID");
+    }
+    const result = await callPlatformControl<ControlResponse>({
+      ...body,
+      ...scope,
+      actorStaffId: owner.staffId,
+    });
+    return NextResponse.json(result);
   } catch (error) {
     return fail(error);
   }
