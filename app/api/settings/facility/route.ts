@@ -41,7 +41,9 @@ export async function PUT(request: NextRequest) {
     const requestedRoomCodes = new Set(requestedRooms.map((row) => row.roomCode.trim()));
     if (requestedRoomCodes.has("") || requestedRoomCodes.size !== requestedRooms.length || requestedRooms.some((row) => !row.displayName.trim())) throw new Error("INVALID_ROOMS");
     const requestedResourceCodes = new Set(requestedResources.map((row) => row.resourceCode.trim()));
-    const resourceTypes = new Set(["BED", "DENTAL_CHAIR", "TREATMENT_TABLE", "CABIN", "ROOM", "MACHINE", "OTHER"]);
+    // The platform offers exactly one clinic template (Physiotherapy), so
+    // the Dental-only chair resource type is intentionally not accepted.
+    const resourceTypes = new Set(["BED", "TREATMENT_TABLE", "CABIN", "ROOM", "MACHINE", "OTHER"]);
     if (requestedResourceCodes.has("") || requestedResourceCodes.size !== requestedResources.length || requestedResources.some((row) => !row.displayName.trim() || !resourceTypes.has(row.resourceType) || !Number.isInteger(row.capacity) || row.capacity <= 0 || (row.roomCode !== null && !requestedRoomCodes.has(row.roomCode)))) throw new Error("INVALID_RESOURCES");
 
     const booking = { ...requestedBooking, organizationId: context.tenant.organizationId, clinicId: context.tenant.clinicId };

@@ -76,21 +76,19 @@ test("platform control sends a structured JSON parameter to the canonical provis
   assert.doesNotMatch(edge, /JSON\.stringify\(payload\).*::jsonb/);
 });
 
-test("clinic type templates keep Physio neutral and other starter configuration editable", () => {
-  const physioTemplate = edge.match(
-    /if \(clinicType === "physiotherapy"\) \{[\s\S]*?\n  \}/,
+test("the platform template stays Physio-neutral and no second clinic type is selectable", () => {
+  const templateFn = edge.match(
+    /function templateForClinicType\([\s\S]*?\n\}/,
   )?.[0] || "";
-  assert.match(physioTemplate, /serviceDepartment: "Physio"/);
-  assert.match(physioTemplate, /rooms: \[\]/);
-  assert.match(physioTemplate, /resources: \[\]/);
-  assert.match(physioTemplate, /bookingMode: "simple"/);
-  assert.match(physioTemplate, /resourceRequired: false/);
-  assert.doesNotMatch(physioTemplate, /Treatment Room|Treatment Bed|Relife/i);
+  assert.match(templateFn, /serviceDepartment: "Physio"/);
+  assert.match(templateFn, /rooms: \[\]/);
+  assert.match(templateFn, /resources: \[\]/);
+  assert.match(templateFn, /bookingMode: "simple"/);
+  assert.match(templateFn, /resourceRequired: false/);
+  assert.doesNotMatch(templateFn, /Treatment Room|Treatment Bed|Relife/i);
 
-  assert.match(edge, /Dental Room 1/);
-  assert.match(edge, /Dental Chair 1/);
-  assert.match(edge, /Consultation Room 1/);
-  assert.match(edge, /Editable starter template/);
+  assert.match(edge, /CLINIC_TYPES = new Set\(\["physiotherapy"\]\)/);
+  assert.doesNotMatch(edge, /"dental"|"doctor_chamber"|DENTAL_CHAIR|Dental Room|Dental Chair/i);
   assert.doesNotMatch(edge, /Relife Dental|relife-dental|amtali-main/);
 });
 
@@ -119,6 +117,11 @@ test("existing clinic cards can request a fresh read-only owner setup handoff", 
   assert.match(consoleSource, /Generate owner setup link/);
   assert.match(consoleSource, /Regenerate owner setup link/);
   assert.match(consoleSource, /expires in 10 minutes/);
+});
+
+test("the Platform Owner console offers exactly one clinic template", () => {
+  assert.match(consoleSource, /CLINIC_TYPES: Array<\{ value: ClinicType; label: string \}> = \[\s*\{ value: "physiotherapy", label: "Physiotherapy" \},\s*\];/);
+  assert.doesNotMatch(consoleSource, /"dental"|"doctor_chamber"/);
 });
 
 test("Add new clinic UI does not ask the platform owner to type slugs", () => {

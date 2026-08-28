@@ -6,6 +6,8 @@ const wizard = readFileSync(new URL("../components/OwnerSetupWizard.tsx", import
 const featureRoute = readFileSync(new URL("../app/api/settings/features/route.ts", import.meta.url), "utf8");
 const featureWriter = readFileSync(new URL("../lib/data/clinicFeatureFlags.ts", import.meta.url), "utf8");
 const facilityRoute = readFileSync(new URL("../app/api/settings/facility/route.ts", import.meta.url), "utf8");
+const clinicRoute = readFileSync(new URL("../app/api/settings/clinic/route.ts", import.meta.url), "utf8");
+const servicesRoute = readFileSync(new URL("../app/api/settings/services/route.ts", import.meta.url), "utf8");
 const onboarding = readFileSync(new URL("../app/(dashboard)/onboarding/page.tsx", import.meta.url), "utf8");
 const setupPage = readFileSync(new URL("../app/(dashboard)/onboarding/setup/page.tsx", import.meta.url), "utf8");
 const importRoute = readFileSync(new URL("../app/api/onboarding/import/route.ts", import.meta.url), "utf8");
@@ -30,6 +32,21 @@ test("feature selection cannot mutate commercial entitlements", () => {
   assert.ok(featureWriter.includes("FEATURE_NOT_ENTITLED"));
   assert.ok(featureWriter.includes("organization_id"));
   assert.ok(featureWriter.includes("clinic_id"));
+});
+
+test("the platform offers exactly one clinic template and self-service cannot switch off it", () => {
+  assert.ok(wizard.includes('value="physiotherapy" disabled'));
+  assert.ok(!wizard.match(/<option value="dental">|<option value="doctor_chamber">|<option value="other">/));
+  assert.ok(!wizard.includes("DENTAL_CHAIR"));
+  assert.ok(!wizard.match(/<option>Dental<\/option>/));
+
+  assert.ok(clinicRoute.includes('requestedType !== "physiotherapy"'));
+  assert.ok(clinicRoute.includes("INVALID_CLINIC_TYPE"));
+
+  assert.ok(servicesRoute.includes('input.department === "Dental"'));
+  assert.ok(servicesRoute.includes("INVALID_SERVICE_DEPARTMENT"));
+
+  assert.ok(!facilityRoute.includes("DENTAL_CHAIR"));
 });
 
 test("facility replacement deactivates omitted rooms and resources", () => {

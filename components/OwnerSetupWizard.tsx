@@ -323,8 +323,8 @@ export default function OwnerSetupWizard() {
               ))}
               <label>
                 <span className="mb-1 block text-xs font-semibold text-slate-600">Clinic type</span>
-                <select value={clinic.profile.clinicType} onChange={(event) => setClinic((current) => current?.profile ? { ...current, profile: { ...current.profile, clinicType: event.target.value } } : current)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm">
-                  <option value="physiotherapy">Physiotherapy</option><option value="dental">Dental</option><option value="doctor_chamber">Doctor chamber</option><option value="other">Other</option>
+                <select value="physiotherapy" disabled className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
+                  <option value="physiotherapy">Physiotherapy</option>
                 </select>
               </label>
             </div>
@@ -349,7 +349,7 @@ export default function OwnerSetupWizard() {
           {useFacility ? <div className="grid gap-3 sm:grid-cols-3">
             <label><span className="mb-1 block text-xs font-semibold">Rooms</span><input type="number" min={1} max={100} value={roomCount} onChange={(event) => setRoomCount(Number(event.target.value))} className="h-11 w-full rounded-xl border border-slate-200 px-3" /></label>
             <label><span className="mb-1 block text-xs font-semibold">Resources / room</span><input type="number" min={1} max={100} value={resourcesPerRoom} onChange={(event) => setResourcesPerRoom(Number(event.target.value))} className="h-11 w-full rounded-xl border border-slate-200 px-3" /></label>
-            <label><span className="mb-1 block text-xs font-semibold">Resource type</span><select value={resourceType} onChange={(event) => setResourceType(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3"><option>BED</option><option>DENTAL_CHAIR</option><option>TREATMENT_TABLE</option><option>CABIN</option><option>ROOM</option><option>MACHINE</option><option>OTHER</option></select></label>
+            <label><span className="mb-1 block text-xs font-semibold">Resource type</span><select value={resourceType} onChange={(event) => setResourceType(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3"><option>BED</option><option>TREATMENT_TABLE</option><option>CABIN</option><option>ROOM</option><option>MACHINE</option><option>OTHER</option></select></label>
           </div> : null}
           <div className="grid gap-3 sm:grid-cols-3">
             <label><span className="mb-1 block text-xs font-semibold">Booking mode</span><select value={useFacility ? bookingMode : "simple"} disabled={!useFacility} onChange={(event) => setBookingMode(event.target.value as BookingMode)} className="h-11 w-full rounded-xl border border-slate-200 px-3 disabled:bg-slate-50"><option value="simple">Simple/provider</option><option value="capacity">Capacity</option><option value="specific_resource">Specific resource</option></select></label>
@@ -371,7 +371,7 @@ export default function OwnerSetupWizard() {
             <label><span className="mb-1 block text-xs font-semibold">Service name</span><input value={serviceDraft.displayName} onChange={(event) => setServiceDraft((current) => ({ ...current, displayName: event.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 px-3" /></label>
             <label><span className="mb-1 block text-xs font-semibold">Price</span><input type="number" min={0} value={serviceDraft.price} onChange={(event) => setServiceDraft((current) => ({ ...current, price: Number(event.target.value) }))} className="h-11 w-full rounded-xl border border-slate-200 px-3" /></label>
             <label><span className="mb-1 block text-xs font-semibold">Duration</span><input type="number" min={1} value={serviceDraft.durationMin} onChange={(event) => setServiceDraft((current) => ({ ...current, durationMin: Number(event.target.value) }))} className="h-11 w-full rounded-xl border border-slate-200 px-3" /></label>
-            <label><span className="mb-1 block text-xs font-semibold">Department</span><select value={serviceDraft.department} onChange={(event) => setServiceDraft((current) => ({ ...current, department: event.target.value as Service["department"] }))} className="h-11 w-full rounded-xl border border-slate-200 px-3"><option>All</option><option>Physio</option><option>Dental</option></select></label>
+            <label><span className="mb-1 block text-xs font-semibold">Department</span><select value={serviceDraft.department} onChange={(event) => setServiceDraft((current) => ({ ...current, department: event.target.value as Service["department"] }))} className="h-11 w-full rounded-xl border border-slate-200 px-3"><option>All</option><option>Physio</option></select></label>
           </div>
           <button type="button" onClick={saveService} disabled={busy === "service" || !serviceDraft.serviceCode.trim() || !serviceDraft.displayName.trim()} className="h-11 w-full rounded-xl bg-slate-950 text-sm font-bold text-white disabled:opacity-50">{busy === "service" ? "Saving…" : "Save service"}</button>
         </div>

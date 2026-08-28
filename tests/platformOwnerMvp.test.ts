@@ -50,37 +50,35 @@ test("commercial plan prices and only approved premium minimums are defaulted", 
   assert.deepEqual(premiumOptional, ["optional.live_chamber", "optional.gamification", "optional.finance_advanced"]);
 });
 
-test("owner staff IDs are generated from clinic name and clinic type", () => {
+test("owner staff IDs always carry the Physiotherapy staff code", () => {
   assert.equal(generateOwnerStaffId("Relife Amtali", "physiotherapy"), "RLF-PT-001");
-  assert.equal(generateOwnerStaffId("Relife Dental", "dental"), "RLF-DT-001");
-  assert.equal(generateOwnerStaffId("Smile Dental", "dental"), "SML-DT-001");
-  assert.equal(generateOwnerStaffId("ABC Clinic", "doctor_chamber"), "ABC-DC-001");
-  assert.equal(generateOwnerStaffId("Care Center", "other", 2), "CRA-OT-002");
+  assert.equal(generateOwnerStaffId("Smile Physio", "physiotherapy"), "SML-PT-001");
+  assert.equal(generateOwnerStaffId("Care Center", "physiotherapy", 2), "CRA-PT-002");
 });
 
 test("platform slugs are generated safely from human clinic names", () => {
-  assert.equal(slugifyPlatformName("Relief Dental"), "relief-dental");
-  assert.equal(slugifyPlatformName("  Relief   Dental !!! "), "relief-dental");
+  assert.equal(slugifyPlatformName("Relief Physiotherapy"), "relief-physiotherapy");
+  assert.equal(slugifyPlatformName("  Relief   Physio !!! "), "relief-physio");
   assert.equal(slugifyPlatformName("R"), "r-clinic");
   assert.equal(slugifyPlatformName("***"), "clinic");
 });
 
 test("minimal clinic input expands to a complete starter provisioning input", () => {
   const input = normalizePlatformClinicProvisioningInput({
-    clinicName: "Relief Dental",
-    clinicType: "dental",
+    clinicName: "Relief Physiotherapy",
+    clinicType: "physiotherapy",
   });
-  assert.equal(input.organizationName, "Relief Dental");
-  assert.equal(input.organizationSlug, "relief-dental");
-  assert.equal(input.clinicSlug, "relief-dental");
-  assert.equal(input.ownerStaffId, "RLF-DT-001");
+  assert.equal(input.organizationName, "Relief Physiotherapy");
+  assert.equal(input.organizationSlug, "relief-physiotherapy");
+  assert.equal(input.clinicSlug, "relief-physiotherapy");
+  assert.equal(input.ownerStaffId, "RLF-PT-001");
   assert.equal(input.planCode, "starter");
   assert.equal(input.trialDays, 30);
-  assert.equal(input.firstServiceName, "Dental Consultation");
+  assert.equal(input.firstServiceName, "Physiotherapy Consultation");
   assert.deepEqual(input.openDays, [1, 2, 3, 4, 5, 6]);
 });
 
-test("clinic-type templates create editable starter facility and booking configuration", () => {
+test("the platform offers exactly one clinic template: Physiotherapy", () => {
   const physio = buildProvisioningPayload(normalizePlatformClinicProvisioningInput({ clinicName: "Physio One", clinicType: "physiotherapy" }));
   assert.equal(physio.services[0].department, "Physio");
   assert.equal(physio.rooms.length, 0);
@@ -88,17 +86,13 @@ test("clinic-type templates create editable starter facility and booking configu
   assert.equal(physio.booking.mode, "simple");
   assert.equal(physio.booking.resourceRequired, false);
 
-  const dental = buildProvisioningPayload(normalizePlatformClinicProvisioningInput({ clinicName: "Dental One", clinicType: "dental" }));
-  assert.equal(dental.services[0].department, "Dental");
-  assert.equal(dental.rooms.length, 1);
-  assert.equal(dental.resources[0]?.resourceType, "DENTAL_CHAIR");
-  assert.equal(dental.booking.mode, "specific_resource");
-  assert.equal(dental.booking.resourceRequired, true);
-
-  const other = buildProvisioningPayload(normalizePlatformClinicProvisioningInput({ clinicName: "General Clinic", clinicType: "other" }));
-  assert.equal(other.services[0].department, "All");
-  assert.equal(other.rooms.length, 0);
-  assert.equal(other.resources.length, 0);
+  for (const rejected of ["dental", "doctor_chamber", "other"]) {
+    assert.throws(
+      () => normalizePlatformClinicProvisioningInput({ clinicName: "Not Physio", clinicType: rejected as never }),
+      /PLATFORM_CLINIC_TYPE_INVALID/,
+      rejected,
+    );
+  }
 });
 
 test("provisioning always preserves canonical core features and seven-day hours", () => {

@@ -22,11 +22,10 @@ type ApiResponse = {
   ownerSetupUrl?: string | null;
 };
 
+// The platform offers exactly one clinic template. Every clinic — Relife
+// included — onboards as Physiotherapy; there is no second selectable type.
 const CLINIC_TYPES: Array<{ value: ClinicType; label: string }> = [
   { value: "physiotherapy", label: "Physiotherapy" },
-  { value: "dental", label: "Dental" },
-  { value: "doctor_chamber", label: "Doctor chamber" },
-  { value: "other", label: "Other" },
 ];
 
 async function jsonRequest(method: "POST" | "PATCH", body: unknown): Promise<ApiResponse> {
@@ -106,7 +105,7 @@ function ClinicCard({
   const [features, setFeatures] = useState<string[]>(clinic.enabledFeatures);
   const [releaseSha, setReleaseSha] = useState(clinic.verifiedReleaseSha || "");
   const [clinicName, setClinicName] = useState(clinic.clinicName);
-  const [clinicType, setClinicType] = useState<ClinicType>(clinic.clinicType || "other");
+  const [clinicType, setClinicType] = useState<ClinicType>(clinic.clinicType || "physiotherapy");
   const [timezone, setTimezone] = useState(clinic.timezone || "Asia/Dhaka");
   const scope = { organizationId: clinic.organizationId, clinicId: clinic.clinicId };
 

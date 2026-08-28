@@ -31,7 +31,9 @@ export const PLATFORM_PLANS: Record<PlatformPlanCode, PlatformPlanDefinition> = 
   premium: { code: "premium", label: "Premium", priceBdt: 1499, defaultFeatureKeys: [...CORE_FEATURE_KEYS, ...PREMIUM_REQUIRED] },
 };
 
-export type ClinicType = "physiotherapy" | "dental" | "doctor_chamber" | "other";
+// The platform offers exactly one clinic template. Every clinic — Relife
+// included — onboards as Physiotherapy; there is no second selectable type.
+export type ClinicType = "physiotherapy";
 
 export interface PlatformClinicProvisioningInput {
   clinicName: string;
@@ -121,11 +123,8 @@ function clinicStaffCode(clinicName: string): string {
   return code.padEnd(3, "X").slice(0, 3);
 }
 
-function clinicTypeStaffCode(clinicType: ClinicType): string {
-  if (clinicType === "physiotherapy") return "PT";
-  if (clinicType === "dental") return "DT";
-  if (clinicType === "doctor_chamber") return "DC";
-  return "OT";
+function clinicTypeStaffCode(_clinicType: ClinicType): string {
+  return "PT";
 }
 
 export function generateOwnerStaffId(clinicName: string, clinicType: ClinicType, serial = 1): string {
@@ -137,45 +136,12 @@ export function isPlatformPlanCode(value: unknown): value is PlatformPlanCode {
   return typeof value === "string" && (PLATFORM_PLAN_CODES as readonly string[]).includes(value);
 }
 
-function templateForClinicType(clinicType: ClinicType) {
-  if (clinicType === "physiotherapy") {
-    return {
-      serviceName: "Physiotherapy Consultation",
-      serviceDepartment: "Physio" as const,
-      // Facilities are clinic-owned configuration. A new Physio tenant starts
-      // neutral and the owner adds the real room/bed layout after onboarding.
-      rooms: [],
-      resources: [],
-      bookingMode: "simple" as const,
-      resourceRequired: false,
-      maxSimultaneous: null,
-    };
-  }
-  if (clinicType === "dental") {
-    return {
-      serviceName: "Dental Consultation",
-      serviceDepartment: "Dental" as const,
-      rooms: [{ roomCode: "ROOM-01", displayName: "Dental Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-      resources: [{ resourceCode: "CHAIR-01", displayName: "Dental Chair 1", resourceType: "DENTAL_CHAIR", roomCode: "ROOM-01", capacity: 1, genderRestriction: null, isBookable: true, isRuntimeOnly: false, isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-      bookingMode: "specific_resource" as const,
-      resourceRequired: true,
-      maxSimultaneous: null,
-    };
-  }
-  if (clinicType === "doctor_chamber") {
-    return {
-      serviceName: "Doctor Consultation",
-      serviceDepartment: "All" as const,
-      rooms: [{ roomCode: "ROOM-01", displayName: "Consultation Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-      resources: [],
-      bookingMode: "simple" as const,
-      resourceRequired: false,
-      maxSimultaneous: null,
-    };
-  }
+function templateForClinicType(_clinicType: ClinicType) {
   return {
-    serviceName: "Consultation",
-    serviceDepartment: "All" as const,
+    serviceName: "Physiotherapy Consultation",
+    serviceDepartment: "Physio" as const,
+    // Facilities are clinic-owned configuration. A new Physio tenant starts
+    // neutral and the owner adds the real room/bed layout after onboarding.
     rooms: [],
     resources: [],
     bookingMode: "simple" as const,
@@ -186,7 +152,8 @@ function templateForClinicType(clinicType: ClinicType) {
 
 export function normalizePlatformClinicProvisioningInput(raw: PlatformClinicProvisioningInput): NormalizedPlatformClinicProvisioningInput {
   const clinicName = text(raw.clinicName);
-  const clinicType = raw.clinicType || "other";
+  const clinicType = raw.clinicType || "physiotherapy";
+  if (clinicType !== "physiotherapy") throw new Error("PLATFORM_CLINIC_TYPE_INVALID");
   const template = templateForClinicType(clinicType);
   const organizationName = text(raw.organizationName) || clinicName;
   const organizationSlug = slugifyPlatformName(text(raw.organizationSlug) || organizationName);

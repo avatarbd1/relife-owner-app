@@ -23,7 +23,9 @@ const CORE_FEATURE_KEYS = [
   "core.settings",
 ];
 const PLAN_CODES = new Set(["starter", "standard", "premium"]);
-const CLINIC_TYPES = new Set(["physiotherapy", "dental", "doctor_chamber", "other"]);
+// The platform offers exactly one clinic template. Every clinic — Relife
+// included — onboards as Physiotherapy; there is no second selectable type.
+const CLINIC_TYPES = new Set(["physiotherapy"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STAFF_ID = /^[A-Za-z0-9_-]{2,64}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{1,62}$/;
@@ -82,11 +84,8 @@ function clinicStaffCode(clinicName: string): string {
   return code.padEnd(3, "X").slice(0, 3);
 }
 
-function clinicTypeStaffCode(clinicType: string): string {
-  if (clinicType === "physiotherapy") return "PT";
-  if (clinicType === "dental") return "DT";
-  if (clinicType === "doctor_chamber") return "DC";
-  return "OT";
+function clinicTypeStaffCode(_clinicType: string): string {
+  return "PT";
 }
 
 function generateOwnerStaffId(clinicName: string, clinicType: string): string {
@@ -98,73 +97,10 @@ function ownerStaffIdWithSerial(base: string, serial: number): string {
   return `${prefix}${String(serial).padStart(3, "0")}`;
 }
 
-function templateForClinicType(clinicType: string) {
-  if (clinicType === "physiotherapy") {
-    return {
-      serviceName: "Physiotherapy Consultation",
-      serviceDepartment: "Physio",
-      rooms: [],
-      resources: [],
-      bookingMode: "simple",
-      resourceRequired: false,
-      maxSimultaneous: null,
-    };
-  }
-  if (clinicType === "dental") {
-    return {
-      serviceName: "Dental Consultation",
-      serviceDepartment: "Dental",
-      rooms: [
-        {
-          roomCode: "ROOM-01",
-          displayName: "Dental Room 1",
-          isActive: true,
-          sortOrder: 1,
-          notes: "Editable starter template",
-        },
-      ],
-      resources: [
-        {
-          resourceCode: "CHAIR-01",
-          displayName: "Dental Chair 1",
-          resourceType: "DENTAL_CHAIR",
-          roomCode: "ROOM-01",
-          capacity: 1,
-          genderRestriction: null,
-          isBookable: true,
-          isRuntimeOnly: false,
-          isActive: true,
-          sortOrder: 1,
-          notes: "Editable starter template",
-        },
-      ],
-      bookingMode: "specific_resource",
-      resourceRequired: true,
-      maxSimultaneous: null,
-    };
-  }
-  if (clinicType === "doctor_chamber") {
-    return {
-      serviceName: "Doctor Consultation",
-      serviceDepartment: "All",
-      rooms: [
-        {
-          roomCode: "ROOM-01",
-          displayName: "Consultation Room 1",
-          isActive: true,
-          sortOrder: 1,
-          notes: "Editable starter template",
-        },
-      ],
-      resources: [],
-      bookingMode: "simple",
-      resourceRequired: false,
-      maxSimultaneous: null,
-    };
-  }
+function templateForClinicType(_clinicType: string) {
   return {
-    serviceName: "Consultation",
-    serviceDepartment: "All",
+    serviceName: "Physiotherapy Consultation",
+    serviceDepartment: "Physio",
     rooms: [],
     resources: [],
     bookingMode: "simple",
@@ -293,7 +229,7 @@ async function snapshot() {
 
 function normalizeProvisionInput(raw: RecordAny, actorStaffId: string) {
   const clinicName = text(raw.clinicName);
-  const clinicType = text(raw.clinicType || "other");
+  const clinicType = text(raw.clinicType || "physiotherapy");
   if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
   if (!CLINIC_TYPES.has(clinicType)) throw new Error("PLATFORM_CLINIC_TYPE_INVALID");
   const template = templateForClinicType(clinicType);
@@ -522,9 +458,14 @@ async function patchProfile(body: RecordAny, actorStaffId: string) {
   }
   const row = current[0];
   const clinicName = text(patch.clinicName) || text(row.clinic_name);
-  const clinicType = text(patch.clinicType) || text(row.clinic_type);
+  const requestedType = text(patch.clinicType);
+  // The platform now offers exactly one clinic template. A profile edit that
+  // does not touch clinicType keeps whatever value the row already carries
+  // (legacy rows predate this restriction); an explicit change must be
+  // Physiotherapy.
+  const clinicType = requestedType || text(row.clinic_type) || "physiotherapy";
   if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
-  if (!CLINIC_TYPES.has(clinicType)) throw new Error("PLATFORM_CLINIC_TYPE_INVALID");
+  if (requestedType && !CLINIC_TYPES.has(requestedType)) throw new Error("PLATFORM_CLINIC_TYPE_INVALID");
   const branchName = text(patch.branchName) || text(row.branch_name) || clinicName;
   const timezone = text(patch.timezone) || text(row.timezone) || "Asia/Dhaka";
   await sql.begin(async (tx) => {

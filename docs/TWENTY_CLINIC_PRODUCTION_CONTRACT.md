@@ -127,16 +127,26 @@ The system generates the canonical `clinic_id`.
 
 ## 6. Clinic templates
 
+**Owner decision, 2026-08-28: the platform offers exactly one clinic
+template — Physiotherapy.** Dental and Doctor Chamber are discontinued as
+selectable templates; no new clinic, and no existing clinic through
+self-service settings, may be provisioned or switched to any type other
+than Physiotherapy. This supersedes the multi-template language previously
+in this section.
+
+Relife itself converts from its historical dual Physio+Dental compatibility
+identity to a single-department Physio tenant under this same template,
+exactly like every other clinic — it is not a permanent multi-department
+special case. Dental is discontinued as a business line: existing
+`RELIFE-DENTAL` Sheets-ledger data and any archived Dental
+services/resources remain an untouched, read-only historical record with no
+scope/UI/permission connection to the live Relife-Physiotherapy tenant. No
+new Dental patient, appointment, or payment activity is permitted anywhere
+in the platform.
+
 Templates are configuration presets only, never hard-coded product forks.
-
-Initial template categories may include:
-
-- Physiotherapy
-- Dental
-- Doctor Chamber
-- Other clinic/service business types when approved
-
-A template sets sensible defaults, but every enabled feature must remain configuration-driven.
+A template sets sensible defaults, but every enabled feature must remain
+configuration-driven.
 
 Example Physiotherapy defaults:
 

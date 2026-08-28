@@ -34,8 +34,17 @@ export async function PATCH(request: NextRequest) {
     if (body.profile) {
       const p = body.profile;
       if (!String(p.clinicName || "").trim() || !isValidTimezone(String(p.timezone || ""))) throw new Error("INVALID_CLINIC_PROFILE");
+      // The platform offers exactly one clinic template (Physiotherapy). A clinic
+      // may keep whatever type it was already provisioned with (legacy rows
+      // predate this restriction), but no self-service edit may switch a clinic
+      // to any other type going forward.
+      const existing = await readClinicConfiguration(context.tenant);
+      const requestedType = p.clinicType || existing.profile?.clinicType || "physiotherapy";
+      if (requestedType !== "physiotherapy" && requestedType !== existing.profile?.clinicType) {
+        throw new Error("INVALID_CLINIC_TYPE");
+      }
       await writeClinicProfile(context.tenant, {
-        clinicName: String(p.clinicName).trim(), clinicType: p.clinicType || "other", branchName: String(p.branchName || "").trim(), address: String(p.address || "").trim(), phone: String(p.phone || "").trim(), email: String(p.email || "").trim(), logoUrl: String(p.logoUrl || "").trim(), currency: String(p.currency || "BDT").trim(), locale: String(p.locale || "en").trim(), timezone: String(p.timezone).trim(),
+        clinicName: String(p.clinicName).trim(), clinicType: requestedType, branchName: String(p.branchName || "").trim(), address: String(p.address || "").trim(), phone: String(p.phone || "").trim(), email: String(p.email || "").trim(), logoUrl: String(p.logoUrl || "").trim(), currency: String(p.currency || "BDT").trim(), locale: String(p.locale || "en").trim(), timezone: String(p.timezone).trim(),
       }, context.access.staffId);
     }
     if (body.operatingHours) {

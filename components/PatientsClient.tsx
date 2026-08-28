@@ -35,7 +35,7 @@ function departmentBadge(department: PatientDepartment) {
 
 export default function PatientsClient({
   patients,
-  availableDepartments = ["Physio", "Dental"],
+  availableDepartments = ["Physio"],
   showMoney = true,
   paymentDepartments = [],
   appointmentDepartments = [],

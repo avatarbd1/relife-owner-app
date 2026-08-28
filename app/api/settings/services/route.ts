@@ -21,6 +21,9 @@ export async function PUT(request: NextRequest) {
     const serviceCode = String(input.serviceCode || "").trim(); const displayName = String(input.displayName || "").trim();
     const price = Number(input.price); const durationMin = Number(input.durationMin);
     if (!serviceCode || !displayName || !Number.isFinite(price) || price < 0 || !Number.isInteger(durationMin) || durationMin <= 0) throw new Error("INVALID_SERVICE_CONFIGURATION");
+    // The platform offers exactly one clinic template (Physiotherapy). No
+    // clinic may add a new or re-enabled Dental-department service.
+    if (input.department === "Dental") throw new Error("INVALID_SERVICE_DEPARTMENT");
     await writeClinicService(tenant, { serviceCode, displayName, department: input.department || "All", price, durationMin, requiresBooking: input.requiresBooking !== false, requiresProvider: input.requiresProvider !== false, requiresResource: input.requiresResource === true, discountApplicable: input.discountApplicable !== false, taxApplicable: input.taxApplicable === true, packageEligible: input.packageEligible === true, isActive: input.isActive !== false });
     return NextResponse.json({ ok: true, services: (await readClinicConfiguration(tenant)).services });
   } catch (error) { return fail(error); }
