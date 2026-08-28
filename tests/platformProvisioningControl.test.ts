@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import {
+  DiagnosticCategory,
+  ModuleKind,
+  ScriptTarget,
+  transpileModule,
+} from "typescript";
 
 // Issue #231 regression contract: the normal clinic onboarding path must stay
 // template-driven and must never require manual slug entry.
@@ -12,6 +18,17 @@ const consoleSource = readFileSync(
   new URL("../components/platform/PlatformOwnerConsole.tsx", import.meta.url),
   "utf8",
 );
+
+test("tracked Platform Control Edge source is valid TypeScript syntax", () => {
+  const result = transpileModule(edge, {
+    compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.ESNext },
+    reportDiagnostics: true,
+  });
+  const errors = (result.diagnostics || []).filter(
+    (diagnostic) => diagnostic.category === DiagnosticCategory.Error,
+  );
+  assert.deepEqual(errors, []);
+});
 
 test("platform provisioning edge keeps the protected server-to-server boundary", () => {
   assert.match(edge, /x-relife-lock-key/);
