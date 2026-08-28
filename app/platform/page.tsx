@@ -1,12 +1,14 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import PlatformOwnerConsole from "@/components/platform/PlatformOwnerConsole";
 import { listPlatformOwnerSnapshot } from "@/lib/data/platformOwner";
-import { requireCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
+import { getCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
 
 export const dynamic = "force-dynamic";
 
 export default async function PlatformOwnerPage() {
-  const owner = await requireCurrentPlatformOwner();
+  const owner = await getCurrentPlatformOwner();
+  if (!owner) notFound();
   const snapshot = await listPlatformOwnerSnapshot();
   return (
     <main className="min-h-dvh bg-slate-50 pb-10">
