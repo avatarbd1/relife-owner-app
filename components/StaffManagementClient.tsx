@@ -49,12 +49,12 @@ const ROLE_OPTIONS: Role[] = [
   "System Admin",
 ];
 
-const emptyDraft = (): Draft => ({
+const emptyDraft = (availableDepartments: Array<"Physio" | "Dental">): Draft => ({
   fullName: "",
   phone: "",
   role: "Receptionist",
-  primaryDepartment: "Physio",
-  departmentAccess: ["Physio"],
+  primaryDepartment: availableDepartments[0] || "Physio",
+  departmentAccess: [availableDepartments[0] || "Physio"],
   salary: "0",
   dentalTemporaryClinical: false,
   status: "Active",
@@ -94,10 +94,10 @@ function friendlyError(value: unknown): string {
   return messages[code] || code || "Staff change failed.";
 }
 
-export default function StaffManagementClient({ staff }: { staff: StaffItem[] }) {
+export default function StaffManagementClient({ staff, availableDepartments = ["Physio", "Dental"] }: { staff: StaffItem[]; availableDepartments?: Array<"Physio" | "Dental"> }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const [draft, setDraft] = useState<Draft>(emptyDraft(availableDepartments));
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState<{ text: string; good: boolean } | null>(null);
@@ -108,7 +108,7 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
 
   function startCreate() {
     setEditingId(null);
-    setDraft(emptyDraft());
+    setDraft(emptyDraft(availableDepartments));
     setShowForm(true);
     setMessage(null);
   }
@@ -130,7 +130,8 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
       return;
     }
     if (role === "Auditor" || role === "System Admin") {
-      setDraft((current) => ({ ...current, role, primaryDepartment: "All", departmentAccess: ["All"], dentalTemporaryClinical: false }));
+      const only = availableDepartments.length === 1 ? availableDepartments[0] : "All";
+      setDraft((current) => ({ ...current, role, primaryDepartment: only, departmentAccess: [only], dentalTemporaryClinical: false }));
       return;
     }
     setDraft((current) => ({ ...current, role, dentalTemporaryClinical: false }));
@@ -178,7 +179,7 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
       setMessage({ text: editingId ? "Staff profile updated." : `Staff created: ${payload.staffId}`, good: true });
       setShowForm(false);
       setEditingId(null);
-      setDraft(emptyDraft());
+      setDraft(emptyDraft(availableDepartments));
       haptic("success");
       router.refresh();
     } catch (error) {
@@ -210,6 +211,11 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
 
   const clinicianLocked = draft.role === "Therapist" || draft.role === "Dentist" || draft.role === "Dental_Assistant";
   const allLocked = draft.role === "Auditor" || draft.role === "System Admin";
+  const roleOptions = ROLE_OPTIONS.filter((role) => {
+    if ((role === "Dentist" || role === "Dental_Assistant") && !availableDepartments.includes("Dental")) return false;
+    if (role === "Therapist" && !availableDepartments.includes("Physio")) return false;
+    return true;
+  });
   const canTemporaryDental = draft.role === "Receptionist" && draft.primaryDepartment === "Dental" && draft.departmentAccess.length === 1 && draft.departmentAccess[0] === "Dental";
 
   return (
@@ -246,7 +252,7 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
             </label>
             <label className="text-xs font-semibold text-slate-700">Role
               <select value={draft.role} onChange={(event) => applyRole(event.target.value as Role)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950">
-                {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
+                {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
             </label>
             <label className="text-xs font-semibold text-slate-700">Fixed monthly salary
@@ -254,9 +260,8 @@ export default function StaffManagementClient({ staff }: { staff: StaffItem[] })
             </label>
             <label className="text-xs font-semibold text-slate-700">Primary department
               <select disabled={clinicianLocked || allLocked} value={draft.primaryDepartment} onChange={(event) => setDraft((current) => ({ ...current, primaryDepartment: event.target.value as Department }))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 disabled:bg-slate-100">
-                <option value="Physio">Physio</option>
-                <option value="Dental">Dental</option>
-                <option value="All">All</option>
+                {availableDepartments.map((department) => <option key={department} value={department}>{department}</option>)}
+                {availableDepartments.length > 1 && <option value="All">All</option>}
               </select>
             </label>
             {editingId && <label className="text-xs font-semibold text-slate-700">Status
