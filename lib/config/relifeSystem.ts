@@ -19,6 +19,15 @@ export const RELIFE_SUPABASE_SCOPE = {
   clinicSlug: "amtali-main",
 } as const;
 
+export function isRelifeLegacyTenant(tenant: {
+  organizationSlug: string;
+  clinicSlug: string;
+}): boolean {
+  const legacyScope = RELIFE_SUPABASE_SCOPE;
+  return tenant.organizationSlug === legacyScope.organizationSlug &&
+    tenant.clinicSlug === legacyScope.clinicSlug;
+}
+
 const DEPARTMENT_CONFIG = {
   Physio: {
     workbook: "physio",
