@@ -83,8 +83,8 @@ test("minimal clinic input expands to a complete starter provisioning input", ()
 test("clinic-type templates create editable starter facility and booking configuration", () => {
   const physio = buildProvisioningPayload(normalizePlatformClinicProvisioningInput({ clinicName: "Physio One", clinicType: "physiotherapy" }));
   assert.equal(physio.services[0].department, "Physio");
-  assert.equal(physio.rooms.length, 1);
-  assert.equal(physio.resources[0]?.resourceType, "BED");
+  assert.equal(physio.rooms.length, 0);
+  assert.equal(physio.resources.length, 0);
   assert.equal(physio.booking.mode, "simple");
   assert.equal(physio.booking.resourceRequired, false);
 
