@@ -7,10 +7,9 @@ import {
   resolveStaffTenantContext,
   type StaffTenantContext,
 } from "@/lib/domain/tenancy/staffTenantContext";
-import type { AccessContext } from "@/lib/webos/access";
 import { ACTIVE_TENANT_COOKIE, parseTenantSelection } from "@/lib/domain/tenancy/tenantSelection";
+import type { AccessContext } from "@/lib/webos/access";
 import {
-  getActiveWebStaffById,
   toAccessContext,
   type WebStaffIdentity,
 } from "@/lib/webos/staffDirectory";
@@ -37,36 +36,24 @@ export function isOwnerTenantCutoverEnforced(): boolean {
   return process.env.RELIFE_TENANT_CUTOVER_ENFORCED?.trim().toLowerCase() === "true";
 }
 
-async function enforceOwnerTenantBinding(identity: WebStaffIdentity): Promise<void> {
-  if (!isOwnerTenantCutoverEnforced() || !identity.roles.includes("Owner")) return;
-  // The resolver is fail-closed: missing, inactive, or ambiguous Tenant/Clinic
-  // bindings reject the Owner session before any downstream operational action.
-  await resolveStaffTenantContext(identity.staffId);
+async function resolveCurrentTenantForStaff(staffId: string): Promise<StaffTenantContext | null> {
+  if (isPlatformOwner(staffId)) return null;
+  try {
+    return await resolveStaffTenantContext(staffId, await currentTenantSelection());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "TENANT_CONTEXT_UNAVAILABLE";
+    if (message === "TENANT_BINDING_NOT_FOUND") return null;
+    throw error;
+  }
 }
 
 export async function getCurrentStaffIdentity(): Promise<WebStaffIdentity | null> {
   const staffId = await currentSessionStaffId();
-  if (!staffId) return null;
+  if (!staffId || isPlatformOwner(staffId)) return null;
 
-  // Platform authority is intentionally outside clinic tenancy.
-  if (isPlatformOwner(staffId)) {
-    return getActiveWebStaffById(staffId);
-  }
-
-  try {
-    const tenant = await resolveStaffTenantContext(staffId, await currentTenantSelection());
-    return await getTenantScopedWebStaffIdentity(staffId, tenant);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "TENANT_CONTEXT_UNAVAILABLE";
-    if (message !== "TENANT_BINDING_NOT_FOUND") throw error;
-
-    // Temporary compatibility only for pre-cutover Relife staff that have not
-    // received a tenant binding yet. New SaaS tenant staff never depend on it.
-    const legacy = await getActiveWebStaffById(staffId);
-    if (!legacy) return null;
-    await enforceOwnerTenantBinding(legacy);
-    return legacy;
-  }
+  const tenant = await resolveCurrentTenantForStaff(staffId);
+  if (!tenant) return null;
+  return getTenantScopedWebStaffIdentity(staffId, tenant);
 }
 
 export async function getCurrentAccessContext(): Promise<AccessContext | null> {
@@ -81,14 +68,14 @@ export async function requireCurrentAccessContext(): Promise<AccessContext> {
 }
 
 /**
- * Resolve the canonical Tenant/Clinic for the existing signed staff session.
- * Missing or ambiguous tenant bindings fail closed; there is no implicit
- * fallback to Relife.
+ * Resolve the canonical Tenant/Clinic for a clinic staff session. Platform
+ * Owner authority is deliberately excluded and has its own control-plane
+ * session resolver.
  */
 export async function getCurrentTenantContext(): Promise<StaffTenantContext | null> {
   const staffId = await currentSessionStaffId();
   if (!staffId) return null;
-  return resolveStaffTenantContext(staffId, await currentTenantSelection());
+  return resolveCurrentTenantForStaff(staffId);
 }
 
 export async function requireCurrentTenantContext(): Promise<StaffTenantContext> {
@@ -105,16 +92,16 @@ export type CurrentTenantAccessContext = {
 
 /** Canonical server context for tenant-aware operational routes. */
 export async function getCurrentTenantAccessContext(): Promise<CurrentTenantAccessContext | null> {
-  const identity = await getCurrentStaffIdentity();
+  const staffId = await currentSessionStaffId();
+  if (!staffId || isPlatformOwner(staffId)) return null;
+
+  const tenant = await resolveCurrentTenantForStaff(staffId);
+  if (!tenant) return null;
+  const identity = await getTenantScopedWebStaffIdentity(staffId, tenant);
   if (!identity) return null;
   const access = toAccessContext(identity);
   if (!access) return null;
-  const tenant = await resolveStaffTenantContext(identity.staffId, await currentTenantSelection());
-  return {
-    identity,
-    access,
-    tenant,
-  };
+  return { identity, access, tenant };
 }
 
 export async function requireCurrentTenantAccessContext(): Promise<CurrentTenantAccessContext> {
