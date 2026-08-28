@@ -22,13 +22,15 @@ function fail(error: unknown) {
   const message = error instanceof Error ? error.message : "PLATFORM_OPERATION_FAILED";
   const status = /ACCESS_DENIED|NOT_AUTHORIZED/.test(message)
     ? 403
-    : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA/.test(message)
-      ? 400
-      : /NOT_FOUND/.test(message)
-        ? 404
-        : /NOT_CONFIGURED|UNAVAILABLE/.test(message)
-          ? 503
-          : 500;
+    : /ALREADY_MANAGED/.test(message)
+      ? 409
+      : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA/.test(message)
+        ? 400
+        : /NOT_FOUND/.test(message)
+          ? 404
+          : /NOT_CONFIGURED|UNAVAILABLE/.test(message)
+            ? 503
+            : 500;
   return NextResponse.json({ ok: false, error: message }, { status });
 }
 
@@ -54,6 +56,13 @@ export async function POST(request: NextRequest) {
     const owner = await requireCurrentPlatformOwner();
     const raw = await request.json() as PlatformClinicProvisioningInput;
     const input = normalizePlatformClinicProvisioningInput(raw);
+    const before = await listPlatformOwnerSnapshot();
+    const existing = before.clinics.find((clinic) =>
+      clinic.organizationSlug === input.organizationSlug && clinic.clinicSlug === input.clinicSlug
+    );
+    if (existing && ["active", "suspended"].includes(existing.clinicStatus)) {
+      throw new Error("PLATFORM_CLINIC_ALREADY_MANAGED");
+    }
     const scope = await provisionPlatformClinic(input, owner.staffId);
     return NextResponse.json({ ok: true, scope, snapshot: await listPlatformOwnerSnapshot() });
   } catch (error) {
