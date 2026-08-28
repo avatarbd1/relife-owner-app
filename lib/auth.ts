@@ -2,7 +2,7 @@ import crypto from "crypto";
 
 export const SESSION_COOKIE = "relife_owner_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
-const OWNER_STAFF_ID = "ST001";
+export const DEFAULT_OWNER_STAFF_ID = "ST001";
 
 export interface SessionClaims {
   version: 2;
@@ -47,7 +47,7 @@ function signaturesMatch(payload: string, signature: string): boolean {
  * intentionally resolved from the live staff directory on protected actions so
  * permission changes do not wait for a 30-day cookie to expire.
  */
-export function createSessionToken(staffId: string = OWNER_STAFF_ID): string {
+export function createSessionToken(staffId: string = DEFAULT_OWNER_STAFF_ID): string {
   const exp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS;
   const claims: SessionClaims = {
     version: 2,
@@ -95,7 +95,7 @@ function readLegacyOwnerSession(token: string): SessionClaims | null {
   if (!signaturesMatch(payload, signature)) return null;
   const exp = Number(payload);
   if (!Number.isFinite(exp) || exp <= Math.floor(Date.now() / 1000)) return null;
-  return { version: 2, exp, staffId: OWNER_STAFF_ID };
+  return { version: 2, exp, staffId: DEFAULT_OWNER_STAFF_ID };
 }
 
 export function readSessionClaims(
