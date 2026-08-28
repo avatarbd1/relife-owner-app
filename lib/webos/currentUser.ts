@@ -26,6 +26,15 @@ async function currentTenantSelection() {
   return parseTenantSelection(cookieStore.get(ACTIVE_TENANT_COOKIE)?.value);
 }
 
+async function getLegacyStaffIdentity(staffId: string): Promise<WebStaffIdentity | null> {
+  try {
+    return await getActiveWebStaffById(staffId);
+  } catch (error) {
+    console.warn("Legacy staff directory unavailable; canonical tenant identity will remain authoritative", error);
+    return null;
+  }
+}
+
 export function isOwnerTenantCutoverEnforced(): boolean {
   return process.env.RELIFE_TENANT_CUTOVER_ENFORCED?.trim().toLowerCase() === "true";
 }
@@ -45,8 +54,8 @@ export async function getCurrentStaffIdentity(): Promise<WebStaffIdentity | null
   if (!staffId) return null;
   const requestedScope = await currentTenantSelection();
   const identity =
-    (await getActiveWebStaffById(staffId)) ||
-    (await getCanonicalActiveWebStaffById(staffId, requestedScope));
+    (await getCanonicalActiveWebStaffById(staffId, requestedScope)) ||
+    (await getLegacyStaffIdentity(staffId));
   if (!identity) return null;
   await enforceOwnerTenantBinding(identity, requestedScope);
   return identity;
