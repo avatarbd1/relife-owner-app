@@ -8,6 +8,7 @@ import {
 import {
   buildProvisioningPayload,
   CORE_FEATURE_KEYS,
+  generateOwnerStaffId,
   normalizePlatformClinicProvisioningInput,
   PLATFORM_PLANS,
   requireReleaseSha,
@@ -48,6 +49,25 @@ test("commercial plan prices and only approved premium minimums are defaulted", 
   assert.deepEqual(premiumOptional, ["optional.live_chamber", "optional.gamification", "optional.finance_advanced"]);
 });
 
+test("owner staff IDs are generated from clinic name and clinic type", () => {
+  assert.equal(generateOwnerStaffId("Relife Amtali", "physiotherapy"), "RLF-PT-001");
+  assert.equal(generateOwnerStaffId("Relife Dental", "dental"), "RLF-DT-001");
+  assert.equal(generateOwnerStaffId("Smile Dental", "dental"), "SML-DT-001");
+  assert.equal(generateOwnerStaffId("ABC Clinic", "doctor_chamber"), "ABC-DC-001");
+  assert.equal(generateOwnerStaffId("Care Center", "other", 2), "CRX-OT-002");
+});
+
+test("platform provisioning auto-generates owner staff ID when omitted", () => {
+  const { ownerStaffId: _ownerStaffId, ...withoutOwner } = baseInput();
+  const input = normalizePlatformClinicProvisioningInput({
+    ...withoutOwner,
+    clinicName: "Relife Amtali",
+    clinicType: "physiotherapy",
+  });
+  assert.equal(input.ownerStaffId, "RLF-PT-001");
+  assert.equal(buildProvisioningPayload(input).owner.staffId, "RLF-PT-001");
+});
+
 test("provisioning always preserves canonical core features and seven-day hours", () => {
   const input = normalizePlatformClinicProvisioningInput({ ...baseInput(), featureKeys: ["optional.files"], openDays: [1, 3, 5], opensAt: "10:00", closesAt: "17:00" });
   for (const key of CORE_FEATURE_KEYS) assert.equal(input.featureKeys.includes(key), true, key);
@@ -65,7 +85,7 @@ test("trial end is bounded without deleting or transforming business data", () =
   assert.equal(trialEndsAt(start, 30).toISOString(), "2026-09-27T00:00:00.000Z");
 });
 
-test("platform provisioning rejects unsafe identity and commercial inputs", () => {
+test("platform provisioning rejects unsafe explicit identity and commercial inputs", () => {
   assert.throws(() => normalizePlatformClinicProvisioningInput({ ...baseInput(), organizationSlug: "Bad Slug" }), /SLUG_INVALID/);
   assert.throws(() => normalizePlatformClinicProvisioningInput({ ...baseInput(), ownerStaffId: "x" }), /STAFF_ID_INVALID/);
   assert.throws(() => normalizePlatformClinicProvisioningInput({ ...baseInput(), trialDays: 0 }), /TRIAL_DAYS_INVALID/);
