@@ -3,7 +3,8 @@
 import { getDateRangeCollection, getDateRangeBusinessPosition } from "@/lib/calculations";
 import { assertValidDateRange } from "@/lib/domain/finance/dateRange";
 import type { Scope } from "@/lib/types";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import { actionsForRoles } from "@/lib/webos/access";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
@@ -12,7 +13,9 @@ export async function fetchRangeReportsData(
   endDate: string,
   requestedScope: Scope
 ) {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  if (!isRelifeLegacyTenant(tenantContext.tenant)) throw new Error("LEGACY_REPORTS_NOT_AVAILABLE");
+  const context = tenantContext.access;
   const actions = new Set(actionsForRoles(context.roles));
 
   if (!actions.has("report.read_financial")) {
