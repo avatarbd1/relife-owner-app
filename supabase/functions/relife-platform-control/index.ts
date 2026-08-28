@@ -13,8 +13,14 @@ const SERVER_KEY_HASHES = new Set([
 ]);
 
 const CORE_FEATURE_KEYS = [
-  "core.dashboard", "core.patients", "core.appointments", "core.staff",
-  "core.services", "core.finance_basic", "core.reports", "core.settings",
+  "core.dashboard",
+  "core.patients",
+  "core.appointments",
+  "core.staff",
+  "core.services",
+  "core.finance_basic",
+  "core.reports",
+  "core.settings",
 ];
 const PLAN_CODES = new Set(["starter", "standard", "premium"]);
 const CLINIC_TYPES = new Set(["physiotherapy", "dental", "doctor_chamber", "other"]);
@@ -31,15 +37,37 @@ function response(data: unknown, status = 200) {
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 }
-function text(value: unknown): string { return String(value ?? "").trim(); }
-function bool(value: unknown): boolean { return value === true || String(value).toLowerCase() === "true"; }
-function asStringArray(value: unknown): string[] { return Array.isArray(value) ? value.map(text).filter(Boolean) : []; }
+
+function text(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function bool(value: unknown): boolean {
+  return value === true || String(value).toLowerCase() === "true";
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(text).filter(Boolean) : [];
+}
+
 function slugifyPlatformName(value: unknown): string {
-  const base = text(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+  const base = text(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
   if (base.length >= 2) return base;
   if (base.length === 1) return `${base}-clinic`;
   return "clinic";
 }
+
+function suffixedSlug(base: string, serial: number): string {
+  if (serial <= 1) return base;
+  const suffix = `-${serial}`;
+  const stem = base.slice(0, Math.max(2, 63 - suffix.length)).replace(/-+$/g, "");
+  return `${stem}${suffix}`;
+}
+
 function clinicStaffCode(clinicName: string): string {
   const firstWord = text(clinicName).toUpperCase().match(/[A-Z0-9]+/)?.[0] || "CLINIC";
   if (firstWord.length <= 3) return firstWord.padEnd(3, "X");
@@ -53,47 +81,173 @@ function clinicStaffCode(clinicName: string): string {
   }
   return code.padEnd(3, "X").slice(0, 3);
 }
+
 function clinicTypeStaffCode(clinicType: string): string {
   if (clinicType === "physiotherapy") return "PT";
   if (clinicType === "dental") return "DT";
   if (clinicType === "doctor_chamber") return "DC";
   return "OT";
 }
+
 function generateOwnerStaffId(clinicName: string, clinicType: string): string {
   return `${clinicStaffCode(clinicName)}-${clinicTypeStaffCode(clinicType)}-001`;
 }
-function templateForClinicType(clinicType: string) {
-  if (clinicType === "physiotherapy") return {
-    serviceName: "Physiotherapy Consultation", serviceDepartment: "Physio",
-    rooms: [{ roomCode: "ROOM-01", displayName: "Treatment Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-    resources: [{ resourceCode: "BED-01", displayName: "Treatment Bed 1", resourceType: "BED", roomCode: "ROOM-01", capacity: 1, genderRestriction: null, isBookable: false, isRuntimeOnly: true, isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-    bookingMode: "simple", resourceRequired: false, maxSimultaneous: null,
-  };
-  if (clinicType === "dental") return {
-    serviceName: "Dental Consultation", serviceDepartment: "Dental",
-    rooms: [{ roomCode: "ROOM-01", displayName: "Dental Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-    resources: [{ resourceCode: "CHAIR-01", displayName: "Dental Chair 1", resourceType: "DENTAL_CHAIR", roomCode: "ROOM-01", capacity: 1, genderRestriction: null, isBookable: true, isRuntimeOnly: false, isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-    bookingMode: "specific_resource", resourceRequired: true, maxSimultaneous: null,
-  };
-  if (clinicType === "doctor_chamber") return {
-    serviceName: "Doctor Consultation", serviceDepartment: "All",
-    rooms: [{ roomCode: "ROOM-01", displayName: "Consultation Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
-    resources: [], bookingMode: "simple", resourceRequired: false, maxSimultaneous: null,
-  };
-  return { serviceName: "Consultation", serviceDepartment: "All", rooms: [], resources: [], bookingMode: "simple", resourceRequired: false, maxSimultaneous: null };
+
+function ownerStaffIdWithSerial(base: string, serial: number): string {
+  const prefix = base.replace(/\d{3}$/, "");
+  return `${prefix}${String(serial).padStart(3, "0")}`;
 }
+
+function templateForClinicType(clinicType: string) {
+  if (clinicType === "physiotherapy") {
+    return {
+      serviceName: "Physiotherapy Consultation",
+      serviceDepartment: "Physio",
+      rooms: [
+        {
+          roomCode: "ROOM-01",
+          displayName: "Treatment Room 1",
+          isActive: true,
+          sortOrder: 1,
+          notes: "Editable starter template",
+        },
+      ],
+      resources: [
+        {
+          resourceCode: "BED-01",
+          displayName: "Treatment Bed 1",
+          resourceType: "BED",
+          roomCode: "ROOM-01",
+          capacity: 1,
+          genderRestriction: null,
+          isBookable: false,
+          isRuntimeOnly: true,
+          isActive: true,
+          sortOrder: 1,
+          notes: "Editable starter template",
+        },
+      ],
+      bookingMode: "simple",
+      resourceRequired: false,
+      maxSimultaneous: null,
+    };
+  }
+  if (clinicType === "dental") {
+    return {
+      serviceName: "Dental Consultation",
+      serviceDepartment: "Dental",
+      rooms: [
+        {
+          roomCode: "ROOM-01",
+          displayName: "Dental Room 1",
+          isActive: true,
+          sortOrder: 1,
+          notes: "Editable starter template",
+        },
+      ],
+      resources: [
+        {
+          resourceCode: "CHAIR-01",
+          displayName: "Dental Chair 1",
+          resourceType: "DENTAL_CHAIR",
+          roomCode: "ROOM-01",
+          capacity: 1,
+          genderRestriction: null,
+          isBookable: true,
+          isRuntimeOnly: false,
+          isActive: true,
+          sortOrder: 1,
+          notes: "Editable starter template",
+        },
+      ],
+      bookingMode: "specific_resource",
+      resourceRequired: true,
+      maxSimultaneous: null,
+    };
+  }
+  if (clinicType === "doctor_chamber") {
+    return {
+      serviceName: "Doctor Consultation",
+      serviceDepartment: "All",
+      rooms: [
+        {
+          roomCode: "ROOM-01",
+          displayName: "Consultation Room 1",
+          isActive: true,
+          sortOrder: 1,
+          notes: "Editable starter template",
+        },
+      ],
+      resources: [],
+      bookingMode: "simple",
+      resourceRequired: false,
+      maxSimultaneous: null,
+    };
+  }
+  return {
+    serviceName: "Consultation",
+    serviceDepartment: "All",
+    rooms: [],
+    resources: [],
+    bookingMode: "simple",
+    resourceRequired: false,
+    maxSimultaneous: null,
+  };
+}
+
 function scopeFrom(body: RecordAny) {
   const organizationId = text(body.organizationId).toLowerCase();
   const clinicId = text(body.clinicId).toLowerCase();
-  if (!UUID.test(organizationId) || !UUID.test(clinicId)) throw new Error("TENANT_SCOPE_REQUIRED");
+  if (!UUID.test(organizationId) || !UUID.test(clinicId)) {
+    throw new Error("TENANT_SCOPE_REQUIRED");
+  }
   return { organizationId, clinicId };
 }
+
 async function authorized(request: Request): Promise<boolean> {
   const key = request.headers.get("x-relife-lock-key")?.trim() || "";
   if (!key) return false;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
-  const hex = [...new Uint8Array(digest)].map((v) => v.toString(16).padStart(2, "0")).join("");
+  const hex = [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
   return SERVER_KEY_HASHES.has(hex);
+}
+
+async function uniqueOrganizationSlug(base: string): Promise<string> {
+  for (let serial = 1; serial <= 999; serial += 1) {
+    const candidate = suffixedSlug(base, serial);
+    const rows = await sql`select 1 from relife.organizations where slug=${candidate} limit 1`;
+    if (!rows[0]) return candidate;
+  }
+  throw new Error("PLATFORM_ORGANIZATION_SLUG_EXHAUSTED");
+}
+
+async function uniqueClinicSlug(organizationSlug: string, base: string): Promise<string> {
+  const organizations = await sql`select id::text as id from relife.organizations where slug=${organizationSlug} limit 1`;
+  const organizationId = text(organizations[0]?.id);
+  if (!organizationId) return base;
+  for (let serial = 1; serial <= 999; serial += 1) {
+    const candidate = suffixedSlug(base, serial);
+    const rows = await sql`select 1 from relife.clinics where organization_id=${organizationId}::uuid and slug=${candidate} limit 1`;
+    if (!rows[0]) return candidate;
+  }
+  throw new Error("PLATFORM_CLINIC_SLUG_EXHAUSTED");
+}
+
+async function uniqueOwnerStaffId(base: string): Promise<string> {
+  const prefix = base.replace(/\d{3}$/, "");
+  const rows = await sql`select distinct staff_id from relife.staff_tenant_bindings where staff_id like ${`${prefix}%`}`;
+  const used = new Set(
+    rows
+      .map((row) => text(row.staff_id))
+      .filter((staffId) => staffId.startsWith(prefix) && /^\d{3}$/.test(staffId.slice(prefix.length)))
+      .map((staffId) => Number(staffId.slice(prefix.length))),
+  );
+  for (let serial = 1; serial <= 999; serial += 1) {
+    if (!used.has(serial)) return ownerStaffIdWithSerial(base, serial);
+  }
+  throw new Error("PLATFORM_OWNER_STAFF_ID_EXHAUSTED");
 }
 
 async function snapshot() {
@@ -122,16 +276,41 @@ async function snapshot() {
     if (owners.length === 0) missing.push("owner assignment");
     if (!bool(row.finance_enabled)) missing.push("core finance entitlement");
     const clinicStatus = text(row.clinic_status);
-    const readinessStatus = clinicStatus === "active" ? "ACTIVE" : clinicStatus === "suspended" ? "SUSPENDED" : missing.length === 0 ? "READY_FOR_VERIFICATION" : "SETUP_REQUIRED";
+    const readinessStatus = clinicStatus === "active"
+      ? "ACTIVE"
+      : clinicStatus === "suspended"
+        ? "SUSPENDED"
+        : missing.length === 0
+          ? "READY_FOR_VERIFICATION"
+          : "SETUP_REQUIRED";
     return {
-      organizationId: text(row.organization_id), clinicId: text(row.clinic_id), organizationName: text(row.organization_name), organizationSlug: text(row.organization_slug),
-      clinicName: text(row.clinic_name), clinicSlug: text(row.clinic_slug), clinicStatus, timezone: text(row.timezone), clinicType: text(row.clinic_type) || null,
-      ownerStaffIds: owners, enabledFeatures: Array.isArray(row.enabled_features) ? row.enabled_features.map(text).filter(Boolean) : [], planCode: text(row.plan_code) || null,
-      trialEndsAt: row.trial_ends_at ? new Date(String(row.trial_ends_at)).toISOString() : null, verifiedReleaseSha: text(row.verified_release_sha) || null,
-      readinessStatus, missingReadiness: missing,
+      organizationId: text(row.organization_id),
+      clinicId: text(row.clinic_id),
+      organizationName: text(row.organization_name),
+      organizationSlug: text(row.organization_slug),
+      clinicName: text(row.clinic_name),
+      clinicSlug: text(row.clinic_slug),
+      clinicStatus,
+      timezone: text(row.timezone),
+      clinicType: text(row.clinic_type) || null,
+      ownerStaffIds: owners,
+      enabledFeatures: Array.isArray(row.enabled_features) ? row.enabled_features.map(text).filter(Boolean) : [],
+      planCode: text(row.plan_code) || null,
+      trialEndsAt: row.trial_ends_at ? new Date(String(row.trial_ends_at)).toISOString() : null,
+      verifiedReleaseSha: text(row.verified_release_sha) || null,
+      readinessStatus,
+      missingReadiness: missing,
     };
   });
-  return { clinics, featureCatalog: catalog.map((row) => ({ featureKey: text(row.feature_key), label: text(row.label), moduleGroup: text(row.module_group), domain: text(row.domain) })) };
+  return {
+    clinics,
+    featureCatalog: catalog.map((row) => ({
+      featureKey: text(row.feature_key),
+      label: text(row.label),
+      moduleGroup: text(row.module_group),
+      domain: text(row.domain),
+    })),
+  };
 }
 
 function normalizeProvisionInput(raw: RecordAny, actorStaffId: string) {
@@ -147,33 +326,84 @@ function normalizeProvisionInput(raw: RecordAny, actorStaffId: string) {
   const planCode = PLAN_CODES.has(text(raw.planCode)) ? text(raw.planCode) : "starter";
   const timezone = text(raw.timezone || "Asia/Dhaka");
   const trialDays = Number(raw.trialDays ?? 30);
-  if (!SLUG.test(organizationSlug) || !SLUG.test(clinicSlug)) throw new Error("PLATFORM_CLINIC_SLUG_INVALID");
+  if (!SLUG.test(organizationSlug) || !SLUG.test(clinicSlug)) {
+    throw new Error("PLATFORM_CLINIC_SLUG_INVALID");
+  }
   if (!STAFF_ID.test(ownerStaffId)) throw new Error("PLATFORM_OWNER_STAFF_ID_INVALID");
   if (ownerStaffId === actorStaffId) throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
-  if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 90) throw new Error("PLATFORM_TRIAL_DAYS_INVALID");
-  const opensAt = text(raw.opensAt || "09:00"); const closesAt = text(raw.closesAt || "18:00");
-  if (!TIME.test(opensAt) || !TIME.test(closesAt) || opensAt >= closesAt) throw new Error("PLATFORM_HOURS_INVALID");
-  const openDays = [...new Set((Array.isArray(raw.openDays) && raw.openDays.length ? raw.openDays : [1,2,3,4,5,6]).map(Number))].sort((a,b) => a-b);
-  if (openDays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) throw new Error("PLATFORM_OPEN_DAYS_INVALID");
+  if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 90) {
+    throw new Error("PLATFORM_TRIAL_DAYS_INVALID");
+  }
+  const opensAt = text(raw.opensAt || "09:00");
+  const closesAt = text(raw.closesAt || "18:00");
+  if (!TIME.test(opensAt) || !TIME.test(closesAt) || opensAt >= closesAt) {
+    throw new Error("PLATFORM_HOURS_INVALID");
+  }
+  const openDays = [
+    ...new Set(
+      (Array.isArray(raw.openDays) && raw.openDays.length ? raw.openDays : [1, 2, 3, 4, 5, 6])
+        .map(Number),
+    ),
+  ].sort((a, b) => a - b);
+  if (openDays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) {
+    throw new Error("PLATFORM_OPEN_DAYS_INVALID");
+  }
   const featureKeys = [...new Set([...CORE_FEATURE_KEYS, ...asStringArray(raw.featureKeys)])];
   const firstServiceName = text(raw.firstServiceName) || template.serviceName;
-  const firstServiceCode = text(raw.firstServiceCode) || firstServiceName.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0,48) || "SERVICE_1";
-  const firstServicePrice = Number(raw.firstServicePrice ?? 0); const firstServiceDurationMin = Number(raw.firstServiceDurationMin ?? 30);
-  if (!Number.isFinite(firstServicePrice) || firstServicePrice < 0) throw new Error("PLATFORM_SERVICE_PRICE_INVALID");
-  if (!Number.isInteger(firstServiceDurationMin) || firstServiceDurationMin < 5 || firstServiceDurationMin > 480) throw new Error("PLATFORM_SERVICE_DURATION_INVALID");
+  const firstServiceCode = text(raw.firstServiceCode)
+    || firstServiceName.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48)
+    || "SERVICE_1";
+  const firstServicePrice = Number(raw.firstServicePrice ?? 0);
+  const firstServiceDurationMin = Number(raw.firstServiceDurationMin ?? 30);
+  if (!Number.isFinite(firstServicePrice) || firstServicePrice < 0) {
+    throw new Error("PLATFORM_SERVICE_PRICE_INVALID");
+  }
+  if (!Number.isInteger(firstServiceDurationMin) || firstServiceDurationMin < 5 || firstServiceDurationMin > 480) {
+    throw new Error("PLATFORM_SERVICE_DURATION_INVALID");
+  }
   return {
-    organizationName, organizationSlug, clinicName, clinicSlug, ownerStaffId, planCode, trialDays, timezone, clinicType, template,
-    branchName: text(raw.branchName) || clinicName, address: text(raw.address), phone: text(raw.phone), email: text(raw.email),
-    currency: text(raw.currency || "BDT") || "BDT", locale: text(raw.locale || "en") || "en", featureKeys, openDays, opensAt, closesAt,
-    firstServiceName, firstServiceCode, firstServicePrice, firstServiceDurationMin,
+    organizationName,
+    organizationSlug,
+    clinicName,
+    clinicSlug,
+    ownerStaffId,
+    planCode,
+    trialDays,
+    timezone,
+    clinicType,
+    template,
+    branchName: text(raw.branchName) || clinicName,
+    address: text(raw.address),
+    phone: text(raw.phone),
+    email: text(raw.email),
+    currency: text(raw.currency || "BDT") || "BDT",
+    locale: text(raw.locale || "en") || "en",
+    featureKeys,
+    openDays,
+    opensAt,
+    closesAt,
+    firstServiceName,
+    firstServiceCode,
+    firstServicePrice,
+    firstServiceDurationMin,
   };
 }
 
-async function setCommercial(organizationId: string, clinicId: string, planCode: string, trialDays: number, requestedFeatures: string[], actorStaffId: string) {
+async function setCommercial(
+  organizationId: string,
+  clinicId: string,
+  planCode: string,
+  trialDays: number,
+  requestedFeatures: string[],
+  actorStaffId: string,
+) {
   if (!PLAN_CODES.has(planCode)) throw new Error("PLATFORM_PLAN_INVALID");
-  if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 90) throw new Error("PLATFORM_TRIAL_DAYS_INVALID");
+  if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 90) {
+    throw new Error("PLATFORM_TRIAL_DAYS_INVALID");
+  }
   const catalogRows = await sql`select feature_key from relife.feature_catalog where status='active' order by feature_key`;
-  const known = catalogRows.map((r) => text(r.feature_key)); const knownSet = new Set(known);
+  const known = catalogRows.map((row) => text(row.feature_key));
+  const knownSet = new Set(known);
   const selected = [...new Set([...CORE_FEATURE_KEYS, ...requestedFeatures.map(text).filter(Boolean)])];
   if (selected.some((key) => !knownSet.has(key))) throw new Error("PLATFORM_FEATURE_UNKNOWN");
   const expiresAt = new Date(Date.now() + trialDays * 86400000).toISOString();
@@ -190,84 +420,224 @@ async function setCommercial(organizationId: string, clinicId: string, planCode:
 }
 
 async function provision(inputRaw: RecordAny, actorStaffId: string) {
+  const requestedOrganizationSlug = text(inputRaw.organizationSlug);
+  const requestedClinicSlug = text(inputRaw.clinicSlug);
+  const requestedOwnerStaffId = text(inputRaw.ownerStaffId);
   const input = normalizeProvisionInput(inputRaw, actorStaffId);
+
+  if (!requestedOrganizationSlug) {
+    input.organizationSlug = await uniqueOrganizationSlug(input.organizationSlug);
+  }
+  if (!requestedClinicSlug) {
+    input.clinicSlug = await uniqueClinicSlug(input.organizationSlug, input.clinicSlug);
+  }
+  if (!requestedOwnerStaffId) {
+    input.ownerStaffId = await uniqueOwnerStaffId(input.ownerStaffId);
+  }
+
+  if (input.ownerStaffId === actorStaffId) {
+    throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
+  }
+
   const existing = await sql`select c.status from relife.organizations o join relife.clinics c on c.organization_id=o.id where o.slug=${input.organizationSlug} and c.slug=${input.clinicSlug} limit 1`;
-  if (existing[0] && text(existing[0].status) !== "archived") throw new Error("PLATFORM_CLINIC_ALREADY_MANAGED");
+  if (existing[0] && text(existing[0].status) !== "archived") {
+    throw new Error("PLATFORM_CLINIC_ALREADY_MANAGED");
+  }
+
   const open = new Set(input.openDays);
   const payload = {
     organization: { slug: input.organizationSlug, name: input.organizationName },
-    clinic: { slug: input.clinicSlug, name: input.clinicName, type: input.clinicType, timezone: input.timezone, branchName: input.branchName, address: input.address, phone: input.phone, email: input.email, currency: input.currency, locale: input.locale },
-    owner: { staffId: input.ownerStaffId }, commercial: { planCode: input.planCode },
-    operatingHours: Array.from({ length: 7 }, (_, index) => { const dayOfWeek = index + 1; const isOpen = open.has(dayOfWeek); return { dayOfWeek, isOpen, opensAt: isOpen ? input.opensAt : null, closesAt: isOpen ? input.closesAt : null }; }),
+    clinic: {
+      slug: input.clinicSlug,
+      name: input.clinicName,
+      type: input.clinicType,
+      timezone: input.timezone,
+      branchName: input.branchName,
+      address: input.address,
+      phone: input.phone,
+      email: input.email,
+      currency: input.currency,
+      locale: input.locale,
+    },
+    owner: { staffId: input.ownerStaffId },
+    commercial: { planCode: input.planCode },
+    operatingHours: Array.from({ length: 7 }, (_, index) => {
+      const dayOfWeek = index + 1;
+      const isOpen = open.has(dayOfWeek);
+      return {
+        dayOfWeek,
+        isOpen,
+        opensAt: isOpen ? input.opensAt : null,
+        closesAt: isOpen ? input.closesAt : null,
+      };
+    }),
     features: input.featureKeys,
-    services: [{ serviceCode: input.firstServiceCode, displayName: input.firstServiceName, department: input.template.serviceDepartment, price: input.firstServicePrice, durationMin: input.firstServiceDurationMin, requiresBooking: true, requiresProvider: true, requiresResource: input.template.resourceRequired, discountApplicable: true, taxApplicable: false, packageEligible: false, isActive: true }],
-    rooms: input.template.rooms, resources: input.template.resources,
-    booking: { mode: input.template.bookingMode, defaultDurationMin: input.firstServiceDurationMin, slotIntervalMin: input.firstServiceDurationMin, maxSimultaneous: input.template.maxSimultaneous, providerRequired: true, resourceRequired: input.template.resourceRequired, blockDuplicatePatientOverlap: true, allowWalkIn: true, cancellationNoticeMin: 0, lateArrivalGraceMin: 0, capacityRules: {} },
+    services: [
+      {
+        serviceCode: input.firstServiceCode,
+        displayName: input.firstServiceName,
+        department: input.template.serviceDepartment,
+        price: input.firstServicePrice,
+        durationMin: input.firstServiceDurationMin,
+        requiresBooking: true,
+        requiresProvider: true,
+        requiresResource: input.template.resourceRequired,
+        discountApplicable: true,
+        taxApplicable: false,
+        packageEligible: false,
+        isActive: true,
+      },
+    ],
+    rooms: input.template.rooms,
+    resources: input.template.resources,
+    booking: {
+      mode: input.template.bookingMode,
+      defaultDurationMin: input.firstServiceDurationMin,
+      slotIntervalMin: input.firstServiceDurationMin,
+      maxSimultaneous: input.template.maxSimultaneous,
+      providerRequired: true,
+      resourceRequired: input.template.resourceRequired,
+      blockDuplicatePatientOverlap: true,
+      allowWalkIn: true,
+      cancellationNoticeMin: 0,
+      lateArrivalGraceMin: 0,
+      capacityRules: {},
+    },
   };
-  // sql.json sends the payload as an actual JSON parameter instead of relying on
-  // text serialization + ::jsonb casting at the control-plane boundary.
-  const rows = await sql`select relife.provision_clinic_v1(${sql.json(payload)}) as result`;
+
+  // sql.json preserves the nested payload as JSON; the explicit cast only fixes
+  // PostgreSQL function overload/type resolution and does not stringify it twice.
+  const rows = await sql`select relife.provision_clinic_v1(${sql.json(payload)}::jsonb) as result`;
   const result = (rows[0]?.result || {}) as RecordAny;
-  const organizationId = text(result.organizationId); const clinicId = text(result.clinicId);
-  if (!UUID.test(organizationId) || !UUID.test(clinicId)) throw new Error("PLATFORM_PROVISION_FAILED");
-  await setCommercial(organizationId, clinicId, input.planCode, input.trialDays, input.featureKeys, actorStaffId);
-  return { organizationId, clinicId };
+  const organizationId = text(result.organizationId);
+  const clinicId = text(result.clinicId);
+  if (!UUID.test(organizationId) || !UUID.test(clinicId)) {
+    throw new Error("PLATFORM_PROVISION_FAILED");
+  }
+  await setCommercial(
+    organizationId,
+    clinicId,
+    input.planCode,
+    input.trialDays,
+    input.featureKeys,
+    actorStaffId,
+  );
+  return {
+    organizationId,
+    clinicId,
+    organizationSlug: input.organizationSlug,
+    clinicSlug: input.clinicSlug,
+    ownerStaffId: input.ownerStaffId,
+  };
 }
 
 async function patchProfile(body: RecordAny, actorStaffId: string) {
   const { organizationId, clinicId } = scopeFrom(body);
-  const patch = (body.profile && typeof body.profile === "object" && !Array.isArray(body.profile) ? body.profile : {}) as RecordAny;
+  const patch = (
+    body.profile && typeof body.profile === "object" && !Array.isArray(body.profile)
+      ? body.profile
+      : {}
+  ) as RecordAny;
   const current = await sql`select c.name as clinic_name,c.timezone,s.clinic_type,s.branch_name,s.address,s.phone,s.email,s.logo_url,s.currency,s.locale from relife.clinics c left join relife.clinic_settings s on s.organization_id=c.organization_id and s.clinic_id=c.id where c.organization_id=${organizationId}::uuid and c.id=${clinicId}::uuid limit 1`;
-  if (!current[0] || !text(current[0].clinic_type)) throw new Error("PLATFORM_CLINIC_PROFILE_NOT_FOUND");
-  const row = current[0]; const clinicName = text(patch.clinicName) || text(row.clinic_name); const clinicType = text(patch.clinicType) || text(row.clinic_type);
-  if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED"); if (!CLINIC_TYPES.has(clinicType)) throw new Error("PLATFORM_CLINIC_TYPE_INVALID");
-  const branchName = text(patch.branchName) || text(row.branch_name) || clinicName; const timezone = text(patch.timezone) || text(row.timezone) || "Asia/Dhaka";
+  if (!current[0] || !text(current[0].clinic_type)) {
+    throw new Error("PLATFORM_CLINIC_PROFILE_NOT_FOUND");
+  }
+  const row = current[0];
+  const clinicName = text(patch.clinicName) || text(row.clinic_name);
+  const clinicType = text(patch.clinicType) || text(row.clinic_type);
+  if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
+  if (!CLINIC_TYPES.has(clinicType)) throw new Error("PLATFORM_CLINIC_TYPE_INVALID");
+  const branchName = text(patch.branchName) || text(row.branch_name) || clinicName;
+  const timezone = text(patch.timezone) || text(row.timezone) || "Asia/Dhaka";
   await sql.begin(async (tx) => {
     await tx`update relife.clinics set name=${clinicName},timezone=${timezone},updated_at=now() where organization_id=${organizationId}::uuid and id=${clinicId}::uuid`;
-    await tx`insert into relife.clinic_settings(organization_id,clinic_id,clinic_type,branch_name,address,phone,email,logo_url,currency,locale,updated_by) values(${organizationId}::uuid,${clinicId}::uuid,${clinicType},${branchName},${text(patch.address)||text(row.address)},${text(patch.phone)||text(row.phone)},${text(patch.email)||text(row.email)},${text(patch.logoUrl)||text(row.logo_url)},${text(patch.currency)||text(row.currency)||"BDT"},${text(patch.locale)||text(row.locale)||"en"},${`platform:${actorStaffId}`}) on conflict(organization_id,clinic_id) do update set clinic_type=excluded.clinic_type,branch_name=excluded.branch_name,address=excluded.address,phone=excluded.phone,email=excluded.email,logo_url=excluded.logo_url,currency=excluded.currency,locale=excluded.locale,updated_by=excluded.updated_by,updated_at=now()`;
+    await tx`insert into relife.clinic_settings(organization_id,clinic_id,clinic_type,branch_name,address,phone,email,logo_url,currency,locale,updated_by) values(${organizationId}::uuid,${clinicId}::uuid,${clinicType},${branchName},${text(patch.address) || text(row.address)},${text(patch.phone) || text(row.phone)},${text(patch.email) || text(row.email)},${text(patch.logoUrl) || text(row.logo_url)},${text(patch.currency) || text(row.currency) || "BDT"},${text(patch.locale) || text(row.locale) || "en"},${`platform:${actorStaffId}`}) on conflict(organization_id,clinic_id) do update set clinic_type=excluded.clinic_type,branch_name=excluded.branch_name,address=excluded.address,phone=excluded.phone,email=excluded.email,logo_url=excluded.logo_url,currency=excluded.currency,locale=excluded.locale,updated_by=excluded.updated_by,updated_at=now()`;
   });
 }
+
 async function assignOwner(body: RecordAny, actorStaffId: string) {
-  const { organizationId, clinicId } = scopeFrom(body); const ownerStaffId = text(body.ownerStaffId);
-  if (!STAFF_ID.test(ownerStaffId)) throw new Error("PLATFORM_OWNER_STAFF_ID_INVALID"); if (ownerStaffId === actorStaffId) throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
+  const { organizationId, clinicId } = scopeFrom(body);
+  const ownerStaffId = text(body.ownerStaffId);
+  if (!STAFF_ID.test(ownerStaffId)) throw new Error("PLATFORM_OWNER_STAFF_ID_INVALID");
+  if (ownerStaffId === actorStaffId) throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
   await sql.begin(async (tx) => {
     const rows = await tx`insert into relife.staff_tenant_bindings(staff_id,organization_id,clinic_id,status,is_default,updated_at) values(${ownerStaffId},${organizationId}::uuid,${clinicId}::uuid,'active',false,now()) on conflict(staff_id,organization_id,clinic_id) do update set status='active',is_default=false,updated_at=now() returning id::text as id`;
-    const bindingId = text(rows[0]?.id); if (!UUID.test(bindingId)) throw new Error("PLATFORM_OWNER_BINDING_FAILED");
-    await tx`delete from relife.staff_tenant_roles where binding_id=${bindingId}::uuid`; await tx`delete from relife.staff_tenant_departments where binding_id=${bindingId}::uuid`;
-    await tx`insert into relife.staff_tenant_roles(binding_id,role_code) values(${bindingId}::uuid,'owner')`; await tx`insert into relife.staff_tenant_departments(binding_id,department_id) values(${bindingId}::uuid,'All')`;
+    const bindingId = text(rows[0]?.id);
+    if (!UUID.test(bindingId)) throw new Error("PLATFORM_OWNER_BINDING_FAILED");
+    await tx`delete from relife.staff_tenant_roles where binding_id=${bindingId}::uuid`;
+    await tx`delete from relife.staff_tenant_departments where binding_id=${bindingId}::uuid`;
+    await tx`insert into relife.staff_tenant_roles(binding_id,role_code) values(${bindingId}::uuid,'owner')`;
+    await tx`insert into relife.staff_tenant_departments(binding_id,department_id) values(${bindingId}::uuid,'All')`;
   });
 }
+
 async function activate(body: RecordAny) {
-  const { organizationId, clinicId } = scopeFrom(body); const releaseSha = text(body.releaseSha).toLowerCase();
-  if (!SHA.test(releaseSha)) throw new Error("PLATFORM_RELEASE_SHA_INVALID"); await sql`select relife.activate_clinic_v1(${organizationId}::uuid,${clinicId}::uuid,${releaseSha})`;
+  const { organizationId, clinicId } = scopeFrom(body);
+  const releaseSha = text(body.releaseSha).toLowerCase();
+  if (!SHA.test(releaseSha)) throw new Error("PLATFORM_RELEASE_SHA_INVALID");
+  await sql`select relife.activate_clinic_v1(${organizationId}::uuid,${clinicId}::uuid,${releaseSha})`;
 }
+
 async function suspend(body: RecordAny) {
-  const { organizationId, clinicId } = scopeFrom(body); const rows = await sql`update relife.clinics set status='suspended',updated_at=now() where organization_id=${organizationId}::uuid and id=${clinicId}::uuid returning id`;
+  const { organizationId, clinicId } = scopeFrom(body);
+  const rows = await sql`update relife.clinics set status='suspended',updated_at=now() where organization_id=${organizationId}::uuid and id=${clinicId}::uuid returning id`;
   if (!rows[0]) throw new Error("PLATFORM_CLINIC_NOT_FOUND");
 }
 
 Deno.serve(async (request: Request) => {
-  if (request.method !== "POST") return response({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  if (!(await authorized(request))) return response({ ok: false, error: "ACCESS_DENIED" }, 401);
+  if (request.method !== "POST") {
+    return response({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  }
+  if (!(await authorized(request))) {
+    return response({ ok: false, error: "ACCESS_DENIED" }, 401);
+  }
   try {
-    const body = (await request.json().catch(() => ({}))) as RecordAny; const action = text(body.action || "snapshot"); const actorStaffId = text(body.actorStaffId);
+    const body = (await request.json().catch(() => ({}))) as RecordAny;
+    const action = text(body.action || "snapshot");
+    const actorStaffId = text(body.actorStaffId);
     if (!STAFF_ID.test(actorStaffId)) throw new Error("PLATFORM_ACTOR_INVALID");
-    if (action === "snapshot") return response({ ok: true, snapshot: await snapshot() });
+
+    if (action === "snapshot") {
+      return response({ ok: true, snapshot: await snapshot() });
+    }
     if (action === "provision") {
-      const input = (body.input && typeof body.input === "object" && !Array.isArray(body.input) ? body.input : {}) as RecordAny;
-      const scope = await provision(input, actorStaffId); return response({ ok: true, scope, snapshot: await snapshot() });
+      const input = (
+        body.input && typeof body.input === "object" && !Array.isArray(body.input)
+          ? body.input
+          : {}
+      ) as RecordAny;
+      const scope = await provision(input, actorStaffId);
+      return response({ ok: true, scope, snapshot: await snapshot() });
     }
     if (action === "profile") await patchProfile(body, actorStaffId);
     else if (action === "owner") await assignOwner(body, actorStaffId);
-    else if (action === "commercial") { const { organizationId, clinicId } = scopeFrom(body); await setCommercial(organizationId, clinicId, text(body.planCode), Number(body.trialDays || 30), asStringArray(body.featureKeys), actorStaffId); }
-    else if (action === "activate") await activate(body);
+    else if (action === "commercial") {
+      const { organizationId, clinicId } = scopeFrom(body);
+      await setCommercial(
+        organizationId,
+        clinicId,
+        text(body.planCode),
+        Number(body.trialDays || 30),
+        asStringArray(body.featureKeys),
+        actorStaffId,
+      );
+    } else if (action === "activate") await activate(body);
     else if (action === "suspend") await suspend(body);
     else throw new Error("PLATFORM_ACTION_INVALID");
+
     return response({ ok: true, snapshot: await snapshot() });
   } catch (error) {
     console.error("relife-platform-control", error);
     const message = error instanceof Error ? error.message : "PLATFORM_OPERATION_FAILED";
-    const status = /ACCESS_DENIED|NOT_AUTHORIZED/.test(message) ? 403 : /ALREADY_MANAGED/.test(message) ? 409 : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA|CANNOT_BE/.test(message) ? 400 : /NOT_FOUND/.test(message) ? 404 : 500;
+    const status = /ACCESS_DENIED|NOT_AUTHORIZED/.test(message)
+      ? 403
+      : /ALREADY_MANAGED/.test(message)
+        ? 409
+        : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA|CANNOT_BE|EXHAUSTED/.test(message)
+          ? 400
+          : /NOT_FOUND/.test(message)
+            ? 404
+            : 500;
     return response({ ok: false, error: message }, status);
   }
 });
