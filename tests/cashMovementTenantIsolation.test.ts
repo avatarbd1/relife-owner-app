@@ -78,6 +78,24 @@ test("dashboard pages use the authenticated dashboard cash boundary", () => {
   assert.match(financePage, /getScopedCashPositionForAdminView\(scope, now\)/);
 });
 
+test("finance history resolves the active tenant and never falls back to Relife legacy rows for another clinic", () => {
+  const ledgers = source("lib/webos/financeLedgers.ts");
+  const ledgerPage = source("components/FinanceLedgerPage.tsx");
+  const recordsPage = source("app/(dashboard)/finance/records/page.tsx");
+
+  assert.match(ledgers, /isRelifeLegacyTenant\(tenant\)/);
+  assert.match(ledgers, /getPayments\(tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(ledgers, /getExpenses\(tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(ledgers, /getCashMovements\(tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(ledgers, /getSalaryPayments\(tenant\.organizationId, tenant\.clinicId\)/);
+
+  for (const page of [ledgerPage, recordsPage]) {
+    assert.match(page, /requireCurrentTenantAccessContext\(\)/);
+    assert.match(page, /getFinanceLedgerSnapshot\(context, scope, tenantContext\.tenant\)/);
+    assert.doesNotMatch(page, /requireCurrentAccessContext\(\)/);
+  }
+});
+
 test("admin utilities use compatibility helpers for legacy access patterns", () => {
   const calculations = source("lib/calculations.ts");
   const ledgers = source("lib/webos/financeLedgers.ts");
