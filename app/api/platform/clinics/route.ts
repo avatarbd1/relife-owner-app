@@ -59,13 +59,24 @@ export async function POST(request: NextRequest) {
     const owner = await requireCurrentPlatformOwner();
     const raw = await request.json() as PlatformClinicProvisioningInput;
     const input = normalizePlatformClinicProvisioningInput(raw);
-    if (input.ownerStaffId === owner.staffId) {
+    const explicitOwnerStaffId = String(raw.ownerStaffId || "").trim();
+    if (explicitOwnerStaffId && input.ownerStaffId === owner.staffId) {
       throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
     }
+
+    // Preserve omission of generated identity fields across the protected
+    // server-to-server hop. The Edge control plane owns collision-safe final
+    // allocation because only it can see all existing tenant identities.
+    const controlInput = {
+      ...input,
+      organizationSlug: String(raw.organizationSlug || "").trim() || undefined,
+      clinicSlug: String(raw.clinicSlug || "").trim() || undefined,
+      ownerStaffId: explicitOwnerStaffId || undefined,
+    };
     const result = await callPlatformControl<ControlResponse>({
       action: "provision",
       actorStaffId: owner.staffId,
-      input,
+      input: controlInput,
     });
     return NextResponse.json(result);
   } catch (error) {

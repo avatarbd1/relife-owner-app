@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   generateOwnerStaffId,
   PLATFORM_PLANS,
+  slugifyPlatformName,
   type PlatformPlanCode,
   type ClinicType,
 } from "@/lib/domain/platform/platformOwnerMvp";
@@ -21,10 +22,6 @@ const CLINIC_TYPES: Array<{ value: ClinicType; label: string }> = [
   { value: "doctor_chamber", label: "Doctor chamber" },
   { value: "other", label: "Other" },
 ];
-
-function slugify(value: string) {
-  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
-}
 
 async function jsonRequest(method: "POST" | "PATCH", body: unknown): Promise<ApiResponse> {
   const response = await fetch("/api/platform/clinics", {
@@ -186,21 +183,20 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [organizationName, setOrganizationName] = useState("");
-  const [organizationSlug, setOrganizationSlug] = useState("");
   const [clinicName, setClinicName] = useState("");
-  const [clinicSlug, setClinicSlug] = useState("");
   const [clinicType, setClinicType] = useState<ClinicType>("physiotherapy");
+  const [organizationName, setOrganizationName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
   const [planCode, setPlanCode] = useState<PlatformPlanCode>("starter");
   const [trialDays, setTrialDays] = useState(30);
-  const [features, setFeatures] = useState<string[]>([...PLATFORM_PLANS.starter.defaultFeatureKeys]);
-  const [opensAt, setOpensAt] = useState("09:00");
-  const [closesAt, setClosesAt] = useState("18:00");
-  const [firstServiceName, setFirstServiceName] = useState("Consultation");
-  const [firstServicePrice, setFirstServicePrice] = useState(0);
   const automaticOwnerStaffId = useMemo(
     () => clinicName.trim() ? generateOwnerStaffId(clinicName, clinicType) : "",
     [clinicName, clinicType],
+  );
+  const automaticSlug = useMemo(
+    () => clinicName.trim() ? slugifyPlatformName(clinicName) : "",
+    [clinicName],
   );
 
   async function mutate(body: unknown) {
@@ -212,30 +208,22 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
     setBusy(true); setError("");
     try {
       const payload = await jsonRequest("POST", {
-        organizationName,
-        organizationSlug: organizationSlug || slugify(organizationName),
         clinicName,
-        clinicSlug: clinicSlug || slugify(clinicName),
         clinicType,
-        timezone: "Asia/Dhaka",
-        branchName: clinicName,
-        address: "",
-        phone: "",
-        email: "",
-        currency: "BDT",
-        locale: "en",
+        organizationName: organizationName.trim() || undefined,
+        phone: phone.trim() || undefined,
+        address: address.trim() || undefined,
         planCode,
         trialDays,
-        featureKeys: features,
-        openDays: [1, 2, 3, 4, 5, 6],
-        opensAt,
-        closesAt,
-        firstServiceName,
-        firstServicePrice,
-        firstServiceDurationMin: 30,
       });
       if (payload.snapshot) setSnapshot(payload.snapshot);
-      setOrganizationName(""); setOrganizationSlug(""); setClinicName(""); setClinicSlug("");
+      setClinicName("");
+      setOrganizationName("");
+      setPhone("");
+      setAddress("");
+      setClinicType("physiotherapy");
+      setPlanCode("starter");
+      setTrialDays(30);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Clinic creation failed");
     } finally { setBusy(false); }
@@ -254,26 +242,36 @@ export default function PlatformOwnerConsole({ initialSnapshot }: { initialSnaps
         <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-900">+ Add new clinic</summary>
         <div className="space-y-3 border-t border-slate-100 p-4">
           {error && <p className="rounded-xl bg-red-50 p-2.5 text-xs font-medium text-red-700">{error}</p>}
+
           <div className="grid gap-2 sm:grid-cols-2">
-            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={organizationName} onChange={(e) => { setOrganizationName(e.target.value); if (!organizationSlug) setOrganizationSlug(slugify(e.target.value)); }} placeholder="Business / organization name" />
-            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={organizationSlug} onChange={(e) => setOrganizationSlug(slugify(e.target.value))} placeholder="organization-slug" />
-            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicName} onChange={(e) => { setClinicName(e.target.value); if (!clinicSlug) setClinicSlug(slugify(e.target.value)); }} placeholder="Clinic name" />
-            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicSlug} onChange={(e) => setClinicSlug(slugify(e.target.value))} placeholder="clinic-slug" />
+            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicName} onChange={(e) => setClinicName(e.target.value)} placeholder="Clinic name" />
             <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={clinicType} onChange={(e) => setClinicType(e.target.value as ClinicType)}>{CLINIC_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Owner ID · automatic</p>
-              <p className="mt-0.5 font-mono text-sm font-semibold text-slate-800" aria-live="polite">{automaticOwnerStaffId || "Clinic name দিলে তৈরি হবে"}</p>
+            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone · optional" />
+            <input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address · optional" />
+          </div>
+
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-950">
+            <p className="font-semibold">System template will create the working setup automatically.</p>
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+              <p><span className="text-blue-600">Slug:</span> <span className="font-mono">{automaticSlug || "clinic-name থেকে automatic"}</span></p>
+              <p><span className="text-blue-600">Owner ID:</span> <span className="font-mono">{automaticOwnerStaffId || "clinic name দিলে automatic"}</span></p>
+              <p>Default service, hours and booking rules</p>
+              <p>Clinic-type starter room/resource setup</p>
             </div>
+            <p className="mt-2 text-blue-700">Clinic Owner পরে নিজের workspace থেকে room, bed/chair/resource, service, staff, hours ও settings edit করতে পারবে.</p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <select className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={planCode} onChange={(e) => { const plan = e.target.value as PlatformPlanCode; setPlanCode(plan); setFeatures([...PLATFORM_PLANS[plan].defaultFeatureKeys]); }}>{Object.values(PLATFORM_PLANS).map((plan) => <option key={plan.code} value={plan.code}>{plan.label} — ৳{plan.priceBdt}/mo</option>)}</select>
-            <input type="number" min={1} max={90} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={trialDays} onChange={(e) => setTrialDays(Number(e.target.value))} aria-label="Trial days" />
-            <div className="flex gap-2"><input type="time" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-2 py-2 text-sm" value={opensAt} onChange={(e) => setOpensAt(e.target.value)} /><input type="time" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-2 py-2 text-sm" value={closesAt} onChange={(e) => setClosesAt(e.target.value)} /></div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2"><input className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={firstServiceName} onChange={(e) => setFirstServiceName(e.target.value)} placeholder="First service" /><input type="number" min={0} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm" value={firstServicePrice} onChange={(e) => setFirstServicePrice(Number(e.target.value))} placeholder="Price" /></div>
-          <FeaturePicker catalog={snapshot.featureCatalog} selected={features} onChange={setFeatures} />
-          <button type="button" disabled={busy} onClick={createClinic} className="w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{busy ? "Creating…" : "Create setup clinic"}</button>
-          <p className="text-[10px] text-slate-400">Creates tenant/config/trial metadata only. It does not import or delete patient, clinical, finance, or historical operational data.</p>
+
+          <details className="rounded-xl border border-slate-200 bg-slate-50">
+            <summary className="cursor-pointer px-3 py-2.5 text-xs font-semibold text-slate-700">Business / commercial options</summary>
+            <div className="grid gap-2 border-t border-slate-200 p-3 sm:grid-cols-3">
+              <input className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} placeholder="Business name · defaults to clinic name" />
+              <select className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm" value={planCode} onChange={(e) => setPlanCode(e.target.value as PlatformPlanCode)}>{Object.values(PLATFORM_PLANS).map((plan) => <option key={plan.code} value={plan.code}>{plan.label} — ৳{plan.priceBdt}/mo</option>)}</select>
+              <input type="number" min={1} max={90} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm" value={trialDays} onChange={(e) => setTrialDays(Number(e.target.value))} aria-label="Trial days" />
+            </div>
+          </details>
+
+          <button type="button" disabled={busy || !clinicName.trim()} onClick={createClinic} className="w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{busy ? "Creating…" : "Create clinic from template"}</button>
+          <p className="text-[10px] leading-4 text-slate-400">Creates tenant configuration only. It never copies another clinic&apos;s patient, clinical, finance or historical operational data.</p>
         </div>
       </details>
 

@@ -12,6 +12,7 @@ import {
   normalizePlatformClinicProvisioningInput,
   PLATFORM_PLANS,
   requireReleaseSha,
+  slugifyPlatformName,
   trialEndsAt,
 } from "../lib/domain/platform/platformOwnerMvp.ts";
 
@@ -57,15 +58,47 @@ test("owner staff IDs are generated from clinic name and clinic type", () => {
   assert.equal(generateOwnerStaffId("Care Center", "other", 2), "CRA-OT-002");
 });
 
-test("platform provisioning auto-generates owner staff ID when omitted", () => {
-  const { ownerStaffId: _ownerStaffId, ...withoutOwner } = baseInput();
+test("platform slugs are generated safely from human clinic names", () => {
+  assert.equal(slugifyPlatformName("Relief Dental"), "relief-dental");
+  assert.equal(slugifyPlatformName("  Relief   Dental !!! "), "relief-dental");
+  assert.equal(slugifyPlatformName("R"), "r-clinic");
+  assert.equal(slugifyPlatformName("***"), "clinic");
+});
+
+test("minimal clinic input expands to a complete starter provisioning input", () => {
   const input = normalizePlatformClinicProvisioningInput({
-    ...withoutOwner,
-    clinicName: "Relife Amtali",
-    clinicType: "physiotherapy",
+    clinicName: "Relief Dental",
+    clinicType: "dental",
   });
-  assert.equal(input.ownerStaffId, "RLF-PT-001");
-  assert.equal(buildProvisioningPayload(input).owner.staffId, "RLF-PT-001");
+  assert.equal(input.organizationName, "Relief Dental");
+  assert.equal(input.organizationSlug, "relief-dental");
+  assert.equal(input.clinicSlug, "relief-dental");
+  assert.equal(input.ownerStaffId, "RLF-DT-001");
+  assert.equal(input.planCode, "starter");
+  assert.equal(input.trialDays, 30);
+  assert.equal(input.firstServiceName, "Dental Consultation");
+  assert.deepEqual(input.openDays, [1, 2, 3, 4, 5, 6]);
+});
+
+test("clinic-type templates create editable starter facility and booking configuration", () => {
+  const physio = buildProvisioningPayload(normalizePlatformClinicProvisioningInput({ clinicName: "Physio One", clinicType: "physiotherapy" }));
+  assert.equal(physio.services[0].department, "Physio");
+  assert.equal(physio.rooms.length, 1);
+  assert.equal(physio.resources[0]?.resourceType, "BED");
+  assert.equal(physio.booking.mode, "simple");
+  assert.equal(physio.booking.resourceRequired, false);
+
+  const dental = buildProvisioningPayload(normalizePlatformClinicProvisioningInput({ clinicName: "Dental One", clinicType: "dental" }));
+  assert.equal(dental.services[0].department, "Dental");
+  assert.equal(dental.rooms.length, 1);
+  assert.equal(dental.resources[0]?.resourceType, "DENTAL_CHAIR");
+  assert.equal(dental.booking.mode, "specific_resource");
+  assert.equal(dental.booking.resourceRequired, true);
+
+  const other = buildProvisioningPayload(normalizePlatformClinicProvisioningInput({ clinicName: "General Clinic", clinicType: "other" }));
+  assert.equal(other.services[0].department, "All");
+  assert.equal(other.rooms.length, 0);
+  assert.equal(other.resources.length, 0);
 });
 
 test("provisioning always preserves canonical core features and seven-day hours", () => {
@@ -76,7 +109,6 @@ test("provisioning always preserves canonical core features and seven-day hours"
   assert.equal(payload.operatingHours.length, 7);
   assert.deepEqual(payload.operatingHours.filter((row) => row.isOpen).map((row) => row.dayOfWeek), [1, 3, 5]);
   assert.equal(payload.owner.staffId, "OWN001");
-  assert.equal(payload.booking.mode, "simple");
   assert.equal(payload.services.length, 1);
 });
 
@@ -85,8 +117,7 @@ test("trial end is bounded without deleting or transforming business data", () =
   assert.equal(trialEndsAt(start, 30).toISOString(), "2026-09-27T00:00:00.000Z");
 });
 
-test("platform provisioning rejects unsafe explicit identity and commercial inputs", () => {
-  assert.throws(() => normalizePlatformClinicProvisioningInput({ ...baseInput(), organizationSlug: "Bad Slug" }), /SLUG_INVALID/);
+test("platform provisioning still rejects unsafe explicit identity and commercial inputs", () => {
   assert.throws(() => normalizePlatformClinicProvisioningInput({ ...baseInput(), ownerStaffId: "x" }), /STAFF_ID_INVALID/);
   assert.throws(() => normalizePlatformClinicProvisioningInput({ ...baseInput(), trialDays: 0 }), /TRIAL_DAYS_INVALID/);
 });
