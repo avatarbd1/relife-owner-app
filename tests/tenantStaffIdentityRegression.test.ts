@@ -8,7 +8,7 @@ test("tenant staff identity requires an exact active binding before any legacy c
   const resolver = source("lib/webos/tenantStaffDirectory.ts");
   assert.match(resolver, /listStoredStaffProvisioning\(tenant\)/);
   assert.match(resolver, /row\.staffId === staffId && row\.status === "active"/);
-  assert.ok(resolver.indexOf("if (!binding) return null") < resolver.indexOf("getActiveWebStaffById(staffId)"));
+  assert.match(resolver, /if \(!binding\) return null;[\s\S]*const legacy = await legacyIdentity\(staffId\);/);
   assert.match(resolver, /if \(!hasTenantRoles && !hasTenantDepartments\)/);
   assert.match(resolver, /if \(hasTenantRoles !== hasTenantDepartments\) return null/);
 });
