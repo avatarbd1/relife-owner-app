@@ -44,7 +44,24 @@ async function authorized(request: Request) {
   return hex(digest) === SERVER_KEY_HASH;
 }
 
-function validPath(value: unknown): string {
+async function isRegisteredStoragePrefix(prefix: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema("relife")
+    .from("clinic_data_sources")
+    .select("source_ref")
+    .eq("source_kind", "storage_prefix")
+    .eq("source_role", "patient_reports")
+    .eq("status", "active")
+    .eq("source_ref", prefix)
+    .limit(1);
+  if (error) {
+    console.error("Storage prefix lookup failed", prefix, error.message);
+    return false;
+  }
+  return Boolean(data && data.length > 0);
+}
+
+async function validPath(value: unknown): Promise<string> {
   const path = String(value ?? "").trim();
   if (!path || path.length > 500 || path.includes("\\") || path.includes("..")) {
     throw new Error("INVALID_STORAGE_PATH");
@@ -56,7 +73,14 @@ function validPath(value: unknown): string {
   ) {
     throw new Error("INVALID_STORAGE_PATH");
   }
-  if (parts[0] !== "RELIFE-PHYSIO" && parts[0] !== "RELIFE-DENTAL") {
+  // RELIFE-PHYSIO/RELIFE-DENTAL stay a fixed legacy allowance. Any other
+  // clinic registers its prefix generically via relife.clinic_data_sources
+  // instead of being added here as a new hardcoded literal.
+  if (
+    parts[0] !== "RELIFE-PHYSIO" &&
+    parts[0] !== "RELIFE-DENTAL" &&
+    !(await isRegisteredStoragePrefix(parts[0]))
+  ) {
     throw new Error("INVALID_STORAGE_PATH");
   }
   return path;
@@ -70,7 +94,7 @@ Deno.serve(async (request: Request) => {
   try {
     const url = new URL(request.url);
     if (request.method === "GET") {
-      const path = validPath(url.searchParams.get("path"));
+      const path = await validPath(url.searchParams.get("path"));
       const { data, error } = await supabase.storage.from(BUCKET).download(path);
       if (error || !data) {
         console.error(
@@ -98,7 +122,7 @@ Deno.serve(async (request: Request) => {
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
-      const path = validPath(form.get("path"));
+      const path = await validPath(form.get("path"));
       const file = form.get("file");
       if (!(file instanceof File)) {
         return json({ ok: false, error: "REPORT_FILE_REQUIRED" }, 400);
@@ -127,7 +151,7 @@ Deno.serve(async (request: Request) => {
     if (String(body.action || "") !== "delete") {
       return json({ ok: false, error: "INVALID_ACTION" }, 400);
     }
-    const path = validPath(body.path);
+    const path = await validPath(body.path);
     const { error } = await supabase.storage.from(BUCKET).remove([path]);
     if (error) {
       console.error("Report storage delete failed", path, error.message);

@@ -57,10 +57,14 @@ const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
   // Sheets readers/writers that still hardcode the ledger tenant. Phase B.
   ["lib/data/index.ts", 24],
   ["lib/data/legacyReportStorage.ts", 2],
-  ["lib/patients.ts", 4],
+  // Physio now resolves via relife.clinic_data_sources
+  // (lib/data/clinicDataSources.ts); only the unmigrated Dental call remains.
+  ["lib/patients.ts", 2],
   ["lib/scopedCash.ts", 9],
   ["lib/webos/financeOps.ts", 13],
-  ["lib/webos/reception.ts", 4],
+  // Physio's bridge is generic now; only the unmigrated Dental carve-out
+  // still hardcodes the relife/amtali-main/RELIFE-DENTAL literal.
+  ["lib/webos/reception.ts", 3],
 
   // Booking and runtime paths that still assume the Relife tenant. Phase C.
   ["lib/webos/appointmentScheduling.ts", 10],
@@ -93,7 +97,7 @@ const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
 ]);
 
 /** Total accepted compatibility debt at the close of Phase A. */
-const LEDGER_TOTAL = 105;
+const LEDGER_TOTAL = 102;
 
 const ROOTS = ["lib", "app", "supabase/functions"];
 const REPO_ROOT = new URL("..", import.meta.url).pathname;

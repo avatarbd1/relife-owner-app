@@ -13,21 +13,20 @@ const mediaRoute = source(
 // The merged first-20 contract is authoritative; this hotfix may only bridge legacy reads.
 const rolloutContract = source("docs/TWENTY_CLINIC_PRODUCTION_CONTRACT.md");
 
-test("legacy Relife patient bridge is bounded to the canonical Amtali tenant", () => {
+test("legacy Dental patient bridge stays bounded to the canonical Amtali tenant", () => {
   assert.match(
     reception,
-    /tenant\.organizationSlug\?\.toLowerCase\(\) !== "relife"[\s\S]*tenant\.clinicSlug\?\.toLowerCase\(\) !== "amtali-main"[\s\S]*patient\.organizationId !== "RELIFE"/
+    /tenant\.organizationSlug\?\.toLowerCase\(\) !== "relife"[\s\S]*tenant\.clinicSlug\?\.toLowerCase\(\) !== "amtali-main"[\s\S]*patient\.organizationId !== "RELIFE"[\s\S]*patient\.department !== "Dental"/
   );
-  assert.match(
-    reception,
-    /patient\.department === "Physio"[\s\S]*patient\.clinicId === "RELIFE-PHYSIO"/
-  );
-  assert.match(
-    reception,
-    /patient\.department === "Dental"[\s\S]*patient\.clinicId === "RELIFE-DENTAL"/
-  );
+  assert.match(reception, /return patient\.clinicId === "RELIFE-DENTAL";/);
   assert.match(reception, /patientMatchesTenant\(patient, tenant\)/);
   assert.match(reception, /patientMatchesTenant\(row, tenant\)/);
+});
+
+test("Physio no longer carries a hardcoded RELIFE-PHYSIO literal in the bridge", () => {
+  assert.doesNotMatch(reception, /"RELIFE-PHYSIO"/);
+  assert.match(reception, /resolveTenantSheetsPatientSources/);
+  assert.match(reception, /legacySheetsSources/);
 });
 
 test("legacy tenant bridge does not replace canonical exact matching", () => {

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { listActiveSheetsPatientSources } from "@/lib/data/clinicDataSources";
 import { fetchSheetRanges, hasPrivateSheetsCredentials } from "@/lib/data/googleSheets";
 import type { Department, Scope } from "@/lib/types";
 
@@ -126,17 +127,43 @@ export function invalidatePatientsCache(): void {
 async function loadPatients(): Promise<PatientRecord[]> {
   if (!hasPrivateSheetsCredentials()) return [];
 
-  const [physio, dental] = await Promise.all([
-    fetchSheetRanges("physio", ["02_Patients"]),
-    fetchSheetRanges("dental", ["02_Patients"]),
-  ]);
+  // Dental keeps its own hardcoded legacy path in this phase — unmigrated,
+  // see tests/phaseARelifeCompatibilityBoundary.test.ts. It is read
+  // independently of the generic sources below so a clinic_data_sources
+  // lookup failure never takes Dental down with it.
+  const dentalPromise = fetchSheetRanges("dental", ["02_Patients"]);
+  const genericSourcesPromise = listActiveSheetsPatientSources().catch((error) => {
+    console.error("Generic clinic patient source lookup failed:", error);
+    return [] as Awaited<ReturnType<typeof listActiveSheetsPatientSources>>;
+  });
+  const [dental, genericSources] = await Promise.all([dentalPromise, genericSourcesPromise]);
 
-  const physioRows = parsePatients(physio["02_Patients"] || [], "Physio", "RELIFE", "RELIFE-PHYSIO")
-    .filter((row) => row.department === "Physio");
   const dentalRows = parsePatients(dental["02_Patients"] || [], "Dental", "RELIFE", "RELIFE-DENTAL")
     .filter((row) => row.department === "Dental");
 
-  return [...physioRows, ...dentalRows].sort((a, b) => {
+  // Every other clinic — including Relife/Physio — resolves its Sheets
+  // identity from relife.clinic_data_sources instead of a fixed literal.
+  const genericRowGroups = await Promise.all(
+    genericSources.map(async (source) => {
+      try {
+        const snapshot = await fetchSheetRanges(source.workbook, ["02_Patients"]);
+        return parsePatients(
+          snapshot["02_Patients"] || [],
+          source.department,
+          source.legacyOrganizationId,
+          source.legacyClinicId
+        ).filter((row) => row.department === source.department);
+      } catch (error) {
+        console.error(
+          `Patient source read failed for ${source.organizationId}/${source.clinicId}:`,
+          error
+        );
+        return [];
+      }
+    })
+  );
+
+  return [...dentalRows, ...genericRowGroups.flat()].sort((a, b) => {
     const dateOrder = b.registrationDate.localeCompare(a.registrationDate);
     if (dateOrder !== 0) return dateOrder;
     return b.patientId.localeCompare(a.patientId);

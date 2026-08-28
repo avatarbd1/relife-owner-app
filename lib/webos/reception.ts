@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { resolveTenantSheetsPatientSources } from "@/lib/data/clinicDataSources";
 import {
   fetchSheetRanges,
   type Workbook,
@@ -23,6 +24,9 @@ type ResolvedTenant = {
   clinicId: string;
   organizationSlug?: string;
   clinicSlug?: string;
+  legacySheetsSources: Partial<
+    Record<ClinicDepartment, { legacyOrganizationId: string; legacyClinicId: string }>
+  >;
 };
 
 export interface PatientCreateInput {
@@ -238,25 +242,33 @@ function patientMatchesTenant(patient: PatientRecord, tenant: ResolvedTenant): b
     return true;
   }
 
-  // Tenant #1 compatibility bridge while legacy Sheets still carry the old
-  // RELIFE / RELIFE-PHYSIO / RELIFE-DENTAL identifiers. This is intentionally
-  // bounded to the canonical Relife Amtali tenant; every other tenant remains
-  // exact-match only.
+  // Generic legacy-Sheets compatibility bridge: any tenant with a registered
+  // relife.clinic_data_sources row for this patient's department matches via
+  // its configured legacy ledger identity, not a hardcoded tenant literal.
+  // A tenant with no registered source here gets no bridge match at all —
+  // every other tenant remains exact-match only.
+  const department = patient.department as ClinicDepartment;
+  const source = tenant.legacySheetsSources[department];
+  if (
+    source &&
+    patient.organizationId === source.legacyOrganizationId &&
+    patient.clinicId === source.legacyClinicId
+  ) {
+    return true;
+  }
+
+  // Dental legacy bridge: unmigrated in this phase, intentionally bounded to
+  // the canonical Relife Amtali tenant only. Removal path: register a Dental
+  // clinic_data_sources row (mirroring Physio's) and delete this block.
   if (
     tenant.organizationSlug?.toLowerCase() !== "relife" ||
     tenant.clinicSlug?.toLowerCase() !== "amtali-main" ||
-    patient.organizationId !== "RELIFE"
+    patient.organizationId !== "RELIFE" ||
+    patient.department !== "Dental"
   ) {
     return false;
   }
-
-  if (patient.department === "Physio") {
-    return patient.clinicId === "RELIFE-PHYSIO";
-  }
-  if (patient.department === "Dental") {
-    return patient.clinicId === "RELIFE-DENTAL";
-  }
-  return false;
+  return patient.clinicId === "RELIFE-DENTAL";
 }
 
 async function tenantForContext(
@@ -266,15 +278,32 @@ async function tenantForContext(
 ): Promise<ResolvedTenant> {
   const org = normalize(organizationId);
   const clinic = normalize(clinicId);
-  if (org && clinic) return { organizationId: org, clinicId: clinic };
-  const tenant = await resolveStaffTenantContext(context.staffId);
-  if (!tenant?.organizationId || !tenant?.clinicId) throw new Error("ACCESS_DENIED");
-  return {
-    organizationId: tenant.organizationId,
-    clinicId: tenant.clinicId,
-    organizationSlug: tenant.organizationSlug,
-    clinicSlug: tenant.clinicSlug,
+  let base: {
+    organizationId: string;
+    clinicId: string;
+    organizationSlug?: string;
+    clinicSlug?: string;
   };
+  if (org && clinic) {
+    base = { organizationId: org, clinicId: clinic };
+  } else {
+    const tenant = await resolveStaffTenantContext(context.staffId);
+    if (!tenant?.organizationId || !tenant?.clinicId) throw new Error("ACCESS_DENIED");
+    base = {
+      organizationId: tenant.organizationId,
+      clinicId: tenant.clinicId,
+      organizationSlug: tenant.organizationSlug,
+      clinicSlug: tenant.clinicSlug,
+    };
+  }
+  const legacySheetsSources = await resolveTenantSheetsPatientSources(
+    base.organizationId,
+    base.clinicId
+  ).catch((error) => {
+    console.error("Tenant legacy Sheets source lookup failed:", error);
+    return {};
+  });
+  return { ...base, legacySheetsSources };
 }
 
 export async function getVisiblePatients(

@@ -140,7 +140,9 @@ test("Google Sheets remains patient authority while lib/patients is only a short
   const reception = source("lib/webos/reception.ts");
   const update = source("lib/webos/patientUpdate.ts");
 
-  assert.match(patients, /fetchSheetRanges\("physio", \["02_Patients"\]\)/);
+  // Physio resolves its workbook generically via relife.clinic_data_sources
+  // (lib/data/clinicDataSources.ts); Dental keeps its direct literal read.
+  assert.match(patients, /fetchSheetRanges\(source\.workbook, \["02_Patients"\]\)/);
   assert.match(patients, /fetchSheetRanges\("dental", \["02_Patients"\]\)/);
   assert.match(patients, /const CACHE_MS = 30_000/);
   assert.match(reception, /appendEntityWithAudit\([\s\S]*?"02_Patients"/);
