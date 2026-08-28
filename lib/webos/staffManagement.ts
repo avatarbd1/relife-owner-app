@@ -9,6 +9,10 @@ import {
 } from "@/lib/data/googleSheets";
 import { deactivateStoredStaffProvisioning, listStoredStaffProvisioning, replaceStoredStaffProvisioning } from "@/lib/data/staffProvisioning";
 import { normalizeTenantRole } from "@/lib/domain/tenancy/policy";
+import type { StaffTenantContext } from "@/lib/domain/tenancy/staffTenantContext";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { clinicRuntimeDepartments } from "@/lib/domain/tenancy/clinicRuntime";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import type { Department } from "@/lib/types";
 import type { AccessContext, WebRole } from "@/lib/webos/access";
 import { withMutationLock } from "@/lib/webos/mutationLock";
@@ -267,6 +271,33 @@ function normalizeInput(
   };
 }
 
+async function enforceClinicStaffDepartment(
+  tenant: StaffTenantContext,
+  input: NormalizedStaffInput,
+): Promise<void> {
+  if (isRelifeLegacyTenant(tenant)) return;
+
+  const configuration = await readClinicConfiguration(tenant);
+  const departments = clinicRuntimeDepartments(configuration.profile?.clinicType);
+  if (departments.length !== 1) throw new Error("CLINIC_DEPARTMENT_NOT_CONFIGURED");
+
+  const department = departments[0];
+  if (
+    input.primaryDepartment !== department ||
+    input.departmentAccess.length !== 1 ||
+    input.departmentAccess[0] !== department
+  ) {
+    throw new Error("STAFF_DEPARTMENT_OUTSIDE_CLINIC_TYPE");
+  }
+
+  if (
+    (department === "Physio" && (input.role === "Dentist" || input.role === "Dental_Assistant")) ||
+    (department === "Dental" && input.role === "Therapist")
+  ) {
+    throw new Error("STAFF_ROLE_OUTSIDE_CLINIC_TYPE");
+  }
+}
+
 async function sheetIdMap(): Promise<Map<string, number>> {
   const properties = await getSheetProperties("physio");
   return new Map(properties.map((item) => [item.title, item.sheetId]));
@@ -495,9 +526,11 @@ export async function listManagedStaff(context: AccessContext, organizationId: s
   });
 }
 
-export async function createManagedStaff(context: AccessContext, organizationId: string, clinicId: string, input: StaffMutationInput) {
+export async function createManagedStaff(context: AccessContext, tenant: StaffTenantContext, input: StaffMutationInput) {
   assertOwner(context);
   const normalizedInput = normalizeInput(input, "Active");
+  await enforceClinicStaffDepartment(tenant, normalizedInput);
+  const { organizationId, clinicId } = tenant;
 
   return withMutationLock("staff-management:create", async () => {
     const snapshot = await readStaffMutationSnapshot();
@@ -560,12 +593,12 @@ export async function createManagedStaff(context: AccessContext, organizationId:
 
 export async function updateManagedStaff(
   context: AccessContext,
-  organizationId: string,
-  clinicId: string,
+  tenant: StaffTenantContext,
   staffIdInput: string,
   input: StaffMutationInput
 ) {
   assertOwner(context);
+  const { organizationId, clinicId } = tenant;
   const staffId = normalize(staffIdInput);
   if (!staffId) throw new Error("STAFF_ID_REQUIRED");
 
@@ -579,6 +612,7 @@ export async function updateManagedStaff(
     const previous = staffSummary(snapshot, row);
     const fallbackStatus = normalized(previous.status).toLowerCase() === "inactive" ? "Inactive" : "Active";
     const normalizedInput = normalizeInput(input, fallbackStatus);
+    await enforceClinicStaffDepartment(tenant, normalizedInput);
     ensureUniquePhone(snapshot, normalizedInput.phone, staffId);
 
     const staffSheetId = requireSheetId(snapshot.ids, "08_Staff");
