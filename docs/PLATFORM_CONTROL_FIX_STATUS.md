@@ -1,0 +1,1 @@
+Platform Control Edge Function is active in Supabase. Next.js routing integration is pending in the current hotfix.
