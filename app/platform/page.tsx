@@ -16,7 +16,7 @@ export default async function PlatformOwnerPage() {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-200">Clinic SaaS Control Plane</p>
             <h1 className="mt-1 text-lg font-bold">Platform Owner</h1>
-            <p className="mt-0.5 text-xs text-slate-400">Signed in as {owner.staffId} · global platform authority is separate from every Clinic Owner</p>
+            <p className="mt-0.5 text-xs text-slate-400">Global platform authority · no clinic tenant binding</p>
           </div>
           <span className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300">Platform workspace</span>
         </div>
