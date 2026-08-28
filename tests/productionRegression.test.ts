@@ -96,7 +96,7 @@ test("Chamber direct calls and guarded emergency broadcasts ring until accepted"
 test("owner attention links preserve the intended destination", () => {
   const home = source("app/(dashboard)/home/page.tsx");
   const financeOps = source("app/(dashboard)/finance/operations/page.tsx");
-  assert.match(home, /scope=combined&focus=exceptions/);
+  assert.match(home, /scope=\$\{runtimeScope\}&focus=exceptions/);
   assert.match(financeOps, /href="\/finance#approvals"/);
   assert.doesNotMatch(financeOps, /href="\/more#approvals"/);
 });
@@ -158,7 +158,7 @@ test("Home and Daily Ops count completed operational work instead of payment ses
   const daily = source("app/(dashboard)/daily/page.tsx");
   const activity = source("lib/webos/dailyClinicalActivity.ts");
 
-  assert.match(home, /getAppointmentsForContext\(context, "combined", today, tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(home, /getAppointmentsForContext\(context, runtimeScope, today, tenant\.organizationId, tenant\.clinicId\)/);
   assert.match(home, /status\.trim\(\)\.toLowerCase\(\) === "completed"/);
   assert.match(daily, /getDailyClinicalActivity/);
   for (const page of [home, daily]) {
