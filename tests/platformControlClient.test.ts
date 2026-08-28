@@ -17,6 +17,15 @@ test("platform control uses protected server-to-server edge boundary", async () 
   assert.doesNotMatch(client, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
+test("platform control hides Phase G/H proof tenants from operational snapshots", async () => {
+  const client = await source("lib/data/platformControlClient.ts");
+  assert.match(client, /HIDDEN_PROOF_ORGANIZATION_PREFIXES/);
+  assert.match(client, /phase-g-/);
+  assert.match(client, /phase-h-/);
+  assert.match(client, /snapshot\.clinics\.filter/);
+  assert.match(client, /operationalPlatformSnapshot/);
+});
+
 test("Platform Owner page and API avoid Render-side Supabase admin dependency", async () => {
   const [page, route] = await Promise.all([
     source("app/platform/page.tsx"),
