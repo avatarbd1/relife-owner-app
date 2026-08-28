@@ -2,7 +2,6 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/data/supabaseAdmin";
-import { loadStaffMembership } from "@/lib/domain/tenancy/staffAuthorization";
 import {
   resolveStaffTenantContext,
   type StaffTenantContext,
@@ -80,25 +79,50 @@ export async function getCanonicalActiveWebStaffById(
   if (!normalizedStaffId) return null;
   try {
     const tenant = await resolveStaffTenantContext(normalizedStaffId, requestedScope);
-    const membership = await loadStaffMembership(client, tenant, normalizedStaffId);
-    if (!membership || membership.status !== "active") return null;
-    return identityFromMembership(membership);
-  } catch {
+    return await resolveCanonicalIdentity(client, normalizedStaffId, tenant, false);
+  } catch (error) {
+    console.error("Canonical active staff identity lookup failed", safeLookupError(error));
     return null;
   }
 }
 
-type EnrollmentBinding = {
-  id: string;
-  organization_id: string;
-  clinic_id: string;
+type CanonicalIdentityRow = {
   staff_id: string;
-  status: string;
+  role_codes: string[];
+  department_ids: string[];
 };
 
-type RoleRow = { binding_id: string; role_code: string };
-type DepartmentRow = { binding_id: string; department_id: string };
-type ClinicRow = { id: string; organization_id: string; status: string };
+function safeLookupError(error: unknown): Record<string, string> {
+  if (!error || typeof error !== "object") return { message: String(error) };
+  const value = error as Record<string, unknown>;
+  return Object.fromEntries(
+    ["code", "message", "details", "hint"]
+      .filter((key) => typeof value[key] === "string")
+      .map((key) => [key, String(value[key])]),
+  );
+}
+
+async function resolveCanonicalIdentity(
+  client: SupabaseClient,
+  staffId: string,
+  tenant: StaffTenantContext | null,
+  allowSetup: boolean,
+): Promise<WebStaffIdentity | null> {
+  const { data, error } = await client.rpc("resolve_canonical_staff_identity_v1", {
+    p_staff_id: staffId,
+    p_organization_id: tenant?.organizationId ?? null,
+    p_clinic_id: tenant?.clinicId ?? null,
+    p_allow_setup: allowSetup,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as CanonicalIdentityRow[];
+  if (rows.length !== 1) return null;
+  return identityFromMembership({
+    staffId: rows[0].staff_id,
+    roleCodes: rows[0].role_codes,
+    departmentIds: rows[0].department_ids,
+  });
+}
 
 /**
  * Enrollment is intentionally broader than operational access: a newly
@@ -112,43 +136,12 @@ export async function getCanonicalEnrollmentWebStaffById(
 ): Promise<WebStaffIdentity | null> {
   const normalizedStaffId = staffId.trim();
   if (!normalizedStaffId) return null;
-  const relife = client.schema("relife");
-  const { data: bindings, error: bindingError } = await relife
-    .from("staff_tenant_bindings")
-    .select("id,organization_id,clinic_id,staff_id,status")
-    .eq("staff_id", normalizedStaffId)
-    .eq("status", "active");
-  if (bindingError || !bindings || bindings.length === 0) return null;
-
-  const bindingRows = bindings as EnrollmentBinding[];
-  const bindingIds = bindingRows.map((row) => row.id);
-  const clinicIds = [...new Set(bindingRows.map((row) => row.clinic_id))];
-  const [{ data: roles, error: roleError }, { data: departments, error: departmentError }, { data: clinics, error: clinicError }] = await Promise.all([
-    relife.from("staff_tenant_roles").select("binding_id,role_code").in("binding_id", bindingIds),
-    relife.from("staff_tenant_departments").select("binding_id,department_id").in("binding_id", bindingIds),
-    relife.from("clinics").select("id,organization_id,status").in("id", clinicIds),
-  ]);
-  if (roleError || departmentError || clinicError || !roles || !departments || !clinics) return null;
-
-  const roleRows = roles as RoleRow[];
-  const departmentRows = departments as DepartmentRow[];
-  const clinicRows = clinics as ClinicRow[];
-  const eligible = bindingRows.filter((binding) => {
-    const clinic = clinicRows.find(
-      (row) => row.id === binding.clinic_id && row.organization_id === binding.organization_id,
-    );
-    if (!clinic || !["setup", "active"].includes(clinic.status)) return false;
-    return roleRows.some((row) => row.binding_id === binding.id) &&
-      departmentRows.some((row) => row.binding_id === binding.id);
-  });
-  if (eligible.length !== 1) return null;
-
-  const binding = eligible[0];
-  return identityFromMembership({
-    staffId: normalizedStaffId,
-    roleCodes: roleRows.filter((row) => row.binding_id === binding.id).map((row) => row.role_code),
-    departmentIds: departmentRows.filter((row) => row.binding_id === binding.id).map((row) => row.department_id),
-  });
+  try {
+    return await resolveCanonicalIdentity(client, normalizedStaffId, null, true);
+  } catch (error) {
+    console.error("Canonical enrollment staff identity lookup failed", safeLookupError(error));
+    return null;
+  }
 }
 
 export async function canonicalActiveTenantForStaff(

@@ -24,6 +24,7 @@ const staffSetup = source("app/staff-setup/page.tsx");
 const webauthn = source("lib/webauthn.ts");
 const registerStart = source("app/api/auth/webauthn/register/start/route.ts");
 const registerVerify = source("app/api/auth/webauthn/register/verify/route.ts");
+const canonicalIdentityRpc = source("supabase/migrations/20260828085100_canonical_staff_identity_rpc.sql");
 
 test("owner handoff sources remain valid TypeScript syntax", () => {
   for (const code of [canonicalIdentity, enrollmentIdentity, enrollStart, currentUser, loginVerify, platformRoute, handoffPanel, platformPage, staffSetup]) {
@@ -39,7 +40,8 @@ test("owner handoff sources remain valid TypeScript syntax", () => {
 });
 
 test("canonical enrollment permits setup owners but operational login remains active-only", () => {
-  assert.match(canonicalIdentity, /\["setup", "active"\]\.includes\(clinic\.status\)/);
+  assert.match(canonicalIdentity, /resolveCanonicalIdentity\(client, normalizedStaffId, null, true\)/);
+  assert.match(canonicalIdentityRpc, /c\.status = 'active' or \(p_allow_setup and c\.status = 'setup'\)/i);
   assert.match(canonicalIdentity, /resolveStaffTenantContext\(normalizedStaffId, requestedScope\)/);
   assert.match(loginVerify, /STAFF_ACCESS_INACTIVE_OR_CLINIC_NOT_ACTIVE/);
   assert.match(loginVerify, /getCanonicalActiveWebStaffById\(staffId\)/);
