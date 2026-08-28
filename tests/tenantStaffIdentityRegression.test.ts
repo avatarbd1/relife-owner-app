@@ -36,6 +36,26 @@ test("staff enrollment is always bound to exact organization and clinic", () => 
   assert.match(ownerRoute, /createStaffEnrollmentToken\(staff\.staffId, passkeys\.length, current\.tenant\)/);
 });
 
+test("passkey enrollment and login never use the global legacy staff directory as tenant authority", () => {
+  const webauthn = source("lib/webauthn.ts");
+  const registerStart = source("app/api/auth/webauthn/register/start/route.ts");
+  const registerVerify = source("app/api/auth/webauthn/register/verify/route.ts");
+  const authenticateVerify = source("app/api/auth/webauthn/authenticate/verify/route.ts");
+  const loginAuthority = source("lib/webos/passkeyLoginAuthority.ts");
+
+  assert.doesNotMatch(webauthn, /getActiveWebStaffById/);
+  assert.match(registerStart, /getEnrollmentIdentity/);
+  assert.match(registerStart, /getCurrentStaffIdentity/);
+  assert.match(registerVerify, /getEnrollmentIdentity/);
+  assert.match(registerVerify, /getCurrentStaffIdentity/);
+  assert.match(authenticateVerify, /finishPasskeyAuthentication[\s\S]*requirePasskeyLoginAuthority\(staffId\)[\s\S]*createSessionToken\(staffId\)/);
+  assert.match(loginAuthority, /isPlatformOwnerStaffId/);
+  assert.match(loginAuthority, /resolveStaffTenantContext\(staffId\)/);
+  assert.match(loginAuthority, /getTenantScopedWebStaffIdentity\(staffId, tenant\)/);
+  assert.match(loginAuthority, /if \(!identity \|\| !toAccessContext\(identity\)\)/);
+  assert.doesNotMatch(loginAuthority, /getActiveWebStaffById/);
+});
+
 test("platform provisioning returns a tenant-scoped owner setup link", () => {
   const route = source("app/api/platform/clinics/route.ts");
   assert.match(route, /ownerSetupUrl/);
