@@ -6,8 +6,7 @@ import { getCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
 export const dynamic = "force-dynamic";
 
 export default async function PlatformOwnerPage() {
-  const owner = await getCurrentPlatformOwner();
-  if (!owner) notFound();
+  if (!(await getCurrentPlatformOwner())) notFound();
   const snapshot = await listPlatformOwnerSnapshot();
   return (
     <main className="min-h-dvh bg-slate-50 pb-10">
