@@ -89,6 +89,7 @@ export function buildCommercialCanonicalizationDryRun(
         feature_key: featureKey,
         enabled: target.enabled,
         enabled_by: "controlled_canonicalization",
+        notes: "i1-basic-pilot:2026-08-28",
       },
       reason: target.enabled ? "approved tenant feature target" : "basic pilot keeps optional module locked",
     });
