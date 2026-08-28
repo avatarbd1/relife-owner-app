@@ -39,5 +39,6 @@ test("Owner finance explicitly separates collection, receivable and custody mean
   assert.match(finance, /Cash Handover/);
   assert.match(finance, /canonical 06_Payments only/);
   assert.match(finance, /Custody-only; never revenue/);
-  assert.match(finance, /Combined is a read-only Physio \+ Dental aggregation/);
+  assert.match(finance, /departments\.length === 1/);
+  assert.match(finance, /clinic ledger/);
 });

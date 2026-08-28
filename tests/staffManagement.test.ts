@@ -84,7 +84,7 @@ describe("full staff management", () => {
   });
 
   it("wires the owner screen to management plus existing device enrollment", () => {
-    ok(page.includes("<StaffManagementClient staff={staff} />"));
+    ok(page.includes("<StaffManagementClient staff={staff} availableDepartments={clinicDepartments} />"));
     ok(page.includes("<StaffAccessManager staff={setupReady} />"));
     ok(managementUi.includes('fetch(endpoint'));
     ok(managementUi.includes('/api/staff/${encodeURIComponent(item.staffId)}/deactivate'));

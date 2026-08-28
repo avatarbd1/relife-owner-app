@@ -74,7 +74,7 @@ test("tenant-aware finance routes (accept/request) pass explicit org+clinic", ()
 test("dashboard pages use the authenticated dashboard cash boundary", () => {
   const homePage = source("app/(dashboard)/home/page.tsx");
   const financePage = source("app/(dashboard)/finance/page.tsx");
-  assert.match(homePage, /getScopedCashPositionForAdminView\("combined", now\)/);
+  assert.match(homePage, /getScopedCashPositionForAdminView\(runtimeScope, now\)/);
   assert.match(financePage, /getScopedCashPositionForAdminView\(scope, now\)/);
 });
 

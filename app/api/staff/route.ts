@@ -68,8 +68,7 @@ export async function POST(request: NextRequest) {
     }
     const result = await createManagedStaff(
       tenantContext.access,
-      tenantContext.tenant.organizationId,
-      tenantContext.tenant.clinicId,
+      tenantContext.tenant,
       body as StaffMutationInput
     );
     return NextResponse.json({ ok: true, ...result }, { status: 201 });

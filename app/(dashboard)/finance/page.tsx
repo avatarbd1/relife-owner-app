@@ -14,9 +14,11 @@ import {
 import { getPatientFinancialPosition } from "@/lib/patients";
 import { getScopedCashPositionForAdminView } from "@/lib/scopedCash";
 import { getOwnerControlSnapshot } from "@/lib/controls";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { clinicRuntimeDepartments, clinicRuntimeScopes, resolveClinicRuntimeScope } from "@/lib/domain/tenancy/clinicRuntime";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import { hasTenantFeature, requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
-import { allowedScopesForContext, resolveAuthorizedScope } from "@/lib/webos/scope";
 
 function percent(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -59,18 +61,24 @@ export default async function FinancePage() {
     "optional.finance_advanced"
   );
   if (!context.roles.includes("Owner")) redirect("/operations");
+  const configuration = await readClinicConfiguration(tenantContext.tenant);
+  const departments = clinicRuntimeDepartments(configuration.profile?.clinicType);
+  const legacyRelife = isRelifeLegacyTenant(tenantContext.tenant);
   const cookieStore = await cookies();
-  const allowedScopes = allowedScopesForContext(context);
-  const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
+  const allowedScopes = clinicRuntimeScopes(context, departments);
+  const scope = resolveClinicRuntimeScope(allowedScopes, cookieStore.get("relife_scope")?.value);
   const now = new Date();
+  const zeroMonth = { monthCollection: 0, variableClinicExpense: 0, fixedOverhead: 0, fixedSalaryCommitment: 0, totalBusinessLiability: 0, surplusOrUncovered: 0 };
+  const zeroSalary = { fixedCommitment: 0, salaryPaid: 0, salaryAdvance: 0, legacyUnclassified: 0, legacyExpenseSettlement: 0, legacyPayrollConflictCount: 0, settlementTotal: 0, ledgerPaid: 0, paidOrAdvance: 0, remainingDue: 0, excessAmount: 0 };
+  const emptyControls = { privateSheets: false, writeEnabled: false, pendingExpenses: [], pendingCashMovements: [] };
   const [cash, todays, month, salary, monthHandover, receivables, controls] = await Promise.all([
     getScopedCashPositionForAdminView(scope, now),
-    getTodaysCollection(now),
-    getMonthBusinessPosition(scope, now),
-    getSalaryStatus(scope, now),
-    getMonthCashHandover(scope, now),
-    getPatientFinancialPosition(scope),
-    getOwnerControlSnapshot(),
+    getTodaysCollection(now, tenantContext.tenant.organizationId, tenantContext.tenant.clinicId),
+    legacyRelife ? getMonthBusinessPosition(scope, now) : Promise.resolve(zeroMonth),
+    legacyRelife ? getSalaryStatus(scope, now) : Promise.resolve(zeroSalary),
+    legacyRelife ? getMonthCashHandover(scope, now) : Promise.resolve(0),
+    legacyRelife ? getPatientFinancialPosition(scope) : Promise.resolve({ billedServices: null, outstanding: 0 }),
+    legacyRelife ? getOwnerControlSnapshot() : Promise.resolve(emptyControls),
   ]);
 
   const scopeCollection = scope === "physio" ? todays.physio : scope === "dental" ? todays.dental : todays.combined;
@@ -110,7 +118,7 @@ export default async function FinancePage() {
             <TruthCard label="Cash Handover" value={monthHandover} detail="This month · accepted 21_Cash_Movement. Custody-only; never revenue." tone="bg-sky-50" />
           )}
         </div>
-        <p className="mt-2 text-[11px] leading-4 text-slate-400">{scope === "combined" ? "Combined is a read-only Physio + Dental aggregation; it is not a third finance department." : `${scope === "physio" ? "Physio" : "Dental"} remains independently reconcilable.`}</p>
+        <p className="mt-2 text-[11px] leading-4 text-slate-400">{departments.length === 1 ? `${departments[0]} clinic ledger.` : scope === "combined" ? "Combined is a read-only clinic aggregation; it is not a third finance department." : `${scope === "physio" ? "Physio" : "Dental"} remains independently reconcilable.`}</p>
       </section>
 
       {advancedFinanceEnabled && (

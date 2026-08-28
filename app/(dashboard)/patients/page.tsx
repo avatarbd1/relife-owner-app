@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import PatientsClient from "@/components/PatientsClient";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { clinicRuntimeDepartments, clinicRuntimeScopes, resolveClinicRuntimeScope } from "@/lib/domain/tenancy/clinicRuntime";
 import { formatBDT } from "@/lib/format";
 import { canPerform } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
-import { resolveAuthorizedScope } from "@/lib/webos/scope";
 import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
 import {
   allowedPatientCreateDepartments,
@@ -18,8 +19,6 @@ import {
   Section,
   ActionRow,
 } from "@/components/WorkspaceUI";
-
-const CLINIC_DEPARTMENTS = ["Physio", "Dental"] as const;
 
 function bdMonthKey(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -46,11 +45,12 @@ export default async function PatientsPage({
   searchParams?: Promise<{ view?: string }>;
 }) {
   const { access: context, tenant } = await requireCurrentTenantAccessContext();
+  const configuration = await readClinicConfiguration(tenant);
+  const clinicDepartments = clinicRuntimeDepartments(configuration.profile?.clinicType);
   const cookieStore = await cookies();
   const params = searchParams ? await searchParams : {};
-  const scope = context.roles.includes("Owner")
-    ? "combined"
-    : resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
+  const runtimeScopes = clinicRuntimeScopes(context, clinicDepartments);
+  const scope = resolveClinicRuntimeScope(runtimeScopes, cookieStore.get("relife_scope")?.value);
   const clinician = context.roles.includes("Therapist") || context.roles.includes("Dentist");
   const todayView = clinician && params.view === "today";
 
@@ -80,17 +80,17 @@ export default async function PatientsPage({
   const monthKey = bdMonthKey(new Date());
   const active = patients.filter((patient) => patient.status.toLowerCase() === "active").length;
   const newThisMonth = patients.filter((patient) => patient.registrationDate.startsWith(monthKey)).length;
-  const canSeeAnyMoney = CLINIC_DEPARTMENTS.some((department) =>
+  const canSeeAnyMoney = clinicDepartments.some((department) =>
     canPerform(context, "payment.read_amount", department)
   );
   const totalDue = patients.reduce((sum, patient) => sum + patient.due, 0);
-  const canReadSchedule = CLINIC_DEPARTMENTS.some((department) =>
+  const canReadSchedule = clinicDepartments.some((department) =>
     canPerform(context, "appointment.read", department)
   );
-  const paymentDepartments = CLINIC_DEPARTMENTS.filter((department) =>
+  const paymentDepartments = clinicDepartments.filter((department) =>
     canPerform(context, "payment.create", department)
   );
-  const appointmentDepartments = CLINIC_DEPARTMENTS.filter((department) =>
+  const appointmentDepartments = clinicDepartments.filter((department) =>
     canPerform(context, "appointment.create", department)
   );
 
@@ -100,7 +100,7 @@ export default async function PatientsPage({
         title={todayView ? "My patients today" : "Patients"}
         subtitle={
           context.roles.includes("Owner")
-            ? "Combined Physio & Dental patient workspace"
+            ? `${clinicDepartments.join(" & ")} patient workspace`
             : "Role and department scoped patient workspace"
         }
         action={
@@ -182,6 +182,7 @@ export default async function PatientsPage({
         </div>
         <PatientsClient
           patients={patients}
+          availableDepartments={clinicDepartments}
           showMoney={canSeeAnyMoney}
           paymentDepartments={[...paymentDepartments]}
           appointmentDepartments={[...appointmentDepartments]}

@@ -62,8 +62,7 @@ export async function PATCH(
     }
     const result = await updateManagedStaff(
       tenantContext.access,
-      tenantContext.tenant.organizationId,
-      tenantContext.tenant.clinicId,
+      tenantContext.tenant,
       decodeURIComponent(routeParams.staffId),
       body as StaffMutationInput
     );
