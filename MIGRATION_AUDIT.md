@@ -22,6 +22,14 @@ The old compiled four-bed/hour assumptions no longer decide active booking. Live
 
 Phase D keeps `08_Staff`, `Staff_Department_Access`, and the existing finance Sheets ledgers as their operational authorities. Staff create/update/deactivate now also synchronizes the already-established Phase A `staff_tenant_bindings`, `staff_tenant_roles`, and `staff_tenant_departments` configuration so an operational staff row is not discoverable through another clinic's settings path. The application lists staff only when an active binding matches the exact `organization_id + clinic_id`.
 
+Passkey registration and authentication no longer require a second global
+`08_Staff` lookup after the caller has resolved an exact tenant identity.
+Tenant-native staff authenticate through active `staff_tenant_bindings` plus
+their tenant role/department children; exact-bound Relife staff retain the
+bounded Sheet compatibility implemented by `tenantStaffDirectory`. Existing
+`WebAuthn_Credentials` rows remain in the legacy Sheet authority in this slice;
+moving credential storage requires a separate reviewed data migration.
+
 This is a named compatibility dual-write across Sheets and Supabase. Sheets is written first; a failed tenant-provisioning write leaves the staff profile fail-closed (no active tenant access), while partial role/department replacement deactivates the binding as compensation. It does not claim cross-system atomicity. Removing this boundary belongs to the later Supabase-primary operational cutover, not Phase D.
 
 Finance writers remain unchanged. Their server routes now require `core.finance_basic`, `optional.salary`, or `optional.finance_advanced` as applicable, in addition to membership and WebAction permission. Disabling a UI item is not the authorization boundary.
