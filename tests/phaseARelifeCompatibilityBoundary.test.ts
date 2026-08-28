@@ -59,7 +59,6 @@ const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
   ["lib/data/legacyReportStorage.ts", 2],
   ["lib/patients.ts", 4],
   ["lib/scopedCash.ts", 9],
-  ["lib/webos/cashAcceptance.ts", 2],
   ["lib/webos/financeOps.ts", 13],
   ["lib/webos/reception.ts", 4],
 
@@ -82,9 +81,6 @@ const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
   // Phase B, with the tenant-context cutover.
   ["lib/data/supabaseChamber.ts", 2],
   ["lib/data/supabaseFinance.ts", 2],
-  ["lib/data/supabaseGamification.ts", 2],
-  ["lib/data/supabaseRewardClaims.ts", 2],
-  ["lib/data/supabaseWeeklyGamification.ts", 2],
 
   // Finance and workforce writers stamping RELIFE_SYSTEM tenant fields onto
   // rows. Accounting invariants stay independent of tenant routing, so these
@@ -97,7 +93,7 @@ const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
 ]);
 
 /** Total accepted compatibility debt at the close of Phase A. */
-const LEDGER_TOTAL = 113;
+const LEDGER_TOTAL = 105;
 
 const ROOTS = ["lib", "app", "supabase/functions"];
 const REPO_ROOT = new URL("..", import.meta.url).pathname;

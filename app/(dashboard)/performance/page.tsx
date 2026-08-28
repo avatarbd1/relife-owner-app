@@ -95,7 +95,7 @@ export default async function PerformancePage() {
     );
   }
 
-  const snapshot = await getPerformanceSnapshot(context);
+  const snapshot = await getPerformanceSnapshot(context, tenant);
   const [rewardPolicy, ledger] = await Promise.all([
     getPerformanceRewardPolicy(tenant),
     loadLedgerSummary(tenant, {

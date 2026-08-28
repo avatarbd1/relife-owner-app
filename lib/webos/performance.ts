@@ -21,6 +21,7 @@ import {
   type GamificationRole,
 } from "@/lib/domain/gamification/rules";
 import { isGamificationEligibleStaffId } from "@/lib/domain/gamification/monthlyPolicy";
+import type { TenantScope } from "@/lib/domain/tenancy/policy";
 import type { Department } from "@/lib/types";
 import {
   assertCanPerform,
@@ -581,6 +582,7 @@ async function loadRegistrationEvents(
 }
 
 async function loadGamificationConfigs(
+  tenant: TenantScope,
   departments: Array<"Physio" | "Dental">
 ): Promise<ConfigByDepartment> {
   const configs: ConfigByDepartment = new Map();
@@ -589,7 +591,7 @@ async function loadGamificationConfigs(
   const loaded = await Promise.all(
     departments.map(async (department) => {
       try {
-        return [department, await getGamificationConfig(department)] as const;
+        return [department, await getGamificationConfig(tenant, department)] as const;
       } catch (error) {
         console.error(`Gamification config unavailable for ${department}`, error);
         return [department, null] as const;
@@ -610,7 +612,8 @@ function scopeLabelForDepartments(
 }
 
 export async function getPerformanceSnapshot(
-  context: AccessContext
+  context: AccessContext,
+  tenant: TenantScope
 ): Promise<PerformanceSnapshot> {
   assertCanPerform(context, "performance.read_self", context.primaryDepartment);
   const departments = allowedDepartments(context);
@@ -631,7 +634,7 @@ export async function getPerformanceSnapshot(
     getPayments(),
     fetchSheetRanges("physio", ["03_Attendance"]),
     loadRegistrationEvents(departments),
-    loadGamificationConfigs(departments),
+    loadGamificationConfigs(tenant, departments),
   ]);
 
   const currentIdentity = directory.find(
