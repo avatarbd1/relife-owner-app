@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import BottomNav from "@/components/BottomNav";
 import ChamberAlertListener from "@/components/ChamberAlertListener";
 import InteractionLayer from "@/components/InteractionLayer";
@@ -19,10 +20,13 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [current, isPlatformOwner] = await Promise.all([
-    requireCurrentTenantAccessContext(),
-    isCurrentPlatformOwner(),
-  ]);
+  // Platform authority is resolved before any tenant/staff lookup. A Platform
+  // Owner is never implicitly treated as a Relife (or any clinic) staff member.
+  if (await isCurrentPlatformOwner()) {
+    redirect("/platform");
+  }
+
+  const current = await requireCurrentTenantAccessContext();
   const context = current.access;
   const tenant = current.tenant;
   const roleLabel = context.roles.map(displayRole).join(" · ");
@@ -64,7 +68,7 @@ export default async function DashboardLayout({
                 Sample
               </span>
             )}
-            <ProfileMenu roleLabel={roleLabel} isOwner={isOwner} isPlatformOwner={isPlatformOwner} />
+            <ProfileMenu roleLabel={roleLabel} isOwner={isOwner} />
           </div>
         </div>
       </header>
