@@ -11,7 +11,7 @@ import { canPerform } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getPatientForContext } from "@/lib/webos/reception";
 import { getPatientReportsForContext } from "@/lib/webos/reports";
-import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
+import { listTenantScopedWebStaffDirectory } from "@/lib/webos/tenantStaffDirectory";
 
 function isPhoto(fileType: string, fileName: string): boolean {
   const normalizedType = fileType.trim().toLowerCase();
@@ -44,9 +44,9 @@ export default async function PatientFilePage({
   const [appointments, reports, staffDirectory] = await Promise.all([
     getUnifiedPatientAppointmentsForContext(context, patient),
     canSeeReports
-      ? getPatientReportsForContext(context, patient)
+      ? getPatientReportsForContext(context, patient, tenant.organizationId, tenant.clinicId)
       : Promise.resolve([]),
-    canEditPatient ? getWebStaffDirectory() : Promise.resolve([]),
+    canEditPatient ? listTenantScopedWebStaffDirectory(tenant) : Promise.resolve([]),
   ]);
 
   const clinicianRole = patient.department === "Dental" ? "Dentist" : "Therapist";
