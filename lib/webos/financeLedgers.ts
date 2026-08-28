@@ -1,10 +1,18 @@
 import "server-only";
 
 import { getCashMovements, getCashMovementsForAdminView, getExpenses, getPayments, getSalaryPayments } from "@/lib/data";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import type { Scope } from "@/lib/types";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
 
 type ClinicDepartment = "Physio" | "Dental";
+
+type FinanceTenantContext = {
+  organizationId: string;
+  clinicId: string;
+  organizationSlug: string;
+  clinicSlug: string;
+};
 
 export type FinanceLedgerKind =
   | "daily-collection"
@@ -154,7 +162,8 @@ export function canOpenFinanceLedger(
 
 export async function getFinanceLedgerSnapshot(
   context: AccessContext,
-  scope: Scope
+  scope: Scope,
+  tenant: FinanceTenantContext
 ): Promise<FinanceLedgerSnapshot> {
   const receptionLimited = isReceptionLimited(context);
   const collectionsAllowed = anyInScope(context, scope, (department) =>
@@ -170,12 +179,29 @@ export async function getFinanceLedgerSnapshot(
     canPerform(context, "salary.read", department)
   );
   const auditAllowed = context.roles.some((role) => role === "Owner" || role === "Auditor");
+  const legacyRelife = isRelifeLegacyTenant(tenant);
 
   const [payments, expenses, cashMovements, salaryPayments] = await Promise.all([
-    collectionsAllowed ? getPayments() : Promise.resolve([]),
-    expensesAllowed ? getExpenses() : Promise.resolve([]),
-    cashAllowed ? getCashMovementsForAdminView() : Promise.resolve([]),
-    salaryAllowed ? getSalaryPayments() : Promise.resolve([]),
+    collectionsAllowed
+      ? legacyRelife
+        ? getPayments()
+        : getPayments(tenant.organizationId, tenant.clinicId)
+      : Promise.resolve([]),
+    expensesAllowed
+      ? legacyRelife
+        ? getExpenses()
+        : getExpenses(tenant.organizationId, tenant.clinicId)
+      : Promise.resolve([]),
+    cashAllowed
+      ? legacyRelife
+        ? getCashMovementsForAdminView()
+        : getCashMovements(tenant.organizationId, tenant.clinicId)
+      : Promise.resolve([]),
+    salaryAllowed
+      ? legacyRelife
+        ? getSalaryPayments()
+        : getSalaryPayments(tenant.organizationId, tenant.clinicId)
+      : Promise.resolve([]),
   ]);
 
   const visibleCollections = payments
