@@ -1,11 +1,11 @@
 import WorkforceClient from "@/components/WorkforceClient";
 import { PageHeading } from "@/components/WorkspaceUI";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { listLeaveForContext } from "@/lib/domain/workforce/leave";
 import { listShiftsForContext } from "@/lib/domain/workforce/shifts";
 import { isWorkforceManagerTier } from "@/lib/domain/workforce/workforceScope";
-import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
+import { listTenantScopedWebStaffDirectory } from "@/lib/webos/tenantStaffDirectory";
 
 type ReadState<T> = { data: T; error: "schema" | "read" | null };
 
@@ -23,7 +23,8 @@ async function readState<T>(reader: () => Promise<T>, fallback: T): Promise<Read
 }
 
 export default async function WorkforcePage() {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
   const canReadShifts =
     canPerform(context, "shift.read", "Physio") || canPerform(context, "shift.read", "Dental");
   const canReadLeave =
@@ -41,7 +42,7 @@ export default async function WorkforcePage() {
   const [shiftState, leaveState, directoryState] = await Promise.all([
     canReadShifts ? readState(() => listShiftsForContext(context), []) : Promise.resolve({ data: [], error: null }),
     canReadLeave ? readState(() => listLeaveForContext(context), []) : Promise.resolve({ data: [], error: null }),
-    managerTier ? readState(() => getWebStaffDirectory(), []) : Promise.resolve({ data: [], error: null }),
+    managerTier ? readState(() => listTenantScopedWebStaffDirectory(tenantContext.tenant), []) : Promise.resolve({ data: [], error: null }),
   ]);
 
   const staffOptions = directoryState.data
