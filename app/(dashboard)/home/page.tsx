@@ -150,7 +150,7 @@ export default async function HomePage() {
             <Section title="Needs attention" subtitle="Only items that need an Owner decision">
               {exceptions > 0 && (
                 <ActionRow
-                  href={`/appointments?date=${encodeURIComponent(today)}&scope=combined&focus=exceptions`}
+                  href={`/appointments?date=${encodeURIComponent(today)}&scope=${runtimeScope}&focus=exceptions`}
                   icon="calendar"
                   title="No-show / cancelled"
                   subtitle="Review today’s appointment exceptions"
