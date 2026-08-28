@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import ClinicOwnerAccessPanel from "@/components/platform/ClinicOwnerAccessPanel";
 import PlatformOwnerConsole from "@/components/platform/PlatformOwnerConsole";
 import { callPlatformControl } from "@/lib/data/platformControlClient";
 import type { PlatformOwnerSnapshot } from "@/lib/data/platformOwner";
@@ -45,6 +46,7 @@ export default async function PlatformOwnerPage() {
         </div>
       </header>
       <div className="mx-auto max-w-5xl px-4 py-5">
+        <ClinicOwnerAccessPanel initialSnapshot={snapshot} />
         <PlatformOwnerConsole initialSnapshot={snapshot} />
       </div>
     </main>
