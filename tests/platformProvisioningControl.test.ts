@@ -18,6 +18,10 @@ const consoleSource = readFileSync(
   new URL("../components/platform/PlatformOwnerConsole.tsx", import.meta.url),
   "utf8",
 );
+const routeSource = readFileSync(
+  new URL("../app/api/platform/clinics/route.ts", import.meta.url),
+  "utf8",
+);
 
 test("tracked Platform Control Edge source is valid TypeScript syntax", () => {
   const result = transpileModule(edge, {
@@ -45,8 +49,26 @@ test("platform provisioning edge regenerates safe identity defaults before DB pr
   assert.match(edge, /PLAN_CODES\.has\(text\(raw\.planCode\)\) \? text\(raw\.planCode\) : "starter"/);
 });
 
-test("platform control sends a native JSON parameter to the canonical provisioner", () => {
-  assert.match(edge, /provision_clinic_v1\(\$\{sql\.json\(payload\)\}\)/);
+test("automatic slugs and generated owner IDs are allocated collision-safely at the edge", () => {
+  assert.match(edge, /async function uniqueOrganizationSlug/);
+  assert.match(edge, /async function uniqueClinicSlug/);
+  assert.match(edge, /async function uniqueOwnerStaffId/);
+  assert.match(edge, /suffixedSlug\(base, serial\)/);
+  assert.match(edge, /staff_tenant_bindings where staff_id like/);
+  assert.match(edge, /input\.organizationSlug = await uniqueOrganizationSlug/);
+  assert.match(edge, /input\.clinicSlug = await uniqueClinicSlug/);
+  assert.match(edge, /input\.ownerStaffId = await uniqueOwnerStaffId/);
+});
+
+test("API preserves omitted generated fields so the edge can allocate globally unique final values", () => {
+  assert.match(routeSource, /explicitOwnerStaffId/);
+  assert.match(routeSource, /organizationSlug: String\(raw\.organizationSlug \|\| ""\)\.trim\(\) \|\| undefined/);
+  assert.match(routeSource, /clinicSlug: String\(raw\.clinicSlug \|\| ""\)\.trim\(\) \|\| undefined/);
+  assert.match(routeSource, /ownerStaffId: explicitOwnerStaffId \|\| undefined/);
+});
+
+test("platform control sends a structured JSON parameter to the canonical provisioner", () => {
+  assert.match(edge, /provision_clinic_v1\(\$\{sql\.json\(payload\)\}::jsonb\)/);
   assert.doesNotMatch(edge, /JSON\.stringify\(payload\).*::jsonb/);
 });
 
