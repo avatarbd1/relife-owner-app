@@ -34,12 +34,12 @@ export const PLATFORM_PLANS: Record<PlatformPlanCode, PlatformPlanDefinition> = 
 export type ClinicType = "physiotherapy" | "dental" | "doctor_chamber" | "other";
 
 export interface PlatformClinicProvisioningInput {
-  organizationName: string;
-  organizationSlug: string;
   clinicName: string;
-  clinicSlug: string;
   clinicType: ClinicType;
-  timezone: string;
+  organizationName?: string;
+  organizationSlug?: string;
+  clinicSlug?: string;
+  timezone?: string;
   branchName?: string;
   address?: string;
   phone?: string;
@@ -47,8 +47,8 @@ export interface PlatformClinicProvisioningInput {
   currency?: string;
   locale?: string;
   ownerStaffId?: string;
-  planCode: PlatformPlanCode;
-  trialDays: number;
+  planCode?: PlatformPlanCode;
+  trialDays?: number;
   featureKeys?: string[];
   openDays?: number[];
   opensAt?: string;
@@ -60,7 +60,13 @@ export interface PlatformClinicProvisioningInput {
 }
 
 export interface NormalizedPlatformClinicProvisioningInput extends PlatformClinicProvisioningInput {
+  organizationName: string;
+  organizationSlug: string;
+  clinicSlug: string;
+  timezone: string;
   ownerStaffId: string;
+  planCode: PlatformPlanCode;
+  trialDays: number;
   branchName: string;
   address: string;
   phone: string;
@@ -83,6 +89,17 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function text(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+export function slugifyPlatformName(value: unknown): string {
+  const base = text(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
+  if (base.length >= 2) return base;
+  if (base.length === 1) return `${base}-clinic`;
+  return "clinic";
 }
 
 function serviceCode(value: string): string {
@@ -120,28 +137,74 @@ export function isPlatformPlanCode(value: unknown): value is PlatformPlanCode {
   return typeof value === "string" && (PLATFORM_PLAN_CODES as readonly string[]).includes(value);
 }
 
+function templateForClinicType(clinicType: ClinicType) {
+  if (clinicType === "physiotherapy") {
+    return {
+      serviceName: "Physiotherapy Consultation",
+      serviceDepartment: "Physio" as const,
+      rooms: [{ roomCode: "ROOM-01", displayName: "Treatment Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
+      resources: [{ resourceCode: "BED-01", displayName: "Treatment Bed 1", resourceType: "BED", roomCode: "ROOM-01", capacity: 1, genderRestriction: null, isBookable: false, isRuntimeOnly: true, isActive: true, sortOrder: 1, notes: "Editable starter template" }],
+      bookingMode: "simple" as const,
+      resourceRequired: false,
+      maxSimultaneous: null,
+    };
+  }
+  if (clinicType === "dental") {
+    return {
+      serviceName: "Dental Consultation",
+      serviceDepartment: "Dental" as const,
+      rooms: [{ roomCode: "ROOM-01", displayName: "Dental Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
+      resources: [{ resourceCode: "CHAIR-01", displayName: "Dental Chair 1", resourceType: "DENTAL_CHAIR", roomCode: "ROOM-01", capacity: 1, genderRestriction: null, isBookable: true, isRuntimeOnly: false, isActive: true, sortOrder: 1, notes: "Editable starter template" }],
+      bookingMode: "specific_resource" as const,
+      resourceRequired: true,
+      maxSimultaneous: null,
+    };
+  }
+  if (clinicType === "doctor_chamber") {
+    return {
+      serviceName: "Doctor Consultation",
+      serviceDepartment: "All" as const,
+      rooms: [{ roomCode: "ROOM-01", displayName: "Consultation Room 1", isActive: true, sortOrder: 1, notes: "Editable starter template" }],
+      resources: [],
+      bookingMode: "simple" as const,
+      resourceRequired: false,
+      maxSimultaneous: null,
+    };
+  }
+  return {
+    serviceName: "Consultation",
+    serviceDepartment: "All" as const,
+    rooms: [],
+    resources: [],
+    bookingMode: "simple" as const,
+    resourceRequired: false,
+    maxSimultaneous: null,
+  };
+}
+
 export function normalizePlatformClinicProvisioningInput(raw: PlatformClinicProvisioningInput): NormalizedPlatformClinicProvisioningInput {
-  const organizationName = text(raw.organizationName);
-  const organizationSlug = text(raw.organizationSlug).toLowerCase();
   const clinicName = text(raw.clinicName);
-  const clinicSlug = text(raw.clinicSlug).toLowerCase();
   const clinicType = raw.clinicType || "other";
+  const template = templateForClinicType(clinicType);
+  const organizationName = text(raw.organizationName) || clinicName;
+  const organizationSlug = slugifyPlatformName(text(raw.organizationSlug) || organizationName);
+  const clinicSlug = slugifyPlatformName(text(raw.clinicSlug) || clinicName);
   const ownerStaffId = text(raw.ownerStaffId) || generateOwnerStaffId(clinicName, clinicType);
   const timezone = text(raw.timezone || "Asia/Dhaka");
-  if (!organizationName || !clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
+  const planCode = isPlatformPlanCode(raw.planCode) ? raw.planCode : "starter";
+  const trialDays = Number(raw.trialDays ?? 30);
+  if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
   if (!SLUG.test(organizationSlug) || !SLUG.test(clinicSlug)) throw new Error("PLATFORM_CLINIC_SLUG_INVALID");
   if (!STAFF_ID.test(ownerStaffId)) throw new Error("PLATFORM_OWNER_STAFF_ID_INVALID");
-  if (!isPlatformPlanCode(raw.planCode)) throw new Error("PLATFORM_PLAN_INVALID");
-  const trialDays = Number(raw.trialDays);
   if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 90) throw new Error("PLATFORM_TRIAL_DAYS_INVALID");
   const opensAt = text(raw.opensAt || "09:00");
   const closesAt = text(raw.closesAt || "18:00");
   if (!TIME.test(opensAt) || !TIME.test(closesAt) || opensAt >= closesAt) throw new Error("PLATFORM_HOURS_INVALID");
   const openDays = [...new Set((raw.openDays?.length ? raw.openDays : [1, 2, 3, 4, 5, 6]).map(Number))].sort((a, b) => a - b);
   if (openDays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) throw new Error("PLATFORM_OPEN_DAYS_INVALID");
-  const requestedFeatures = raw.featureKeys?.length ? raw.featureKeys.map(text).filter(Boolean) : [...PLATFORM_PLANS[raw.planCode].defaultFeatureKeys];
+  const requestedFeatures = raw.featureKeys?.length ? raw.featureKeys.map(text).filter(Boolean) : [...PLATFORM_PLANS[planCode].defaultFeatureKeys];
   const featureKeys = [...new Set([...CORE_FEATURE_KEYS, ...requestedFeatures])];
-  const firstServiceName = text(raw.firstServiceName || "Consultation");
+  const firstServiceName = text(raw.firstServiceName) || template.serviceName;
   const firstServiceCode = text(raw.firstServiceCode) || serviceCode(firstServiceName);
   const firstServicePrice = Number(raw.firstServicePrice ?? 0);
   const firstServiceDurationMin = Number(raw.firstServiceDurationMin ?? 30);
@@ -163,7 +226,7 @@ export function normalizePlatformClinicProvisioningInput(raw: PlatformClinicProv
     currency: text(raw.currency || "BDT") || "BDT",
     locale: text(raw.locale || "en") || "en",
     ownerStaffId,
-    planCode: raw.planCode,
+    planCode,
     trialDays,
     featureKeys,
     openDays,
@@ -178,6 +241,7 @@ export function normalizePlatformClinicProvisioningInput(raw: PlatformClinicProv
 
 export function buildProvisioningPayload(input: NormalizedPlatformClinicProvisioningInput) {
   const openDays = new Set(input.openDays);
+  const template = templateForClinicType(input.clinicType);
   return {
     organization: { slug: input.organizationSlug, name: input.organizationName },
     clinic: {
@@ -203,26 +267,26 @@ export function buildProvisioningPayload(input: NormalizedPlatformClinicProvisio
     services: [{
       serviceCode: input.firstServiceCode,
       displayName: input.firstServiceName,
-      department: "All",
+      department: template.serviceDepartment,
       price: input.firstServicePrice,
       durationMin: input.firstServiceDurationMin,
       requiresBooking: true,
       requiresProvider: true,
-      requiresResource: false,
+      requiresResource: template.resourceRequired,
       discountApplicable: true,
       taxApplicable: false,
       packageEligible: false,
       isActive: true,
     }],
-    rooms: [],
-    resources: [],
+    rooms: template.rooms,
+    resources: template.resources,
     booking: {
-      mode: "simple",
+      mode: template.bookingMode,
       defaultDurationMin: input.firstServiceDurationMin,
       slotIntervalMin: input.firstServiceDurationMin,
-      maxSimultaneous: null,
+      maxSimultaneous: template.maxSimultaneous,
       providerRequired: true,
-      resourceRequired: false,
+      resourceRequired: template.resourceRequired,
       blockDuplicatePatientOverlap: true,
       allowWalkIn: true,
       cancellationNoticeMin: 0,
