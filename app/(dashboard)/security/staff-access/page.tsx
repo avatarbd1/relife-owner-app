@@ -2,6 +2,8 @@ import StaffAccessManager from "@/components/StaffAccessManager";
 import StaffManagementClient from "@/components/StaffManagementClient";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { listManagedStaff } from "@/lib/webos/staffManagement";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { clinicRuntimeDepartments } from "@/lib/domain/tenancy/clinicRuntime";
 
 export default async function StaffAccessPage() {
   const tenantContext = await requireCurrentTenantAccessContext();
@@ -14,11 +16,11 @@ export default async function StaffAccessPage() {
     );
   }
 
-  const staff = await listManagedStaff(
-    context,
-    tenantContext.tenant.organizationId,
-    tenantContext.tenant.clinicId
-  );
+  const [staff, configuration] = await Promise.all([
+    listManagedStaff(context, tenantContext.tenant.organizationId, tenantContext.tenant.clinicId),
+    readClinicConfiguration(tenantContext.tenant),
+  ]);
+  const clinicDepartments = clinicRuntimeDepartments(configuration.profile?.clinicType);
   const setupReady = staff
     .filter(
       (item) =>
@@ -35,7 +37,7 @@ export default async function StaffAccessPage() {
 
   return (
     <div className="space-y-6">
-      <StaffManagementClient staff={staff} />
+      <StaffManagementClient staff={staff} availableDepartments={clinicDepartments} />
       <StaffAccessManager staff={setupReady} />
     </div>
   );
