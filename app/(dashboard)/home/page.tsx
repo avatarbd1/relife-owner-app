@@ -14,6 +14,9 @@ import {
 import { getTodaysCollection } from "@/lib/calculations";
 import { formatBDT, formatDateBn } from "@/lib/format";
 import { getScopedCashPositionForAdminView } from "@/lib/scopedCash";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { clinicRuntimeDepartments } from "@/lib/domain/tenancy/clinicRuntime";
+import { hasTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { requireCurrentAccessContext, requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import {
   getAppointmentsForContext,
@@ -53,11 +56,18 @@ export default async function HomePage() {
   const { tenant } = await requireCurrentTenantAccessContext();
   const now = new Date();
   const today = todayDhaka();
-  const [cash, todays, appointments] = await Promise.all([
-    getScopedCashPositionForAdminView("combined", now),
+  const configuration = await readClinicConfiguration(tenant);
+  const departments = clinicRuntimeDepartments(configuration.profile?.clinicType);
+  const runtimeScope = departments.length === 1 && departments[0] === "Dental" ? "dental" : "physio";
+  const [cash, todays, appointments, liveChatEnabled] = await Promise.all([
+    getScopedCashPositionForAdminView(runtimeScope, now),
     getTodaysCollection(now, tenant.organizationId, tenant.clinicId),
-    getAppointmentsForContext(context, "combined", today, tenant.organizationId, tenant.clinicId),
+    getAppointmentsForContext(context, runtimeScope, today, tenant.organizationId, tenant.clinicId),
+    hasTenantFeature(tenant, "optional.live_chat"),
   ]);
+  const collectedToday = departments.includes("Dental") && departments.includes("Physio")
+    ? todays.combined
+    : departments.includes("Dental") ? todays.dental : todays.physio;
 
   const todayPatientCount = new Set(appointments.map((item) => item.patientId)).size;
   const todaySessionCount = appointments.filter((item) => item.status.trim().toLowerCase() === "completed").length;
@@ -96,10 +106,10 @@ export default async function HomePage() {
                   Collected today
                 </p>
                 <p className="mt-2 text-[32px] font-bold leading-none tracking-tight tabular-nums">
-                  {formatBDT(todays.combined)}
+                  {formatBDT(collectedToday)}
                 </p>
                 <p className="mt-2 text-[11px] text-slate-400">
-                  Physio {formatBDT(todays.physio)} · Dental {formatBDT(todays.dental)}
+                  {departments.map((department) => `${department} ${formatBDT(department === "Physio" ? todays.physio : todays.dental)}`).join(" · ")}
                 </p>
               </div>
             </div>
@@ -132,7 +142,7 @@ export default async function HomePage() {
               <QuickButton href="/appointments/new" icon="calendar" label="Booking" />
               <QuickButton href="/payments" icon="payment" label="Payment" />
               <QuickButton href="/expenses" icon="expense" label="Expense" />
-              <QuickButton href="/chamber?tab=team" icon="chat" label="Live chat" />
+              {liveChatEnabled && <QuickButton href="/chamber?tab=team" icon="chat" label="Live chat" />}
             </div>
           </section>
 
@@ -192,7 +202,7 @@ export default async function HomePage() {
         <HomeActionSlide href="/appointments/new" icon="calendar" label="Booking" subtitle="Create an appointment" />
         <HomeActionSlide href="/payments" icon="payment" label="Payment" subtitle="Receive or review payment" />
         <HomeActionSlide href="/expenses" icon="expense" label="Expense" subtitle="Open expense workflow" />
-        <HomeActionSlide href="/chamber?tab=team" icon="chat" label="Live chat" subtitle="Open the clinic team chat" />
+        {liveChatEnabled && <HomeActionSlide href="/chamber?tab=team" icon="chat" label="Live chat" subtitle="Open the clinic team chat" />}
       </HomeSwipeLoop>
     </div>
   );
