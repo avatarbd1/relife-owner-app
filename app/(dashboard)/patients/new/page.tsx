@@ -1,19 +1,19 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import PatientRegistrationForm from "@/components/PatientRegistrationForm";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import {
-  allowedPatientCreateDepartments,
-  getClinicianOptions,
-} from "@/lib/webos/reception";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+  getTenantClinicianOptions,
+  getTenantPatientCreateDepartments,
+} from "@/lib/webos/tenantClinicRoster";
 
 export default async function NewPatientPage() {
-  const context = await requireCurrentAccessContext();
+  const { access: context, tenant } = await requireCurrentTenantAccessContext();
   const cookieStore = await cookies();
   const scope = cookieStore.get("relife_scope")?.value;
   const [allowedDepartments, clinicians] = await Promise.all([
-    allowedPatientCreateDepartments(context),
-    getClinicianOptions(context),
+    getTenantPatientCreateDepartments(context, tenant),
+    getTenantClinicianOptions(context, tenant),
   ]);
   const defaultDepartment =
     scope === "dental" ? "Dental" : scope === "physio" ? "Physio" : undefined;
