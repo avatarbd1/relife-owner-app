@@ -8,6 +8,7 @@ function source(path: string): string {
 
 const bridge = source("supabase/migrations/20260824043000_relife_tenant1_staff_bridge.sql");
 const correction = source("supabase/migrations/20260828073000_staff_default_tenant_invariant.sql");
+const clinicReadGrant = source("supabase/migrations/20260828082700_canonical_enrollment_clinic_read_grant.sql");
 const phaseH = source("supabase/migrations/20260828020000_phase_h_repeatable_provisioning.sql");
 const platformControl = source("supabase/functions/relife-platform-control/index.ts");
 const tenantContext = source("supabase/functions/relife-tenant-context/index.ts");
@@ -46,4 +47,10 @@ test("canonical owner writers remain behind the shared binding invariant", () =>
   assert.match(platformControl, /action === "owner"/);
   assert.doesNotMatch(correction, /insert\s+into\s+auth\.users/i);
   assert.doesNotMatch(correction, /organizationSlug\s*=\s*'relife'|clinicSlug\s*=\s*'amtali-main'/i);
+});
+
+test("canonical enrollment can read clinic status without exposing the catalogue to browser roles", () => {
+  assert.match(clinicReadGrant, /grant select on table relife\.clinics to service_role/i);
+  assert.match(clinicReadGrant, /revoke all on table relife\.clinics from anon, authenticated/i);
+  assert.doesNotMatch(clinicReadGrant, /grant\s+select[^;]+to\s+(anon|authenticated)/i);
 });
