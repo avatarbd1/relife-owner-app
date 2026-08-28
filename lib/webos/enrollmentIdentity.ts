@@ -10,6 +10,14 @@ export interface EnrollmentIdentity {
   claims: StaffEnrollmentClaims;
 }
 
+async function getLegacyEnrollmentIdentity(staffId: string): Promise<WebStaffIdentity | null> {
+  try {
+    return await getActiveWebStaffById(staffId);
+  } catch {
+    return null;
+  }
+}
+
 export async function getEnrollmentIdentity(
   token: string | undefined | null
 ): Promise<EnrollmentIdentity | null> {
@@ -18,8 +26,8 @@ export async function getEnrollmentIdentity(
   if (!claims) throw new Error("STAFF_ENROLLMENT_INVALID");
 
   const identity =
-    (await getActiveWebStaffById(claims.staffId)) ||
-    (await getCanonicalEnrollmentWebStaffById(claims.staffId));
+    (await getCanonicalEnrollmentWebStaffById(claims.staffId)) ||
+    (await getLegacyEnrollmentIdentity(claims.staffId));
   if (!identity || !toAccessContext(identity)) {
     throw new Error("STAFF_ENROLLMENT_ACCESS_DENIED");
   }
