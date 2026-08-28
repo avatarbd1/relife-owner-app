@@ -9,7 +9,7 @@ export default function BiometricLogin({
   onError,
 }: {
   disabled?: boolean;
-  onSuccess: () => void;
+  onSuccess: (next?: string) => void;
   onError: (message: string) => void;
 }) {
   const [supported, setSupported] = useState(false);
@@ -52,7 +52,7 @@ export default function BiometricLogin({
       if (!verifyResponse.ok || !verifyPayload?.ok) {
         throw new Error("Staff biometric verification ব্যর্থ হয়েছে। আবার চেষ্টা করুন।");
       }
-      onSuccess();
+      onSuccess(typeof verifyPayload.next === "string" ? verifyPayload.next : undefined);
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotAllowedError") {
         onError("Biometric verification বাতিল হয়েছে বা সময় শেষ হয়েছে।");
