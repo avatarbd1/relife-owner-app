@@ -6,8 +6,8 @@ import {
   provisionPlatformClinic,
   setPlatformClinicCommercial,
   suspendPlatformClinic,
-  updatePlatformClinicProfile,
 } from "@/lib/data/platformOwner";
+import { patchPlatformClinicProfile } from "@/lib/data/platformClinicProfile";
 import {
   isPlatformPlanCode,
   normalizePlatformClinicProvisioningInput,
@@ -96,18 +96,7 @@ export async function PATCH(request: NextRequest) {
         const profile = body.profile || {};
         const clinicName = String(profile.clinicName || "").trim();
         if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
-        await updatePlatformClinicProfile(scope, {
-          clinicName,
-          clinicType: profile.clinicType || "other",
-          branchName: String(profile.branchName || clinicName),
-          address: String(profile.address || ""),
-          phone: String(profile.phone || ""),
-          email: String(profile.email || ""),
-          logoUrl: String(profile.logoUrl || ""),
-          currency: String(profile.currency || "BDT"),
-          locale: String(profile.locale || "en"),
-          timezone: String(profile.timezone || "Asia/Dhaka"),
-        }, owner.staffId);
+        await patchPlatformClinicProfile(scope, { ...profile, clinicName }, owner.staffId);
         break;
       }
       case "owner":
