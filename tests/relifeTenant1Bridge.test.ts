@@ -12,6 +12,7 @@ const migration = source(
 const edge = source("supabase/functions/relife-tenant-context/index.ts");
 const adapter = source("lib/domain/tenancy/staffTenantContext.ts");
 const currentUser = source("lib/webos/currentUser.ts");
+const tenantStaffDirectory = source("lib/webos/tenantStaffDirectory.ts");
 const auth = source("lib/auth.ts");
 
 test("Relife Tenant #1 bridge preserves the existing ST001 staff identity", () => {
@@ -63,15 +64,21 @@ test("server adapter never silently falls back to Relife tenant IDs", () => {
   assert.doesNotMatch(adapter, /bc77ffb9-3379-40cc-a1eb-89b0e988fe94/i);
 });
 
-test("legacy Owner operational identity stays stable while tenant binding remains separately gated", () => {
-  assert.match(currentUser, /RELIFE_TENANT_CUTOVER_ENFORCED/);
-  assert.match(currentUser, /identity\.roles\.includes\("Owner"\)/);
-  assert.match(currentUser, /await resolveStaffTenantContext\(identity\.staffId\)/);
-  assert.match(currentUser, /await enforceOwnerTenantBinding\(identity\)/);
-  assert.match(currentUser, /getCurrentTenantContext/);
-  assert.match(currentUser, /requireCurrentTenantAccessContext/);
+test("legacy Relife staff identity is tenant-bound before transitional fallback", () => {
+  assert.match(currentUser, /isPlatformOwner\(staffId\).*return null/s);
+  assert.match(currentUser, /resolveStaffTenantContext\(staffId, await currentTenantSelection\(\)\)/);
+  assert.match(currentUser, /if \(message === "TENANT_BINDING_NOT_FOUND"\) return null/);
+  assert.match(currentUser, /getTenantScopedWebStaffIdentity\(staffId, tenant\)/);
+  assert.doesNotMatch(currentUser, /identity\.roles\.includes\("Owner"\)/);
   assert.doesNotMatch(currentUser, /organizationSlug\s*:\s*["']relife["']/);
   assert.doesNotMatch(currentUser, /clinicSlug\s*:\s*["']amtali-main["']/);
+
+  assert.match(tenantStaffDirectory, /listStoredStaffProvisioning\(tenant\)/);
+  assert.match(tenantStaffDirectory, /row\.staffId === staffId && row\.status === "active"/);
+  assert.match(tenantStaffDirectory, /if \(!binding\) return null/);
+  assert.match(tenantStaffDirectory, /if \(!hasTenantRoles && !hasTenantDepartments\)/);
+  assert.match(tenantStaffDirectory, /return legacy/);
+  assert.match(tenantStaffDirectory, /No global Sheet-only tenant fallback exists/);
 
   assert.match(auth, /export const DEFAULT_OWNER_STAFF_ID = "ST001"/);
   assert.match(auth, /createSessionToken\(staffId: string = DEFAULT_OWNER_STAFF_ID\)/);
