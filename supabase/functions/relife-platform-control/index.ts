@@ -103,30 +103,8 @@ function templateForClinicType(clinicType: string) {
     return {
       serviceName: "Physiotherapy Consultation",
       serviceDepartment: "Physio",
-      rooms: [
-        {
-          roomCode: "ROOM-01",
-          displayName: "Treatment Room 1",
-          isActive: true,
-          sortOrder: 1,
-          notes: "Editable starter template",
-        },
-      ],
-      resources: [
-        {
-          resourceCode: "BED-01",
-          displayName: "Treatment Bed 1",
-          resourceType: "BED",
-          roomCode: "ROOM-01",
-          capacity: 1,
-          genderRestriction: null,
-          isBookable: false,
-          isRuntimeOnly: true,
-          isActive: true,
-          sortOrder: 1,
-          notes: "Editable starter template",
-        },
-      ],
+      rooms: [],
+      resources: [],
       bookingMode: "simple",
       resourceRequired: false,
       maxSimultaneous: null,
@@ -561,7 +539,8 @@ async function assignOwner(body: RecordAny, actorStaffId: string) {
   if (!STAFF_ID.test(ownerStaffId)) throw new Error("PLATFORM_OWNER_STAFF_ID_INVALID");
   if (ownerStaffId === actorStaffId) throw new Error("PLATFORM_OWNER_CANNOT_BE_CLINIC_OWNER");
   await sql.begin(async (tx) => {
-    const rows = await tx`insert into relife.staff_tenant_bindings(staff_id,organization_id,clinic_id,status,is_default,updated_at) values(${ownerStaffId},${organizationId}::uuid,${clinicId}::uuid,'active',false,now()) on conflict(staff_id,organization_id,clinic_id) do update set status='active',is_default=false,updated_at=now() returning id::text as id`;
+    await tx`update relife.staff_tenant_bindings set is_default=false,updated_at=now() where staff_id=${ownerStaffId} and status='active'`;
+    const rows = await tx`insert into relife.staff_tenant_bindings(staff_id,organization_id,clinic_id,status,is_default,updated_at) values(${ownerStaffId},${organizationId}::uuid,${clinicId}::uuid,'active',true,now()) on conflict(staff_id,organization_id,clinic_id) do update set status='active',is_default=true,updated_at=now() returning id::text as id`;
     const bindingId = text(rows[0]?.id);
     if (!UUID.test(bindingId)) throw new Error("PLATFORM_OWNER_BINDING_FAILED");
     await tx`delete from relife.staff_tenant_roles where binding_id=${bindingId}::uuid`;
