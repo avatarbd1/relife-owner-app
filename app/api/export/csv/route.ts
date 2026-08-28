@@ -6,6 +6,7 @@ import { assertValidDateRange, isValidIsoDate } from "@/lib/domain/finance/dateR
 import { canPerform, type AccessContext, type WebAction } from "@/lib/webos/access";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getAppointmentsForContext, getVisiblePatients, todayDhaka } from "@/lib/webos/reception";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 
 const EXPORT_TYPES = ["patients", "appointments", "sessions", "payments", "expenses", "salary"] as const;
 type ExportType = (typeof EXPORT_TYPES)[number];
@@ -154,6 +155,7 @@ function permissionActions(type: ExportType): WebAction[] {
 export async function GET(request: NextRequest) {
   try {
     const tenantContext = await requireCurrentTenantAccessContext();
+    const legacyRelife = isRelifeLegacyTenant(tenantContext.tenant);
     const context = tenantContext.access;
     const params = request.nextUrl.searchParams;
     const rawTypes = (params.get("types") || "").split(",").filter(Boolean);
@@ -215,7 +217,9 @@ export async function GET(request: NextRequest) {
       }
 
       if (type === "sessions") {
-        const rows = (await Promise.all(departments.map((department) => treatmentRows(department, range)))).flat();
+        const rows = legacyRelife
+          ? (await Promise.all(departments.map((department) => treatmentRows(department, range)))).flat()
+          : [];
         sections.push(titleSection("Treatment Sessions", objectsToCsv(rows, ["sessionId", "date", "patientId", "patientName", "department", "clinician", "sessionNo", "assessment", "plan", "painBefore", "painAfter", "response", "remarks"])));
       }
 
