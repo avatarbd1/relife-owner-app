@@ -7,7 +7,7 @@ import {
   type ClinicType,
   type PlatformClinicProvisioningInput,
 } from "@/lib/domain/platform/platformOwnerMvp";
-import { requireTenantScope } from "@/lib/domain/tenancy/policy";
+import { requireTenantScope, type TenantScope } from "@/lib/domain/tenancy/policy";
 import { requireCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
 import { createStaffEnrollmentToken } from "@/lib/staffEnrollment";
 import { listPasskeysForStaff, webauthnConfig } from "@/lib/webauthn";
@@ -25,7 +25,7 @@ function fail(error: unknown) {
     ? 403
     : /ALREADY_MANAGED/.test(message)
       ? 409
-      : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA|CANNOT_BE/.test(message)
+      : /INVALID|REQUIRED|UNKNOWN|SLUG|TRIAL|FEATURE|SHA|CANNOT_BE|AMBIGUOUS/.test(message)
         ? 400
         : /NOT_FOUND/.test(message)
           ? 404
@@ -39,6 +39,14 @@ function originAllowed(request: NextRequest) {
   return isAllowedRequestOrigin(request)
     ? null
     : NextResponse.json({ ok: false, error: "Origin rejected" }, { status: 403 });
+}
+
+async function createOwnerSetupUrl(ownerStaffId: string, scope: TenantScope) {
+  const passkeys = await listPasskeysForStaff(ownerStaffId);
+  const token = createStaffEnrollmentToken(ownerStaffId, passkeys.length, scope);
+  const setupUrl = new URL("/staff-setup", webauthnConfig().origin);
+  setupUrl.searchParams.set("token", token);
+  return setupUrl.toString();
 }
 
 export async function GET() {
@@ -86,15 +94,7 @@ export async function POST(request: NextRequest) {
     if (result.scope && provisionedOwnerStaffId) {
       try {
         const scope = requireTenantScope(result.scope);
-        const passkeys = await listPasskeysForStaff(provisionedOwnerStaffId);
-        const token = createStaffEnrollmentToken(
-          provisionedOwnerStaffId,
-          passkeys.length,
-          scope,
-        );
-        const setupUrl = new URL("/staff-setup", webauthnConfig().origin);
-        setupUrl.searchParams.set("token", token);
-        ownerSetupUrl = setupUrl.toString();
+        ownerSetupUrl = await createOwnerSetupUrl(provisionedOwnerStaffId, scope);
       } catch (error) {
         // Provisioning has already committed. Never turn a successful clinic
         // creation into a retryable failure solely because setup-link creation
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 }
 
 type PatchBody = {
-  action?: "profile" | "owner" | "commercial" | "activate" | "suspend";
+  action?: "profile" | "owner" | "commercial" | "activate" | "suspend" | "owner_setup_link";
   organizationId?: string;
   clinicId?: string;
   profile?: {
@@ -144,6 +144,27 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json() as PatchBody;
     const scope = requireTenantScope({ organizationId: body.organizationId, clinicId: body.clinicId });
     if (!body.action) throw new Error("PLATFORM_ACTION_INVALID");
+
+    if (body.action === "owner_setup_link") {
+      // Link generation is intentionally read-only. Resolve the owner from the
+      // authoritative exact-tenant snapshot; never trust a browser-supplied
+      // staff ID for enrollment handoff.
+      const result = await callPlatformControl<ControlResponse>({
+        action: "snapshot",
+        actorStaffId: owner.staffId,
+      });
+      const clinic = result.snapshot.clinics.find(
+        (row) => row.organizationId === scope.organizationId && row.clinicId === scope.clinicId,
+      );
+      if (!clinic) throw new Error("PLATFORM_CLINIC_NOT_FOUND");
+      if (clinic.ownerStaffIds.length === 0) throw new Error("PLATFORM_CLINIC_OWNER_NOT_FOUND");
+      if (clinic.ownerStaffIds.length !== 1) throw new Error("PLATFORM_CLINIC_OWNER_AMBIGUOUS");
+      const ownerStaffId = String(clinic.ownerStaffIds[0] || "").trim();
+      if (!ownerStaffId) throw new Error("PLATFORM_CLINIC_OWNER_NOT_FOUND");
+      const ownerSetupUrl = await createOwnerSetupUrl(ownerStaffId, scope);
+      return NextResponse.json({ ...result, ownerStaffId, ownerSetupUrl });
+    }
+
     if (body.action === "profile") {
       const clinicName = String(body.profile?.clinicName || "").trim();
       if (!clinicName) throw new Error("PLATFORM_CLINIC_NAME_REQUIRED");
