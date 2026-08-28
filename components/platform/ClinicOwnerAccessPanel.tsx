@@ -65,22 +65,23 @@ export default function ClinicOwnerAccessPanel({
         }),
       });
       const payload = (await response.json().catch(() => ({}))) as ApiResponse;
-      if (!response.ok || !payload.ownerSetup) {
+      const ownerSetup = payload.ownerSetup;
+      if (!response.ok || !ownerSetup) {
         throw new Error(payload.error || "Owner setup link could not be generated");
       }
       if (payload.snapshot) setSnapshot(payload.snapshot);
-      const url = `${window.location.origin}${payload.ownerSetup.setupPath}`;
+      const url = `${window.location.origin}${ownerSetup.setupPath}`;
       setLinks((current) => ({
         ...current,
         [clinic.clinicId]: {
           url,
-          ownerStaffId: payload.ownerSetup!.ownerStaffId,
-          expiresInSeconds: payload.ownerSetup!.expiresInSeconds,
+          ownerStaffId: ownerSetup.ownerStaffId,
+          expiresInSeconds: ownerSetup.expiresInSeconds,
         },
       }));
       setMessages((current) => ({
         ...current,
-        [clinic.clinicId]: payload.ownerSetup!.clinicStatus === "active"
+        [clinic.clinicId]: ownerSetup.clinicStatus === "active"
           ? "Ready to send to the clinic owner."
           : "Device setup is allowed now; clinic workspace remains locked until activation.",
       }));
