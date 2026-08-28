@@ -460,8 +460,6 @@ export async function finishPasskeyAuthentication(
   ) {
     throw new Error("PASSKEY_USER_MISMATCH");
   }
-  const activeStaff = await getActiveWebStaffById(passkey.staffId);
-  if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
   const { rpID, origin } = webauthnConfig();
   const credential: WebAuthnCredential = {
     id: passkey.credentialId,

@@ -43,6 +43,12 @@ test("canonical enrollment permits setup owners but operational login remains ac
   assert.match(canonicalIdentity, /resolveStaffTenantContext\(normalizedStaffId, requestedScope\)/);
   assert.match(loginVerify, /STAFF_ACCESS_INACTIVE_OR_CLINIC_NOT_ACTIVE/);
   assert.match(loginVerify, /getCanonicalActiveWebStaffById\(staffId\)/);
+  const authenticationFinish = webauthn.slice(
+    webauthn.indexOf("export async function finishPasskeyAuthentication"),
+    webauthn.indexOf("export function createPasskeyAuditId"),
+  );
+  assert.doesNotMatch(authenticationFinish, /getActiveWebStaffById|STAFF_NOT_FOUND/);
+  assert.match(authenticationFinish, /verifyAuthenticationResponse/);
 });
 
 test("first-device enrollment no longer requires the legacy Google Sheet staff directory", () => {
