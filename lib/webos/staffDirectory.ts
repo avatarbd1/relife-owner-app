@@ -242,11 +242,25 @@ export async function getActiveWebStaffById(
   staffId: string
 ): Promise<WebStaffIdentity | null> {
   const directory = await getWebStaffDirectory();
-  return (
-    directory.find(
-      (item) => item.staffId === staffId.trim() && item.status === "Active"
-    ) || null
+  const fromSheets = directory.find(
+    (item) => item.staffId === staffId.trim() && item.status === "Active"
   );
+  if (fromSheets) return fromSheets;
+
+  // The Sheets directory covers one fixed clinic. Staff of any other
+  // provisioned clinic exist only as canonical tenant membership, so fall back
+  // to that rather than denying them enrollment and login.
+  //
+  // Fail-soft to "not found": an unconfigured or unreachable tenant store must
+  // not turn a plain unknown-staff lookup into a thrown error, and denying
+  // access is the safe direction for an identity resolver.
+  try {
+    const { getTenantStaffIdentity } = await import("@/lib/webos/tenantStaffDirectory");
+    return await getTenantStaffIdentity(staffId);
+  } catch (error) {
+    console.error("Tenant staff identity lookup failed:", error);
+    return null;
+  }
 }
 
 export async function findActiveWebStaffByPhone(
