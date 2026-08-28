@@ -113,6 +113,14 @@ test("new clinic handoff exposes the generated tenant-scoped owner setup link", 
   assert.match(consoleSource, /Open owner setup/);
 });
 
+test("existing clinic cards can request a fresh read-only owner setup handoff", () => {
+  assert.match(routeSource, /owner_setup_link/);
+  assert.match(routeSource, /PLATFORM_CLINIC_OWNER_AMBIGUOUS/);
+  assert.match(consoleSource, /Generate owner setup link/);
+  assert.match(consoleSource, /Regenerate owner setup link/);
+  assert.match(consoleSource, /expires in 10 minutes/);
+});
+
 test("Add new clinic UI does not ask the platform owner to type slugs", () => {
   assert.match(consoleSource, /Create clinic from template/);
   assert.match(consoleSource, /Slug:/);
