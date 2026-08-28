@@ -121,3 +121,20 @@ export async function getTenantScopedWebStaffIdentity(
     financialAccess: "",
   };
 }
+
+/** List only staff with an active binding in the exact requested tenant. */
+export async function listTenantScopedWebStaffDirectory(
+  scope: TenantScope,
+): Promise<WebStaffIdentity[]> {
+  const tenant = requireTenantScope(scope);
+  const provisioning = await listStoredStaffProvisioning(tenant);
+  const staffIds = [...new Set(
+    provisioning
+      .filter((row) => row.status === "active" && row.staffId.trim())
+      .map((row) => row.staffId.trim()),
+  )];
+  const identities = await Promise.all(
+    staffIds.map((staffId) => getTenantScopedWebStaffIdentity(staffId, tenant)),
+  );
+  return identities.filter((identity): identity is WebStaffIdentity => Boolean(identity));
+}

@@ -49,3 +49,35 @@ test("current session access is clamped to clinic type before any dashboard perm
   assert.match(currentUser, /departmentAccess: \[department\]/);
   assert.match(currentUser, /if \(isRelifeLegacyTenant\(tenant\)\) return identity/);
 });
+
+test("non-Relife dashboards cannot consume unscoped Relife report or staff data", () => {
+  const reports = source("app/(dashboard)/reports/page.tsx");
+  assert.match(reports, /getVisiblePatients\(context, scope, tenantContext\.tenant\.organizationId, tenantContext\.tenant\.clinicId\)/);
+  assert.match(reports, /getPayments\(tenantContext\.tenant\.organizationId, tenantContext\.tenant\.clinicId\)/);
+  assert.match(reports, /legacyRelife \? getMonthBusinessPosition/);
+  assert.match(reports, /legacyRelife \? getSalaryStatus/);
+  assert.match(reports, /canReadFinancial && legacyRelife && <RangeReports/);
+
+  for (const path of [
+    "app/(dashboard)/security/page.tsx",
+    "app/(dashboard)/workforce/page.tsx",
+    "app/(dashboard)/patients/[patientId]/page.tsx",
+    "app/(dashboard)/performance/claims/page.tsx",
+    "app/(dashboard)/chamber/page.tsx",
+  ]) {
+    const page = source(path);
+    assert.doesNotMatch(page, /getWebStaffDirectory\(/, path);
+    assert.match(page, /listTenantScopedWebStaffDirectory\(/, path);
+  }
+});
+
+test("legacy-only reports, approvals, salary, daily and exports fail closed outside Relife", () => {
+  assert.match(source("app/(dashboard)/reports/rangeReportsActions.ts"), /LEGACY_REPORTS_NOT_AVAILABLE/);
+  assert.match(source("app/(dashboard)/finance/approvals/page.tsx"), /isRelifeLegacyTenant\(tenantContext\.tenant\)/);
+  assert.match(source("app/(dashboard)/salary/page.tsx"), /legacyRelife[\s\S]*\? await Promise\.all\(\[getStaff\(\), getSalaryPayments\(\)\]\)[\s\S]*: \[\[\], \[\]\]/);
+  assert.match(source("app/(dashboard)/daily/page.tsx"), /legacyRelife \? getDailyClinicalActivity/);
+  assert.match(source("app/api/export/csv/route.ts"), /const rows = legacyRelife/);
+  assert.match(source("app/(dashboard)/tools/layout.tsx"), /!isRelifeLegacyTenant\(tenantContext\.tenant\)\) redirect\("\/more"\)/);
+  assert.match(source("app/(dashboard)/more/page.tsx"), /const canTools = legacyRelife/);
+  assert.match(source("lib/webos/reports.ts"), /String\(row\.Organization_ID \|\| ""\)\.trim\(\) === organizationId/);
+});

@@ -1,16 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { StatusBadge } from "@/components/FeedbackUI";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-import { getWebStaffDirectory, toAccessContext } from "@/lib/webos/staffDirectory";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { toAccessContext } from "@/lib/webos/staffDirectory";
+import { listTenantScopedWebStaffDirectory } from "@/lib/webos/tenantStaffDirectory";
 import { listPasskeysForStaff } from "@/lib/webauthn";
 
 export default async function SecurityPage() {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
   if (!context.roles.includes("Owner")) redirect("/security/passkeys");
 
   const [directory, ownerPasskeys] = await Promise.all([
-    getWebStaffDirectory(),
+    listTenantScopedWebStaffDirectory(tenantContext.tenant),
     listPasskeysForStaff(context.staffId).catch(() => []),
   ]);
   const active = directory.filter((item) => item.status === "Active");

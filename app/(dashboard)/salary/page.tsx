@@ -9,6 +9,7 @@ import { canPerform } from "@/lib/webos/access";
 import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 
 function monthDhaka(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -31,14 +32,16 @@ function dateKey(value: string | undefined): string {
 }
 
 export default async function SalaryPage() {
-  const [tenantContext, cookieStore, allStaff, allPayments] = await Promise.all([
+  const [tenantContext, cookieStore] = await Promise.all([
     requireCurrentTenantAccessContext(),
     cookies(),
-    getStaff(),
-    getSalaryPayments(),
   ]);
   const context = tenantContext.access;
   await requireTenantFeature(tenantContext.tenant, "optional.salary");
+  const legacyRelife = isRelifeLegacyTenant(tenantContext.tenant);
+  const [allStaff, allPayments] = legacyRelife
+    ? await Promise.all([getStaff(), getSalaryPayments()])
+    : [[], []];
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const readableDepartments = (["Physio", "Dental"] as const).filter(
     (department) => inScope(scope, department) && canPerform(context, "salary.read", department)

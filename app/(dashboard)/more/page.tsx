@@ -3,6 +3,7 @@ import { actionsForRoles, canPerform } from "@/lib/webos/access";
 import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
 import { featureDecision } from "@/lib/domain/tenancy/configurationCore";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 
 export default async function MorePage() {
   const { access: context, tenant } = await requireCurrentTenantAccessContext();
@@ -10,6 +11,7 @@ export default async function MorePage() {
   const enabled = (key: string) => featureDecision(configuration, key).ok;
   const actions = new Set(actionsForRoles(context.roles));
   const isOwner = context.roles.includes("Owner");
+  const legacyRelife = isRelifeLegacyTenant(tenant);
 
   const canReports = enabled("core.reports") &&
     (actions.has("report.read_operational") || actions.has("report.read_financial"));
@@ -20,15 +22,15 @@ export default async function MorePage() {
     canPerform(context, "audit.read", "Physio") ||
     canPerform(context, "audit.read", "Dental")
   );
-  const canInventory = enabled("optional.inventory") && canPerform(context, "inventory.read", "Physio");
-  const canTools =
+  const canInventory = legacyRelife && enabled("optional.inventory") && canPerform(context, "inventory.read", "Physio");
+  const canTools = legacyRelife && (
     canPerform(context, "clinical.read", "Physio") ||
     canInventory ||
-    actions.has("payment.correct_own_today");
-  const canDentalTools =
+    actions.has("payment.correct_own_today"));
+  const canDentalTools = legacyRelife && (
     canPerform(context, "patient.read", "Dental") ||
     canPerform(context, "register.read", "Dental") ||
-    canPerform(context, "clinical.read", "Dental");
+    canPerform(context, "clinical.read", "Dental"));
   const canBulkImport =
     canPerform(context, "patient.create", "Physio") ||
     canPerform(context, "patient.create", "Dental");
