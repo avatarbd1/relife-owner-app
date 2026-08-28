@@ -54,7 +54,7 @@ test("owner staff IDs are generated from clinic name and clinic type", () => {
   assert.equal(generateOwnerStaffId("Relife Dental", "dental"), "RLF-DT-001");
   assert.equal(generateOwnerStaffId("Smile Dental", "dental"), "SML-DT-001");
   assert.equal(generateOwnerStaffId("ABC Clinic", "doctor_chamber"), "ABC-DC-001");
-  assert.equal(generateOwnerStaffId("Care Center", "other", 2), "CRX-OT-002");
+  assert.equal(generateOwnerStaffId("Care Center", "other", 2), "CRA-OT-002");
 });
 
 test("platform provisioning auto-generates owner staff ID when omitted", () => {
