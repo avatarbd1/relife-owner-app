@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+// Issue #231 regression contract: the normal clinic onboarding path must stay
+// template-driven and must never require manual slug entry.
 const edge = readFileSync(
   new URL("../supabase/functions/relife-platform-control/index.ts", import.meta.url),
   "utf8",
