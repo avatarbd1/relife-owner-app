@@ -72,11 +72,20 @@ test("platform control sends a structured JSON parameter to the canonical provis
   assert.doesNotMatch(edge, /JSON\.stringify\(payload\).*::jsonb/);
 });
 
-test("clinic type templates create editable starter configuration without clinic-specific branches", () => {
-  assert.match(edge, /Treatment Room 1/);
-  assert.match(edge, /Treatment Bed 1/);
+test("clinic type templates keep Physio neutral and other starter configuration editable", () => {
+  const physioTemplate = edge.match(
+    /if \(clinicType === "physiotherapy"\) \{[\s\S]*?\n  \}/,
+  )?.[0] || "";
+  assert.match(physioTemplate, /serviceDepartment: "Physio"/);
+  assert.match(physioTemplate, /rooms: \[\]/);
+  assert.match(physioTemplate, /resources: \[\]/);
+  assert.match(physioTemplate, /bookingMode: "simple"/);
+  assert.match(physioTemplate, /resourceRequired: false/);
+  assert.doesNotMatch(physioTemplate, /Treatment Room|Treatment Bed|Relife/i);
+
   assert.match(edge, /Dental Room 1/);
   assert.match(edge, /Dental Chair 1/);
+  assert.match(edge, /Consultation Room 1/);
   assert.match(edge, /Editable starter template/);
   assert.doesNotMatch(edge, /Relife Dental|relife-dental|amtali-main/);
 });
