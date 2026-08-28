@@ -2,13 +2,14 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { StatusBadge } from "@/components/FeedbackUI";
 import { getFinanceLedgerSnapshot } from "@/lib/webos/financeLedgers";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 export default async function FinanceRecordsPage() {
-  const [context, cookieStore] = await Promise.all([requireCurrentAccessContext(), cookies()]);
+  const [tenantContext, cookieStore] = await Promise.all([requireCurrentTenantAccessContext(), cookies()]);
+  const context = tenantContext.access;
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
-  const snapshot = await getFinanceLedgerSnapshot(context, scope);
+  const snapshot = await getFinanceLedgerSnapshot(context, scope, tenantContext.tenant);
   const cards = [
     snapshot.capabilities.collections && ["Daily collection", "আজকের patient-wise collection, collector ও payment method", "/finance/daily-collection", "bg-blue-50 text-blue-900"],
     snapshot.capabilities.collections && ["Collection history", "Full receipt ledger with date, department, method and search filters", "/finance/collection-history", "bg-emerald-50 text-emerald-900"],
