@@ -36,6 +36,34 @@ test("staff enrollment is always bound to exact organization and clinic", () => 
   assert.match(ownerRoute, /createStaffEnrollmentToken\(staff\.staffId, passkeys\.length, current\.tenant\)/);
 });
 
+test("passkey registration does not re-impose the global legacy Sheet staff directory", () => {
+  const webauthn = source("lib/webauthn.ts");
+  const registrationStart = webauthn.slice(
+    webauthn.indexOf("export async function beginPasskeyRegistration"),
+    webauthn.indexOf("export async function finishPasskeyRegistration"),
+  );
+  const registrationFinish = webauthn.slice(
+    webauthn.indexOf("export async function finishPasskeyRegistration"),
+    webauthn.indexOf("export async function beginPasskeyAuthentication"),
+  );
+
+  assert.doesNotMatch(webauthn, /getActiveWebStaffById/);
+  assert.doesNotMatch(registrationStart, /STAFF_NOT_FOUND/);
+  assert.doesNotMatch(registrationFinish, /STAFF_NOT_FOUND/);
+});
+
+test("passkey authentication requires Platform Owner authority or an exact tenant identity", () => {
+  const webauthn = source("lib/webauthn.ts");
+  const authentication = webauthn.slice(
+    webauthn.indexOf("export async function finishPasskeyAuthentication"),
+  );
+
+  assert.match(authentication, /isPlatformOwnerStaffId\(passkey\.staffId/);
+  assert.match(authentication, /resolveStaffTenantContext\(passkey\.staffId\)/);
+  assert.match(authentication, /getTenantScopedWebStaffIdentity\(passkey\.staffId, tenant\)/);
+  assert.match(authentication, /if \(!tenantIdentity\) throw new Error\("STAFF_NOT_FOUND"\)/);
+});
+
 test("platform provisioning returns a tenant-scoped owner setup link", () => {
   const route = source("app/api/platform/clinics/route.ts");
   assert.match(route, /ownerSetupUrl/);
