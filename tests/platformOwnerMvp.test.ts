@@ -31,13 +31,14 @@ test("platform authority is an explicit allowlist, not a tenant Owner role", () 
   assert.equal(isPlatformOwnerStaffId("OWN001", "ST001,OPS02"), false);
 });
 
-test("commercial plan prices and premium minimums are deterministic", () => {
+test("commercial plan prices and only approved premium minimums are defaulted", () => {
   assert.equal(PLATFORM_PLANS.starter.priceBdt, 499);
   assert.equal(PLATFORM_PLANS.standard.priceBdt, 999);
   assert.equal(PLATFORM_PLANS.premium.priceBdt, 1499);
-  for (const key of ["optional.live_chamber", "optional.gamification", "optional.finance_advanced"]) {
-    assert.equal(PLATFORM_PLANS.premium.defaultFeatureKeys.includes(key), true, key);
-  }
+  assert.deepEqual([...PLATFORM_PLANS.starter.defaultFeatureKeys], [...CORE_FEATURE_KEYS]);
+  assert.deepEqual([...PLATFORM_PLANS.standard.defaultFeatureKeys], [...CORE_FEATURE_KEYS]);
+  const premiumOptional = PLATFORM_PLANS.premium.defaultFeatureKeys.filter((key) => !CORE_FEATURE_KEYS.includes(key as (typeof CORE_FEATURE_KEYS)[number]));
+  assert.deepEqual(premiumOptional, ["optional.live_chamber", "optional.gamification", "optional.finance_advanced"]);
 });
 
 test("provisioning always preserves canonical core features and seven-day hours", () => {
