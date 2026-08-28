@@ -22,7 +22,6 @@ import {
   fetchSheetRanges,
   getSheetProperties,
 } from "@/lib/data/googleSheets";
-import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
 
 export const WEBAUTHN_CHALLENGE_COOKIE = "relife_webauthn_challenge";
 export const WEBAUTHN_CHALLENGE_MAX_AGE = 5 * 60;
@@ -327,12 +326,15 @@ export async function revokePasskey(staffId: string, credentialId: string): Prom
   ]);
 }
 
+/**
+ * Registration callers must authorize the identity before reaching this
+ * cryptographic/storage layer. Tenant enrollment and current-session routes
+ * already do that through the canonical tenant-scoped identity resolver.
+ */
 export async function beginPasskeyRegistration(
   staffId: string,
   fullName: string
 ): Promise<{ options: Awaited<ReturnType<typeof generateRegistrationOptions>>; stateToken: string }> {
-  const activeStaff = await getActiveWebStaffById(staffId);
-  if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
   const existing = (await readStoredPasskeys()).filter(
     (item) => item.staffId === staffId && isActive(item)
   );
@@ -370,8 +372,6 @@ export async function finishPasskeyRegistration(
   displayNameInput?: string
 ): Promise<PasskeyMetadata> {
   if (state.type !== "register" || state.staffId !== staffId) throw new Error("WEBAUTHN_CHALLENGE_INVALID");
-  const activeStaff = await getActiveWebStaffById(staffId);
-  if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
   const { rpID, origin } = webauthnConfig();
   const verification = await verifyRegistrationResponse({
     response,
@@ -439,6 +439,11 @@ export async function beginPasskeyAuthentication(): Promise<{
   };
 }
 
+/**
+ * This layer verifies the credential and returns its stored staff id. The
+ * authentication route must separately authorize that staff id against the
+ * Platform Owner list or canonical tenant binding before issuing a session.
+ */
 export async function finishPasskeyAuthentication(
   state: ChallengeState,
   response: AuthenticationResponseJSON
@@ -453,8 +458,6 @@ export async function finishPasskeyAuthentication(
   ) {
     throw new Error("PASSKEY_USER_MISMATCH");
   }
-  const activeStaff = await getActiveWebStaffById(passkey.staffId);
-  if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
   const { rpID, origin } = webauthnConfig();
   const credential: WebAuthnCredential = {
     id: passkey.credentialId,
