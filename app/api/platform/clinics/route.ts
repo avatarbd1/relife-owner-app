@@ -9,12 +9,14 @@ import {
 } from "@/lib/domain/platform/platformOwnerMvp";
 import { requireTenantScope } from "@/lib/domain/tenancy/policy";
 import { requireCurrentPlatformOwner } from "@/lib/platform/currentPlatformOwner";
+import { createStaffEnrollmentToken } from "@/lib/staffEnrollment";
+import { listPasskeysForStaff, webauthnConfig } from "@/lib/webauthn";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 
 type ControlResponse = {
   ok: true;
   snapshot: PlatformOwnerSnapshot;
-  scope?: { organizationId: string; clinicId: string };
+  scope?: { organizationId: string; clinicId: string; ownerStaffId?: string };
 };
 
 function fail(error: unknown) {
@@ -78,7 +80,34 @@ export async function POST(request: NextRequest) {
       actorStaffId: owner.staffId,
       input: controlInput,
     });
-    return NextResponse.json(result);
+
+    let ownerSetupUrl: string | null = null;
+    const provisionedOwnerStaffId = String(result.scope?.ownerStaffId || "").trim();
+    if (result.scope && provisionedOwnerStaffId) {
+      try {
+        const scope = requireTenantScope(result.scope);
+        const passkeys = await listPasskeysForStaff(provisionedOwnerStaffId);
+        const token = createStaffEnrollmentToken(
+          provisionedOwnerStaffId,
+          passkeys.length,
+          scope,
+        );
+        const setupUrl = new URL("/staff-setup", webauthnConfig().origin);
+        setupUrl.searchParams.set("token", token);
+        ownerSetupUrl = setupUrl.toString();
+      } catch (error) {
+        // Provisioning has already committed. Never turn a successful clinic
+        // creation into a retryable failure solely because setup-link creation
+        // is temporarily unavailable.
+        console.error("Platform owner setup link creation failed", error);
+      }
+    }
+
+    return NextResponse.json({
+      ...result,
+      ownerStaffId: provisionedOwnerStaffId || null,
+      ownerSetupUrl,
+    });
   } catch (error) {
     return fail(error);
   }
