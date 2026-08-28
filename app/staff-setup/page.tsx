@@ -65,12 +65,12 @@ function StaffSetupForm() {
         throw new Error(verifyPayload?.error || "Passkey verify করা যায়নি।");
       }
 
-      setMessage("Device setup complete. Relife খুলছে…");
+      setMessage("Device setup complete. এখন Staff login থেকে Fingerprint / Face ID দিয়ে ঢুকুন। Clinic এখনও setup অবস্থায় থাকলে Platform activation-এর পর daily access খুলবে।");
       if (navigator.vibrate) navigator.vibrate(12);
       window.setTimeout(() => {
-        router.replace("/home");
+        router.replace("/login");
         router.refresh();
-      }, 450);
+      }, 900);
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "";
       const duplicateAuthenticator =
@@ -137,7 +137,7 @@ function StaffSetupForm() {
         </button>
 
         <p className="mt-4 text-xs leading-5 text-slate-400">
-          Setup link one-time/short-lived হতে পারে। Login link আলাদা করে লাগবে না; মূল Relife app খুলে Fingerprint / Face ID চাপলেই হবে। Relife biometric image সংরক্ষণ করে না; device/authenticator verification handle করে।
+          Setup link one-time/short-lived হতে পারে। Login link আলাদা করে লাগবে না; মূল Relife app খুলে Fingerprint / Face ID চাপলেই হবে। Clinic setup অবস্থায় থাকলে device enrollment করা যাবে, কিন্তু operational workspace Platform activation না হওয়া পর্যন্ত locked থাকবে। Relife biometric image সংরক্ষণ করে না; device/authenticator verification handle করে।
         </p>
       </div>
     </div>
