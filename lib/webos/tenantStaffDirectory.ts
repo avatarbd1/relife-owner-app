@@ -48,10 +48,22 @@ function primaryDepartment(
   return departments[0] || null;
 }
 
+async function legacyIdentity(staffId: string): Promise<WebStaffIdentity | null> {
+  try {
+    return await getActiveWebStaffById(staffId);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Resolve authorization from the exact tenant binding. The legacy Sheet is
- * consulted only for non-authoritative display metadata while Relife remains
- * in bounded dual-write migration.
+ * Resolve authorization only after an exact active tenant binding exists.
+ *
+ * Fully provisioned SaaS staff take role/department authority exclusively from
+ * Supabase tenant bindings. During the bounded Relife cutover, an exact-bound
+ * legacy staff row whose role AND department children have not been migrated
+ * yet may temporarily reuse its Sheet authorization. That compatibility path
+ * can never grant an unbound staff member access to a tenant.
  */
 export async function getTenantScopedWebStaffIdentity(
   rawStaffId: string,
@@ -67,16 +79,27 @@ export async function getTenantScopedWebStaffIdentity(
   );
   if (!binding) return null;
 
+  const hasTenantRoles = binding.roleCodes.length > 0;
+  const hasTenantDepartments = binding.departmentIds.length > 0;
+  if (hasTenantRoles !== hasTenantDepartments) return null;
+
+  const legacy = await legacyIdentity(staffId);
+
+  if (!hasTenantRoles && !hasTenantDepartments) {
+    // Transitional Relife compatibility is permitted only behind the exact
+    // active binding found above. No global Sheet-only tenant fallback exists.
+    return legacy;
+  }
+
   const roles = tenantRoles(binding.roleCodes);
   const departmentAccess = tenantDepartments(binding.departmentIds);
-  if (roles.length === 0 || departmentAccess.length === 0) return null;
-
-  let legacy: WebStaffIdentity | null = null;
-  try {
-    legacy = await getActiveWebStaffById(staffId);
-  } catch {
-    // Tenant authorization must not depend on the Relife Sheet being present.
-    legacy = null;
+  if (
+    roles.length !== new Set(binding.roleCodes).size ||
+    departmentAccess.length !== new Set(binding.departmentIds).size ||
+    roles.length === 0 ||
+    departmentAccess.length === 0
+  ) {
+    return null;
   }
 
   const primary = primaryDepartment(legacy, departmentAccess);
@@ -91,8 +114,9 @@ export async function getTenantScopedWebStaffIdentity(
     primaryDepartment: primary,
     roles,
     departmentAccess,
-    // These legacy flags are not tenant-keyed. Do not widen tenant authority
-    // from them; tenant role + department bindings remain authoritative.
+    // Legacy policy flags are not tenant-keyed, so they cannot widen a fully
+    // migrated tenant membership. Transitional Relife rows return the legacy
+    // identity above until their tenant children are populated.
     clinicalWriteScope: "",
     financialAccess: "",
   };
