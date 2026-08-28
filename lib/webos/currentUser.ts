@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, getSessionStaffId } from "@/lib/auth";
+import { isPlatformOwnerStaffId } from "@/lib/domain/platform/authority";
 import {
   resolveStaffTenantContext,
   type StaffTenantContext,
@@ -13,6 +14,7 @@ import {
   toAccessContext,
   type WebStaffIdentity,
 } from "@/lib/webos/staffDirectory";
+import { getTenantScopedWebStaffIdentity } from "@/lib/webos/tenantStaffDirectory";
 
 async function currentSessionStaffId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -22,6 +24,13 @@ async function currentSessionStaffId(): Promise<string | null> {
 async function currentTenantSelection() {
   const cookieStore = await cookies();
   return parseTenantSelection(cookieStore.get(ACTIVE_TENANT_COOKIE)?.value);
+}
+
+function isPlatformOwner(staffId: string): boolean {
+  return isPlatformOwnerStaffId(
+    staffId,
+    String(process.env.PLATFORM_OWNER_STAFF_IDS || "").trim(),
+  );
 }
 
 export function isOwnerTenantCutoverEnforced(): boolean {
@@ -38,10 +47,26 @@ async function enforceOwnerTenantBinding(identity: WebStaffIdentity): Promise<vo
 export async function getCurrentStaffIdentity(): Promise<WebStaffIdentity | null> {
   const staffId = await currentSessionStaffId();
   if (!staffId) return null;
-  const identity = await getActiveWebStaffById(staffId);
-  if (!identity) return null;
-  await enforceOwnerTenantBinding(identity);
-  return identity;
+
+  // Platform authority is intentionally outside clinic tenancy.
+  if (isPlatformOwner(staffId)) {
+    return getActiveWebStaffById(staffId);
+  }
+
+  try {
+    const tenant = await resolveStaffTenantContext(staffId, await currentTenantSelection());
+    return await getTenantScopedWebStaffIdentity(staffId, tenant);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "TENANT_CONTEXT_UNAVAILABLE";
+    if (message !== "TENANT_BINDING_NOT_FOUND") throw error;
+
+    // Temporary compatibility only for pre-cutover Relife staff that have not
+    // received a tenant binding yet. New SaaS tenant staff never depend on it.
+    const legacy = await getActiveWebStaffById(staffId);
+    if (!legacy) return null;
+    await enforceOwnerTenantBinding(legacy);
+    return legacy;
+  }
 }
 
 export async function getCurrentAccessContext(): Promise<AccessContext | null> {
