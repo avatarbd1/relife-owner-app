@@ -66,8 +66,8 @@ test("server adapter never silently falls back to Relife tenant IDs", () => {
 test("legacy Owner operational identity stays stable while tenant binding remains separately gated", () => {
   assert.match(currentUser, /RELIFE_TENANT_CUTOVER_ENFORCED/);
   assert.match(currentUser, /identity\.roles\.includes\("Owner"\)/);
-  assert.match(currentUser, /await resolveStaffTenantContext\(identity\.staffId\)/);
-  assert.match(currentUser, /await enforceOwnerTenantBinding\(identity\)/);
+  assert.match(currentUser, /await resolveStaffTenantContext\(identity\.staffId, requestedScope\)/);
+  assert.match(currentUser, /await enforceOwnerTenantBinding\(identity, requestedScope\)/);
   assert.match(currentUser, /getCurrentTenantContext/);
   assert.match(currentUser, /requireCurrentTenantAccessContext/);
   assert.doesNotMatch(currentUser, /organizationSlug\s*:\s*["']relife["']/);
