@@ -19,34 +19,16 @@ export interface PlatformPlanDefinition {
   defaultFeatureKeys: readonly string[];
 }
 
-const STANDARD_OPTIONAL = [
-  "optional.clinical_notes",
-  "optional.treatment_plans",
-  "optional.files",
-  "optional.attendance",
-  "optional.inventory",
-  "optional.notifications",
-] as const;
-
-const PREMIUM_OPTIONAL = [
-  ...STANDARD_OPTIONAL,
+const PREMIUM_REQUIRED = [
   "optional.live_chamber",
-  "optional.room_bed_runtime",
-  "optional.machines",
   "optional.gamification",
-  "optional.rewards",
   "optional.finance_advanced",
-  "optional.salary",
-  "optional.live_chat",
-  "optional.packages",
-  "optional.sms",
-  "optional.audit_viewer",
 ] as const;
 
 export const PLATFORM_PLANS: Record<PlatformPlanCode, PlatformPlanDefinition> = {
   starter: { code: "starter", label: "Starter", priceBdt: 499, defaultFeatureKeys: CORE_FEATURE_KEYS },
-  standard: { code: "standard", label: "Standard", priceBdt: 999, defaultFeatureKeys: [...CORE_FEATURE_KEYS, ...STANDARD_OPTIONAL] },
-  premium: { code: "premium", label: "Premium", priceBdt: 1499, defaultFeatureKeys: [...CORE_FEATURE_KEYS, ...PREMIUM_OPTIONAL] },
+  standard: { code: "standard", label: "Standard", priceBdt: 999, defaultFeatureKeys: CORE_FEATURE_KEYS },
+  premium: { code: "premium", label: "Premium", priceBdt: 1499, defaultFeatureKeys: [...CORE_FEATURE_KEYS, ...PREMIUM_REQUIRED] },
 };
 
 export type ClinicType = "physiotherapy" | "dental" | "doctor_chamber" | "other";
