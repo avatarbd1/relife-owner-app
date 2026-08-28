@@ -22,7 +22,9 @@ import {
   fetchSheetRanges,
   getSheetProperties,
 } from "@/lib/data/googleSheets";
-import { getActiveWebStaffById } from "@/lib/webos/staffDirectory";
+import { isPlatformOwnerStaffId } from "@/lib/domain/platform/authority";
+import { resolveStaffTenantContext } from "@/lib/domain/tenancy/staffTenantContext";
+import { getTenantScopedWebStaffIdentity } from "@/lib/webos/tenantStaffDirectory";
 
 export const WEBAUTHN_CHALLENGE_COOKIE = "relife_webauthn_challenge";
 export const WEBAUTHN_CHALLENGE_MAX_AGE = 5 * 60;
@@ -331,8 +333,10 @@ export async function beginPasskeyRegistration(
   staffId: string,
   fullName: string
 ): Promise<{ options: Awaited<ReturnType<typeof generateRegistrationOptions>>; stateToken: string }> {
-  const activeStaff = await getActiveWebStaffById(staffId);
-  if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
+  // The registration routes resolve either a tenant-scoped enrollment identity
+  // or an already-authenticated current identity before reaching this writer.
+  // Re-reading the global legacy Sheet here would reject tenant-native staff
+  // that correctly exist only in Supabase.
   const existing = (await readStoredPasskeys()).filter(
     (item) => item.staffId === staffId && isActive(item)
   );
@@ -370,8 +374,6 @@ export async function finishPasskeyRegistration(
   displayNameInput?: string
 ): Promise<PasskeyMetadata> {
   if (state.type !== "register" || state.staffId !== staffId) throw new Error("WEBAUTHN_CHALLENGE_INVALID");
-  const activeStaff = await getActiveWebStaffById(staffId);
-  if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
   const { rpID, origin } = webauthnConfig();
   const verification = await verifyRegistrationResponse({
     response,
@@ -453,8 +455,18 @@ export async function finishPasskeyAuthentication(
   ) {
     throw new Error("PASSKEY_USER_MISMATCH");
   }
-  const activeStaff = await getActiveWebStaffById(passkey.staffId);
-  if (!activeStaff) throw new Error("STAFF_NOT_FOUND");
+  if (!isPlatformOwnerStaffId(passkey.staffId, process.env.PLATFORM_OWNER_STAFF_IDS)) {
+    let tenantIdentity = null;
+    try {
+      const tenant = await resolveStaffTenantContext(passkey.staffId);
+      tenantIdentity = await getTenantScopedWebStaffIdentity(passkey.staffId, tenant);
+    } catch {
+      // Authentication fails closed when the exact active tenant binding cannot
+      // be resolved. Legacy Relife staff continue through their exact binding's
+      // bounded compatibility identity in tenantStaffDirectory.
+    }
+    if (!tenantIdentity) throw new Error("STAFF_NOT_FOUND");
+  }
   const { rpID, origin } = webauthnConfig();
   const credential: WebAuthnCredential = {
     id: passkey.credentialId,
