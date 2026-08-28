@@ -22,6 +22,10 @@ const routeSource = readFileSync(
   new URL("../app/api/platform/clinics/route.ts", import.meta.url),
   "utf8",
 );
+const ownerDepartmentMigration = readFileSync(
+  new URL("../supabase/migrations/20260828160000_owner_department_scope.sql", import.meta.url),
+  "utf8",
+);
 
 test("tracked Platform Control Edge source is valid TypeScript syntax", () => {
   const result = transpileModule(edge, {
@@ -88,6 +92,25 @@ test("clinic type templates keep Physio neutral and other starter configuration 
   assert.match(edge, /Consultation Room 1/);
   assert.match(edge, /Editable starter template/);
   assert.doesNotMatch(edge, /Relife Dental|relife-dental|amtali-main/);
+});
+
+test("owner department scope follows tenant configuration without rewriting legacy rows", () => {
+  assert.match(ownerDepartmentMigration, /owner_department_scope_for_binding/);
+  assert.match(ownerDepartmentMigration, /sv\.department in \('Physio', 'Dental'\)/);
+  assert.match(ownerDepartmentMigration, /if v_clinic_type = 'physiotherapy' then\s+return 'Physio'/);
+  assert.match(ownerDepartmentMigration, /if v_clinic_type = 'dental' then\s+return 'Dental'/);
+  assert.match(ownerDepartmentMigration, /if coalesce\(array_length\(v_departments, 1\), 0\) > 1 then\s+return 'All'/);
+  assert.match(ownerDepartmentMigration, /before insert or update of department_id/);
+  assert.match(ownerDepartmentMigration, /role_code = 'owner'/);
+  assert.doesNotMatch(ownerDepartmentMigration, /update\s+relife\.staff_tenant_departments\s+set/i);
+  assert.doesNotMatch(ownerDepartmentMigration, /amtali-main|3222b282-bc98-4721-9db1-196cd6d94647|bc77ffb9-3379-40cc-a1eb-89b0e988fe94/i);
+});
+
+test("new clinic handoff exposes the generated tenant-scoped owner setup link", () => {
+  assert.match(routeSource, /ownerSetupUrl/);
+  assert.match(consoleSource, /ownerSetupUrl/);
+  assert.match(consoleSource, /Clinic created\. Owner setup is ready\./);
+  assert.match(consoleSource, /Open owner setup/);
 });
 
 test("Add new clinic UI does not ask the platform owner to type slugs", () => {
