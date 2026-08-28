@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   isPlatformOwnerStaffId,
   parsePlatformOwnerStaffIds,
@@ -13,6 +14,10 @@ import {
   requireReleaseSha,
   trialEndsAt,
 } from "../lib/domain/platform/platformOwnerMvp.ts";
+
+function source(path: string): string {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
 
 function baseInput() {
   return {
@@ -36,6 +41,17 @@ test("platform authority is an explicit allowlist, not a tenant Owner role", () 
   assert.equal(postLoginPathForStaffId("ST001", "ST001,OPS02"), "/platform");
   assert.equal(postLoginPathForStaffId("OWN001", "ST001,OPS02"), "/home");
   assert.equal(postLoginPathForStaffId("ST001", ""), "/home");
+});
+
+test("platform owner is routed before any tenant dashboard resolution", () => {
+  const root = source("app/page.tsx");
+  const dashboard = source("app/(dashboard)/layout.tsx");
+  assert.match(root, /if \(await isCurrentPlatformOwner\(\)\) redirect\("\/platform"\)/);
+  const platformCheck = dashboard.indexOf("await isCurrentPlatformOwner()");
+  const tenantResolve = dashboard.indexOf("await requireCurrentTenantAccessContext()");
+  assert.ok(platformCheck >= 0, "platform check missing");
+  assert.ok(tenantResolve > platformCheck, "tenant resolution must run only after platform-owner bypass");
+  assert.doesNotMatch(dashboard, /Promise\.all\([\s\S]*requireCurrentTenantAccessContext/);
 });
 
 test("commercial plan prices and only approved premium minimums are defaulted", () => {
