@@ -1,8 +1,13 @@
 import "server-only";
 
-import { getCashMovements, getCashMovementsForAdminView, getExpenses, getSalaryPayments } from "@/lib/data";
 import type { Department, Scope } from "@/lib/types";
 import { canPerform, type AccessContext, type WebAction } from "@/lib/webos/access";
+import {
+  readTenantCashMovements,
+  readTenantExpenses,
+  readTenantSalaryPayments,
+  type FinanceTenantContext,
+} from "@/lib/webos/tenantFinanceData";
 
 type ClinicDepartment = "Physio" | "Dental";
 
@@ -34,7 +39,8 @@ function canAny(context: AccessContext, scope: Scope, action: WebAction): boolea
 
 export async function getFinanceHistorySnapshot(
   context: AccessContext,
-  scope: Scope
+  scope: Scope,
+  tenant: FinanceTenantContext
 ) {
   const receptionLimited = isReceptionFinanceLimited(context);
   const needsExpenses = receptionLimited || canAny(context, scope, "expense.read");
@@ -42,9 +48,9 @@ export async function getFinanceHistorySnapshot(
   const needsSalary = !receptionLimited && canAny(context, scope, "salary.read");
 
   const [expenses, cashMovements, salaryPayments] = await Promise.all([
-    needsExpenses ? getExpenses() : Promise.resolve([]),
-    needsCash ? getCashMovementsForAdminView() : Promise.resolve([]),
-    needsSalary ? getSalaryPayments() : Promise.resolve([]),
+    needsExpenses ? readTenantExpenses(tenant, scope) : Promise.resolve([]),
+    needsCash ? readTenantCashMovements(tenant, scope) : Promise.resolve([]),
+    needsSalary ? readTenantSalaryPayments(tenant, scope) : Promise.resolve([]),
   ]);
 
   const visibleExpenses = expenses
