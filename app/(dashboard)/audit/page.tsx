@@ -2,16 +2,19 @@ import { cookies } from "next/headers";
 import AuditLogClient from "@/components/AuditLogClient";
 import ScopeSelector from "@/components/ScopeSelector";
 import { StatusBadge } from "@/components/FeedbackUI";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { getAuditOverview } from "@/lib/webos/adminOverview";
 import { canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { allowedScopesForContext, resolveAuthorizedScope } from "@/lib/webos/scope";
 
 export default async function AuditPage() {
-  const [context, cookieStore] = await Promise.all([
-    requireCurrentAccessContext(),
+  const [tenantContext, cookieStore] = await Promise.all([
+    requireCurrentTenantAccessContext(),
     cookies(),
   ]);
+  const context = tenantContext.access;
+  await requireTenantFeature(tenantContext.tenant, "optional.audit_viewer");
   const canRead =
     canPerform(context, "audit.read", "Physio") ||
     canPerform(context, "audit.read", "Dental");
@@ -26,7 +29,7 @@ export default async function AuditPage() {
 
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const allowedScopes = allowedScopesForContext(context);
-  const overview = await getAuditOverview(context, scope);
+  const overview = await getAuditOverview(context, scope, tenantContext.tenant);
 
   return (
     <div className="space-y-4">
@@ -35,7 +38,7 @@ export default async function AuditPage() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200">Administration</p>
             <h1 className="mt-1 text-2xl font-bold">Audit log</h1>
-            <p className="mt-1 text-xs leading-5 text-slate-300">Security events, financial actions and system changes from live audit sheets.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-300">Security, financial and system events are limited to the active clinic.</p>
           </div>
           <StatusBadge tone={overview.critical.length ? "error" : "success"} className="border-white/10">
             {overview.critical.length ? `${overview.critical.length} critical` : "No critical loaded"}
