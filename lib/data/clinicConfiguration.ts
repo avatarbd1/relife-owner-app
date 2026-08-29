@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/data/supabaseAdmin";
 import type { TenantScope } from "@/lib/domain/tenancy/policy";
 import { requireTenantScope } from "@/lib/domain/tenancy/policy";
 import type { ClinicBookingConfig, ClinicResource } from "@/lib/domain/tenancy/clinicConfiguration";
+import { resolveOperationalStore } from "@/lib/domain/tenancy/operationalStore";
 import type { ClinicConfigurationSnapshot, ClinicProfileConfiguration, ClinicRoomConfiguration, ClinicServiceConfiguration, OperatingHourConfiguration } from "@/lib/domain/tenancy/configurationCore";
 
 function adminClient(): SupabaseClient {
@@ -44,7 +45,7 @@ export async function readClinicConfiguration(scope: TenantScope, client = admin
   const c = clinic.data as Record<string, unknown> | null;
   const s = settings.data as Record<string, unknown> | null;
   const profile: ClinicProfileConfiguration | null = c && s ? {
-    ...tenant, clinicName: String(c.name || ""), clinicType: s.clinic_type as ClinicProfileConfiguration["clinicType"], branchName: String(s.branch_name || ""), address: String(s.address || ""), phone: String(s.phone || ""), email: String(s.email || ""), logoUrl: String(s.logo_url || ""), currency: String(s.currency || ""), locale: String(s.locale || ""), timezone: String(c.timezone || ""), lifecycle: String(c.status || ""),
+    ...tenant, clinicName: String(c.name || ""), clinicType: s.clinic_type as ClinicProfileConfiguration["clinicType"], operationalStore: resolveOperationalStore(s.operational_store), branchName: String(s.branch_name || ""), address: String(s.address || ""), phone: String(s.phone || ""), email: String(s.email || ""), logoUrl: String(s.logo_url || ""), currency: String(s.currency || ""), locale: String(s.locale || ""), timezone: String(c.timezone || ""), lifecycle: String(c.status || ""),
   } : null;
   return {
     scope: tenant,
@@ -74,7 +75,14 @@ export async function writeFacilityConfiguration(scope: TenantScope, input: { ro
   ensure((await relife.from("clinic_booking_config").upsert({ ...scoped, booking_mode: b.bookingMode, default_duration_min: b.defaultDurationMin, slot_interval_min: b.slotIntervalMin, max_simultaneous: b.maxSimultaneous, provider_required: b.providerRequired, resource_required: b.resourceRequired, block_duplicate_patient_overlap: b.blockDuplicatePatientOverlap, allow_walk_in: b.allowWalkIn, cancellation_notice_min: b.cancellationNoticeMin, late_arrival_grace_min: b.lateArrivalGraceMin, capacity_rules: b.capacityRules }, { onConflict: "organization_id,clinic_id" })).error, "BOOKING_WRITE");
 }
 
-export async function writeClinicProfile(scope: TenantScope, profile: Omit<ClinicProfileConfiguration, keyof TenantScope | "lifecycle">, actor: string, client = adminClient()) {
+/**
+ * `operationalStore` is deliberately absent from the writable profile. Which
+ * store owns a clinic's operational record is a platform/migration decision
+ * made under evidence, never something a clinic's own settings edit may flip —
+ * a clinic silently repointed at an empty store would look like total data loss
+ * to the people using it.
+ */
+export async function writeClinicProfile(scope: TenantScope, profile: Omit<ClinicProfileConfiguration, keyof TenantScope | "lifecycle" | "operationalStore">, actor: string, client = adminClient()) {
   const tenant = requireTenantScope(scope); const relife = client.schema("relife"); const scoped = dbScope(tenant);
   const clinicUpdate = await relife.from("clinics").update({ name: profile.clinicName, timezone: profile.timezone }).match({ organization_id: scoped.organization_id, id: scoped.clinic_id }).select("id").maybeSingle();
   ensure(clinicUpdate.error, "PROFILE_WRITE"); if (!clinicUpdate.data) throw new Error("CONFIGURATION_NOT_AUTHORIZED");

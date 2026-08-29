@@ -8,7 +8,7 @@ function validSnapshot() {
   return {
     scope: { organizationId: "org-1", clinicId: "clinic-1" },
     profile: {
-      organizationId: "org-1", clinicId: "clinic-1", clinicName: "Test Clinic", clinicType: "physiotherapy" as const,
+      organizationId: "org-1", clinicId: "clinic-1", clinicName: "Test Clinic", clinicType: "physiotherapy" as const, operationalStore: "supabase" as const,
       branchName: "", address: "", phone: "", email: "", logoUrl: "", currency: "BDT", locale: "en",
       timezone: "Asia/Dhaka", lifecycle: "ready",
     },

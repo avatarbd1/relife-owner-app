@@ -8,7 +8,7 @@ const B = { organizationId: "22222222-2222-4222-8222-222222222222", clinicId: A.
 const at = new Date("2026-08-27T12:00:00Z");
 const snapshot = (features: string[]): ClinicConfigurationSnapshot => ({
   scope: A,
-  profile: { ...A, clinicName: "Clinic A", clinicType: "physiotherapy", branchName: "Main", address: "Address", phone: "01234567890", email: "", logoUrl: "", currency: "BDT", locale: "bn-BD", timezone: "Asia/Dhaka", lifecycle: "active" },
+  profile: { ...A, clinicName: "Clinic A", clinicType: "physiotherapy", operationalStore: "supabase", branchName: "Main", address: "Address", phone: "01234567890", email: "", logoUrl: "", currency: "BDT", locale: "bn-BD", timezone: "Asia/Dhaka", lifecycle: "active" },
   operatingHours: [], services: [],
   catalog: ["core.finance_basic", "optional.salary", "optional.finance_advanced"].map((featureKey) => ({ featureKey, status: "active" })),
   flags: features.map((featureKey) => ({ ...A, featureKey, enabled: true })),
