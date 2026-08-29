@@ -40,6 +40,7 @@ export default function AppointmentBookingGate({
   patients,
   clinicians,
   modalityOptions,
+  availableDepartments,
   defaultPatientId,
   startDate,
   defaultDepartment,
@@ -47,14 +48,19 @@ export default function AppointmentBookingGate({
   patients: Patient[];
   clinicians: Clinician[];
   modalityOptions: ModalityOption[];
+  availableDepartments: Department[];
   defaultPatientId?: string;
   startDate: string;
   defaultDepartment?: Department;
 }) {
   const defaultPatient = patients.find((item) => item.patientId === defaultPatientId);
-  const [department, setDepartment] = useState<Department>(
-    defaultPatient?.department === "Dental" || defaultDepartment === "Dental" ? "Dental" : "Physio"
-  );
+  const initialDepartment: Department =
+    defaultPatient?.department !== "All" && defaultPatient?.department && availableDepartments.includes(defaultPatient.department)
+      ? defaultPatient.department
+      : defaultDepartment && availableDepartments.includes(defaultDepartment)
+        ? defaultDepartment
+        : availableDepartments[0] || "Physio";
+  const [department, setDepartment] = useState<Department>(initialDepartment);
   const [patientId, setPatientId] = useState(defaultPatient?.patientId || "");
   const [genderOverrides, setGenderOverrides] = useState<Record<string, "Male" | "Female">>({});
   const [genderBusy, setGenderBusy] = useState(false);
@@ -70,6 +76,7 @@ export default function AppointmentBookingGate({
     : "";
 
   function chooseDepartment(next: Department) {
+    if (!availableDepartments.includes(next)) return;
     setDepartment(next);
     setPatientId("");
     setError("");
@@ -101,21 +108,27 @@ export default function AppointmentBookingGate({
   if (!selectedPatient) {
     return (
       <div className="space-y-4">
-        <div>
-          <p className="text-xs font-semibold text-slate-700">Department</p>
-          <div className="mt-2 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
-            {(["Physio", "Dental"] as Department[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => chooseDepartment(item)}
-                className={`rounded-lg px-3 py-3 text-sm font-semibold ${department === item ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
-              >
-                {item}
-              </button>
-            ))}
+        {availableDepartments.length > 1 ? (
+          <div>
+            <p className="text-xs font-semibold text-slate-700">Department</p>
+            <div className="mt-2 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+              {availableDepartments.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => chooseDepartment(item)}
+                  className={`rounded-lg px-3 py-3 text-sm font-semibold ${department === item ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+            Department: {department}
+          </div>
+        )}
 
         <label className="block">
           <span className="text-xs font-semibold text-slate-700">Patient *</span>
@@ -136,9 +149,11 @@ export default function AppointmentBookingGate({
           </select>
         </label>
 
-        <p className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-          Physio booking শুধু gender-safe hourly capacity check করবে। Bed, machine ও treatment sequence patient arrive করার পর Live Chamber handle করবে।
-        </p>
+        {department === "Physio" ? (
+          <p className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            Physio booking শুধু gender-safe hourly capacity check করবে। Bed, machine ও treatment sequence patient arrive করার পর Live Chamber handle করবে।
+          </p>
+        ) : null}
         {error ? <p className="text-xs font-semibold text-red-600">{error}</p> : null}
       </div>
     );
