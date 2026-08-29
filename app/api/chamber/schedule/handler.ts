@@ -4,6 +4,7 @@ import {
   validateCapacityBooking,
   type CapacityBookingInput,
 } from "@/lib/domain/appointments/capacityBooking";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { assertCanPerform } from "@/lib/webos/access";
@@ -86,13 +87,15 @@ export async function chamberSchedulePost(request: NextRequest) {
     const record = body as Record<string, unknown>;
     const action = String(record.action || "validate");
     const input = parseInput(record);
+    const legacyPlanningEnabled = isRelifeLegacyTenant(tenantContext.tenant);
 
     if (action === "validate") {
       const validation = await validateCapacityBooking(
         tenantContext.access,
         tenantContext.tenant.organizationId,
         tenantContext.tenant.clinicId,
-        input
+        input,
+        legacyPlanningEnabled
       );
       return NextResponse.json({ ok: true, validation });
     }
@@ -104,7 +107,8 @@ export async function chamberSchedulePost(request: NextRequest) {
           tenantContext.access,
           tenantContext.tenant.organizationId,
           tenantContext.tenant.clinicId,
-          input
+          input,
+          legacyPlanningEnabled
         )
       );
       return NextResponse.json({ ok: true, ...result });

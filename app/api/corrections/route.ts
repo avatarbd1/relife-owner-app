@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { deleteOwnLatestTodayPayment } from "@/lib/webos/ownCorrections";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 function statusFor(message: string): number {
-  if (["ACCESS_DENIED", "OWN_ENTRY_REQUIRED"].includes(message)) return 403;
+  if (["ACCESS_DENIED", "OWN_ENTRY_REQUIRED", "LEGACY_CORRECTION_NOT_AVAILABLE"].includes(message)) return 403;
   if (["PAYMENT_NOT_FOUND", "PATIENT_NOT_FOUND"].includes(message)) return 404;
   if (
     [
@@ -26,6 +28,9 @@ export async function POST(request: NextRequest) {
   try {
     const tenantContext = await requireCurrentTenantAccessContext();
     const { access, tenant } = tenantContext;
+    await requireTenantFeature(tenant, "core.finance_basic");
+    if (!isRelifeLegacyTenant(tenant)) throw new Error("LEGACY_CORRECTION_NOT_AVAILABLE");
+
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });

@@ -339,12 +339,16 @@ function nowInTimezone(timeZone: string, ref = new Date()): { display: string; i
   return { display, iso: ref.toISOString() };
 }
 
-async function loadState() {
-  const snapshot = await fetchSheetRanges("physio", [APPOINTMENT_SHEET, PLAN_SHEET, RESOURCE_SHEET]);
+async function loadState(includeLegacyPlanning: boolean) {
+  const ranges = [
+    APPOINTMENT_SHEET,
+    ...(includeLegacyPlanning ? [PLAN_SHEET, RESOURCE_SHEET] : []),
+  ];
+  const snapshot = await fetchSheetRanges("physio", ranges);
   const appointmentRows = snapshot[APPOINTMENT_SHEET] || [];
-  const planRows = snapshot[PLAN_SHEET] || [];
-  const resourceRows = snapshot[RESOURCE_SHEET] || [];
-  if (!appointmentRows.length || !resourceRows.length) throw new Error("SCHEMA_MISMATCH");
+  const planRows = includeLegacyPlanning ? snapshot[PLAN_SHEET] || [] : [];
+  const resourceRows = includeLegacyPlanning ? snapshot[RESOURCE_SHEET] || [] : [];
+  if (!appointmentRows.length) throw new Error("SCHEMA_MISMATCH");
   ensureHeaders(appointmentRows[0], [
     "Appointment_ID",
     "Date",
@@ -362,7 +366,7 @@ async function loadState() {
     planRows,
     resourceRows,
     appointments: parseAppointments(appointmentRows),
-    resources: parseResources(resourceRows),
+    resources: includeLegacyPlanning ? parseResources(resourceRows) : [],
   };
 }
 
@@ -376,13 +380,14 @@ export async function validateCapacityBooking(
   context: AccessContext,
   organizationId: string,
   clinicId: string,
-  input: CapacityBookingInput
+  input: CapacityBookingInput,
+  legacyPlanningEnabled = false
 ): Promise<CapacityBookingValidation> {
   assertCanPerform(context, "appointment.create", "Physio");
-  const patient = await getPatientForContext(context, input.patientId);
+  const patient = await getPatientForContext(context, input.patientId, organizationId, clinicId);
   if (!patient || patient.department !== "Physio") throw new Error("PATIENT_NOT_FOUND");
   const { date, startMinute, therapist } = validateInput(input);
-  const state = await loadState();
+  const state = await loadState(legacyPlanningEnabled);
   const configuration = await readClinicConfiguration({ organizationId, clinicId });
   const gender = parseGender(patient.gender);
   const conflicts: CapacityConflict[] = [];
@@ -409,7 +414,9 @@ export async function validateCapacityBooking(
     }
   }
 
-  const expected = expectedFromPlan(state.planRows, patient.patientId, state.resources);
+  const expected = legacyPlanningEnabled
+    ? expectedFromPlan(state.planRows, patient.patientId, state.resources)
+    : [];
   const expectedDemand: ExpectedDemand[] = expected.map((resource) => {
     const current = overlapping.filter((item) => item.modalities.includes(resource.resourceId)).length;
     return {
@@ -454,20 +461,27 @@ export async function createCapacityBooking(
   context: AccessContext,
   organizationId: string,
   clinicId: string,
-  input: CapacityBookingInput
+  input: CapacityBookingInput,
+  legacyPlanningEnabled = false
 ): Promise<{ appointmentId: string; validation: CapacityBookingValidation }> {
   assertCanPerform(context, "appointment.create", "Physio");
-  const validation = await validateCapacityBooking(context, organizationId, clinicId, input);
+  const validation = await validateCapacityBooking(
+    context,
+    organizationId,
+    clinicId,
+    input,
+    legacyPlanningEnabled
+  );
   if (!validation.isValid) {
     const primary = validation.conflicts[0];
     const error = new Error(`APPOINTMENT_CONFLICT:${primary?.type || "capacity"}:${primary?.message || "Booking conflict"}`);
     (error as Error & { validation?: CapacityBookingValidation }).validation = validation;
     throw error;
   }
-  const patient = await getPatientForContext(context, input.patientId);
+  const patient = await getPatientForContext(context, input.patientId, organizationId, clinicId);
   if (!patient || patient.department !== "Physio") throw new Error("PATIENT_NOT_FOUND");
   const { date, startMinute, therapist } = validateInput(input);
-  const state = await loadState();
+  const state = await loadState(legacyPlanningEnabled);
   const headers = state.appointmentRows[0];
   const idIdx = headerIndex(headers, "Appointment_ID");
   const existing = new Set(state.appointmentRows.slice(1).map((row) => at(row, idIdx)));

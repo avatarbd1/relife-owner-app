@@ -50,6 +50,17 @@ export function ledgerClinicId(department: RelifeDepartment): string {
   return DEPARTMENT_CONFIG[department].ledgerClinicId;
 }
 
+/** Named compatibility boundary for rows that still use the legacy Sheets IDs. */
+export function legacyLedgerTenant(department: RelifeDepartment): {
+  organizationId: string;
+  clinicId: string;
+} {
+  return {
+    organizationId: RELIFE_SYSTEM.organizationId,
+    clinicId: ledgerClinicId(department),
+  };
+}
+
 export function workbookForDepartment(
   department: RelifeDepartment
 ): RelifeWorkbook {

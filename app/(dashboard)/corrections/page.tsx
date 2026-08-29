@@ -1,10 +1,34 @@
 import Link from "next/link";
 import OwnCorrectionsClient from "@/components/OwnCorrectionsClient";
+import { InlineNotice } from "@/components/FeedbackUI";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { listOwnTodayCorrectionEntries } from "@/lib/webos/ownCorrections";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 
 export default async function CorrectionsPage() {
-  const context = await requireCurrentAccessContext();
+  const { access: context, tenant } = await requireCurrentTenantAccessContext();
+  await requireTenantFeature(tenant, "core.finance_basic");
+
+  if (!isRelifeLegacyTenant(tenant)) {
+    return (
+      <div className="space-y-4">
+        <section className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-300">Safe correction</p>
+              <h1 className="mt-1 text-lg font-semibold">Payment correction</h1>
+            </div>
+            <Link href="/menu" className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white">Menu</Link>
+          </div>
+        </section>
+        <InlineNotice tone="warning">
+          এই clinic-এর tenant-native payment reversal এখনো enabled নয়। Relife legacy payment এখানে দেখানো বা পরিবর্তন করা হবে না।
+        </InlineNotice>
+      </div>
+    );
+  }
+
   const entries = await listOwnTodayCorrectionEntries(context);
 
   return (

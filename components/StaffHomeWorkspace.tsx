@@ -45,7 +45,7 @@ function quickActions(snapshot: StaffHomeSnapshot): QuickAction[] {
     if (capabilities.registerRead) actions.push({ href: "/register", icon: "register", label: "Register" });
   }
 
-  if (capabilities.chamberRead) {
+  if (capabilities.liveChat) {
     actions.push({ href: "/chamber?tab=team", icon: "chat", label: "Live chat" });
   }
 

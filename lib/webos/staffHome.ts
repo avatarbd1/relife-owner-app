@@ -1,18 +1,19 @@
 import "server-only";
 
+import { hasTenantFeature } from "@/lib/domain/tenancy/featureGuard";
+import { resolveStaffTenantContext } from "@/lib/domain/tenancy/staffTenantContext";
 import type { Scope } from "@/lib/types";
 import {
   canPerform,
   type AccessContext,
   type WebAction,
 } from "@/lib/webos/access";
-import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
 import {
   getAppointmentsForContext,
   todayDhaka,
   type AppointmentRecord,
 } from "@/lib/webos/reception";
-import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
+import { listTenantScopedWebStaffDirectory } from "@/lib/webos/tenantStaffDirectory";
 
 export type StaffHomeRole = "Manager" | "Receptionist" | "Therapist" | "Dentist";
 
@@ -47,6 +48,7 @@ export interface StaffHomeSnapshot {
     inventoryRead: boolean;
     chamberRead: boolean;
     chamberRun: boolean;
+    liveChat: boolean;
   };
 }
 
@@ -104,11 +106,20 @@ export async function getStaffHomeSnapshot(
   const role = resolveStaffHomeRole(context);
   if (!role) throw new Error("STAFF_HOME_ROLE_UNAVAILABLE");
 
+  const tenant = await resolveStaffTenantContext(context.staffId);
+  if (!tenant?.organizationId || !tenant?.clinicId) throw new Error("ACCESS_DENIED");
   const date = todayDhaka();
-  const [appointments, clinicalActivity, directory] = await Promise.all([
-    getAppointmentsForContext(context, scope, date),
-    getDailyClinicalActivity(scope, date),
-    isClinician(role) ? getWebStaffDirectory() : Promise.resolve([]),
+  const [appointments, directory, patientsEnabled, appointmentsEnabled, financeEnabled, advancedFinanceEnabled, attendanceEnabled, inventoryEnabled, chamberEnabled, liveChatEnabled] = await Promise.all([
+    getAppointmentsForContext(context, scope, date, tenant.organizationId, tenant.clinicId),
+    isClinician(role) ? listTenantScopedWebStaffDirectory(tenant) : Promise.resolve([]),
+    hasTenantFeature(tenant, "core.patients"),
+    hasTenantFeature(tenant, "core.appointments"),
+    hasTenantFeature(tenant, "core.finance_basic"),
+    hasTenantFeature(tenant, "optional.finance_advanced"),
+    hasTenantFeature(tenant, "optional.attendance"),
+    hasTenantFeature(tenant, "optional.inventory"),
+    hasTenantFeature(tenant, "optional.live_chamber"),
+    hasTenantFeature(tenant, "optional.live_chat"),
   ]);
 
   const staffName =
@@ -121,9 +132,10 @@ export async function getStaffHomeSnapshot(
       )
     : appointments;
 
-  const completed = visibleAppointments.filter(
+  const completedRows = visibleAppointments.filter(
     (row) => statusOf(row) === "completed"
-  ).length;
+  );
+  const completed = completedRows.length;
   const exceptions = visibleAppointments.filter((row) =>
     ["no-show", "cancelled", "canceled"].includes(statusOf(row))
   ).length;
@@ -147,23 +159,24 @@ export async function getStaffHomeSnapshot(
       ready,
       completed,
       exceptions,
-      patientsTreated: clinicalActivity.patients,
-      sessions: clinicalActivity.sessions,
+      patientsTreated: new Set(completedRows.map((row) => row.patientId)).size,
+      sessions: completed,
     },
     capabilities: {
-      patientRead: canInScope(context, scope, "patient.read"),
-      patientCreate: canInScope(context, scope, "patient.create"),
-      appointmentRead: canInScope(context, scope, "appointment.read"),
-      appointmentCreate: canInScope(context, scope, "appointment.create"),
-      paymentCreate: canInScope(context, scope, "payment.create"),
-      registerRead: canInScope(context, scope, "register.read"),
-      expenseRequest: canInScope(context, scope, "expense.request"),
-      cashRead: canInScope(context, scope, "cash.read"),
-      cashRequest: canInScope(context, scope, "cash.request"),
-      attendanceSelf: canInScope(context, scope, "attendance.self"),
-      inventoryRead: canInScope(context, scope, "inventory.read"),
-      chamberRead: canInScope(context, scope, "chamber.read"),
-      chamberRun: canInScope(context, scope, "chamber.run"),
+      patientRead: patientsEnabled && canInScope(context, scope, "patient.read"),
+      patientCreate: patientsEnabled && canInScope(context, scope, "patient.create"),
+      appointmentRead: appointmentsEnabled && canInScope(context, scope, "appointment.read"),
+      appointmentCreate: appointmentsEnabled && canInScope(context, scope, "appointment.create"),
+      paymentCreate: financeEnabled && canInScope(context, scope, "payment.create"),
+      registerRead: patientsEnabled && canInScope(context, scope, "register.read"),
+      expenseRequest: financeEnabled && canInScope(context, scope, "expense.request"),
+      cashRead: advancedFinanceEnabled && canInScope(context, scope, "cash.read"),
+      cashRequest: advancedFinanceEnabled && canInScope(context, scope, "cash.request"),
+      attendanceSelf: attendanceEnabled && canInScope(context, scope, "attendance.self"),
+      inventoryRead: inventoryEnabled && canInScope(context, scope, "inventory.read"),
+      chamberRead: chamberEnabled && canInScope(context, scope, "chamber.read"),
+      chamberRun: chamberEnabled && canInScope(context, scope, "chamber.run"),
+      liveChat: liveChatEnabled && canInScope(context, scope, "chamber.read"),
     },
   };
 }

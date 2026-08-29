@@ -1,8 +1,14 @@
 import "server-only";
 
-import { getCashMovements, getCashMovementsForAdminView, getExpenses, getPayments, getSalaryPayments } from "@/lib/data";
 import type { Scope } from "@/lib/types";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
+import {
+  readTenantCashMovements,
+  readTenantExpenses,
+  readTenantPayments,
+  readTenantSalaryPayments,
+  type FinanceTenantContext,
+} from "@/lib/webos/tenantFinanceData";
 
 type ClinicDepartment = "Physio" | "Dental";
 
@@ -154,7 +160,8 @@ export function canOpenFinanceLedger(
 
 export async function getFinanceLedgerSnapshot(
   context: AccessContext,
-  scope: Scope
+  scope: Scope,
+  tenant: FinanceTenantContext
 ): Promise<FinanceLedgerSnapshot> {
   const receptionLimited = isReceptionLimited(context);
   const collectionsAllowed = anyInScope(context, scope, (department) =>
@@ -172,10 +179,10 @@ export async function getFinanceLedgerSnapshot(
   const auditAllowed = context.roles.some((role) => role === "Owner" || role === "Auditor");
 
   const [payments, expenses, cashMovements, salaryPayments] = await Promise.all([
-    collectionsAllowed ? getPayments() : Promise.resolve([]),
-    expensesAllowed ? getExpenses() : Promise.resolve([]),
-    cashAllowed ? getCashMovementsForAdminView() : Promise.resolve([]),
-    salaryAllowed ? getSalaryPayments() : Promise.resolve([]),
+    collectionsAllowed ? readTenantPayments(tenant, scope) : Promise.resolve([]),
+    expensesAllowed ? readTenantExpenses(tenant, scope) : Promise.resolve([]),
+    cashAllowed ? readTenantCashMovements(tenant, scope) : Promise.resolve([]),
+    salaryAllowed ? readTenantSalaryPayments(tenant, scope) : Promise.resolve([]),
   ]);
 
   const visibleCollections = payments

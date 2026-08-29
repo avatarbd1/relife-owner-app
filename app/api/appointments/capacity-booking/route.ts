@@ -4,6 +4,7 @@ import {
   validateCapacityBooking,
   type CapacityBookingInput,
 } from "@/lib/domain/appointments/capacityBooking";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
@@ -68,12 +69,14 @@ export async function POST(request: NextRequest) {
     const record = body as Record<string, unknown>;
     const action = String(record.action || "validate");
     const input = parseInput(record);
+    const legacyPlanningEnabled = isRelifeLegacyTenant(tenant);
     if (action === "validate") {
       const validation = await validateCapacityBooking(
         access,
         tenant.organizationId,
         tenant.clinicId,
-        input
+        input,
+        legacyPlanningEnabled
       );
       return NextResponse.json({ ok: true, validation });
     }
@@ -83,7 +86,8 @@ export async function POST(request: NextRequest) {
           access,
           tenant.organizationId,
           tenant.clinicId,
-          input
+          input,
+          legacyPlanningEnabled
         )
       );
       return NextResponse.json({ ok: true, ...result });

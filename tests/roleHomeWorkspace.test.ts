@@ -49,10 +49,10 @@ describe("role-aware Home workspace", () => {
 
   it("derives staff shortcuts from canonical RBAC instead of UI-only role assumptions", () => {
     ok(staffHome.includes("canPerform(context, action, department)"));
-    ok(staffHome.includes('patientCreate: canInScope(context, scope, "patient.create")'));
-    ok(staffHome.includes('paymentCreate: canInScope(context, scope, "payment.create")'));
-    ok(staffHome.includes('cashRequest: canInScope(context, scope, "cash.request")'));
-    ok(staffHome.includes('chamberRun: canInScope(context, scope, "chamber.run")'));
+    ok(staffHome.includes('patientCreate: patientsEnabled && canInScope(context, scope, "patient.create")'));
+    ok(staffHome.includes('paymentCreate: financeEnabled && canInScope(context, scope, "payment.create")'));
+    ok(staffHome.includes('cashRequest: advancedFinanceEnabled && canInScope(context, scope, "cash.request")'));
+    ok(staffHome.includes('chamberRun: chamberEnabled && canInScope(context, scope, "chamber.run")'));
     ok(staffUi.includes("capabilities.patientCreate"));
     ok(staffUi.includes("capabilities.paymentCreate"));
     ok(staffUi.includes("capabilities.cashRequest"));

@@ -1,8 +1,10 @@
 import "server-only";
 
+import { isRelifeLegacyTenant, legacyLedgerTenant } from "@/lib/config/relifeSystem";
 import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
 import type { Scope } from "@/lib/types";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
+import type { FinanceTenantContext } from "@/lib/webos/tenantFinanceData";
 
 type ClinicDepartment = "Physio" | "Dental";
 export type AuditCategory = "Login" | "Patient" | "Finance" | "Access" | "System";
@@ -70,15 +72,29 @@ function severityFor(action: string, afterValue: string): AuditSeverity {
   return "info";
 }
 
+function tenantMatches(
+  tenant: FinanceTenantContext,
+  department: ClinicDepartment,
+  organizationId: string,
+  clinicId: string
+): boolean {
+  if (isRelifeLegacyTenant(tenant)) {
+    const legacyTenant = legacyLedgerTenant(department);
+    return organizationId === legacyTenant.organizationId && clinicId === legacyTenant.clinicId;
+  }
+  return organizationId === tenant.organizationId && clinicId === tenant.clinicId;
+}
+
 function parseAuditRows(
   rows: string[][],
-  department: ClinicDepartment
+  department: ClinicDepartment,
+  tenant: FinanceTenantContext
 ): AuditEventView[] {
   if (rows.length < 2) return [];
   const headers = rows[0];
   const idIdx = headerIndex(headers, "Audit_ID", "Audit ID", "ID");
   const timestampIdx = headerIndex(headers, "Timestamp", "Date_Time", "Date Time");
-  const actorIdx = headerIndex(headers, "User", "Actor", "Staff_ID", "Performed_By");
+  const actorIdx = headerIndex(headers, "User", "Actor", "Staff_ID", "Performed_By", "Actor_ID");
   const actionIdx = headerIndex(headers, "Action");
   const entityTypeIdx = headerIndex(headers, "Entity_Type", "Entity Type");
   const entityIdIdx = headerIndex(headers, "Entity_ID", "Entity ID");
@@ -88,6 +104,9 @@ function parseAuditRows(
   const reasonIdx = headerIndex(headers, "Reason", "Note", "Remarks");
   const sourceIdx = headerIndex(headers, "Source_System", "Source System");
   const departmentIdx = headerIndex(headers, "Department");
+  const organizationIdx = headerIndex(headers, "Organization_ID");
+  const clinicIdx = headerIndex(headers, "Clinic_ID");
+  if (organizationIdx < 0 || clinicIdx < 0) return [];
 
   return rows.slice(1).flatMap((row, rowIndex) => {
     const action = at(row, actionIdx, 3);
@@ -97,6 +116,9 @@ function parseAuditRows(
     const rowDepartment = at(row, departmentIdx, 22);
     const resolvedDepartment: ClinicDepartment =
       rowDepartment.toLowerCase() === "dental" ? "Dental" : department;
+    const organizationId = at(row, organizationIdx);
+    const clinicId = at(row, clinicIdx);
+    if (!tenantMatches(tenant, resolvedDepartment, organizationId, clinicId)) return [];
     const afterValue = at(row, afterIdx, 8);
     return [{
       id: at(row, idIdx, 0) || `${department}-${rowIndex + 2}`,
@@ -121,12 +143,13 @@ async function auditForWorkbook(
   context: AccessContext,
   scope: Scope,
   workbook: Workbook,
-  department: ClinicDepartment
+  department: ClinicDepartment,
+  tenant: FinanceTenantContext
 ): Promise<AuditEventView[]> {
   if (!scopeAllows(scope, department) || !canPerform(context, "audit.read", department)) return [];
   try {
     const snapshot = await fetchSheetRanges(workbook, ["20_Data_Audit"]);
-    return parseAuditRows(snapshot["20_Data_Audit"] || [], department).filter(
+    return parseAuditRows(snapshot["20_Data_Audit"] || [], department, tenant).filter(
       (event) => scopeAllows(scope, event.department) && canPerform(context, "audit.read", event.department)
     );
   } catch (error) {
@@ -137,11 +160,12 @@ async function auditForWorkbook(
 
 export async function getAuditOverview(
   context: AccessContext,
-  scope: Scope
+  scope: Scope,
+  tenant: FinanceTenantContext
 ): Promise<{ events: AuditEventView[]; critical: AuditEventView[] }> {
   const [physio, dental] = await Promise.all([
-    auditForWorkbook(context, scope, "physio", "Physio"),
-    auditForWorkbook(context, scope, "dental", "Dental"),
+    auditForWorkbook(context, scope, "physio", "Physio", tenant),
+    auditForWorkbook(context, scope, "dental", "Dental", tenant),
   ]);
   const events = [...physio, ...dental]
     .sort((a, b) => `${b.timestamp}|${b.id}`.localeCompare(`${a.timestamp}|${a.id}`))

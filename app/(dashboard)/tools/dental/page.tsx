@@ -20,7 +20,7 @@ export default async function DentalToolsPage({
     return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">Dental access is not available for this account.</div>;
   }
 
-  const register = await getDailyRegisterSnapshot(access, "dental", tenant.clinicId, params.date);
+  const register = await getDailyRegisterSnapshot(access, "dental", tenant, params.date);
   const canReadPatients = canPerform(access, "patient.read", "Dental");
   const canReadClinical = canPerform(access, "clinical.read", "Dental");
   const canBook = canPerform(access, "appointment.create", "Dental");

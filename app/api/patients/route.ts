@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
+import { hasTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { invalidatePatientsCache } from "@/lib/patients";
 import { isAllowedRequestOrigin } from "@/lib/webauthnRequest";
 import { consumePhysioInventorySystem } from "@/lib/webos/inventory";
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest) {
       throw new Error("INVALID_PATIENT_GENDER");
     }
 
-    const lockKey = `patient-register:${department || "unknown"}`;
+    const lockKey = `patient-register:${tenant.organizationId}:${tenant.clinicId}:${department || "unknown"}`;
     const result = await withMutationLock(lockKey, () =>
       registerPatientSerial(access, tenant.organizationId, tenant.clinicId, {
         department: body.department,
@@ -72,7 +74,11 @@ export async function POST(request: NextRequest) {
       })
     );
     invalidatePatientsCache();
-    if (body.department === "Physio") {
+    const legacyInventoryEnabled =
+      department === "Physio" &&
+      isRelifeLegacyTenant(tenant) &&
+      await hasTenantFeature(tenant, "optional.inventory");
+    if (legacyInventoryEnabled) {
       try {
         await consumePhysioInventorySystem(["Patient Card"], access.staffId, tenant.organizationId, tenant.clinicId, "Auto-Registration");
       } catch (error) {

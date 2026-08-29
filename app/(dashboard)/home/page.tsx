@@ -59,11 +59,16 @@ export default async function HomePage() {
   const configuration = await readClinicConfiguration(tenant);
   const departments = clinicRuntimeDepartments(configuration.profile?.clinicType);
   const runtimeScope = departments.length === 1 && departments[0] === "Dental" ? "dental" : "physio";
-  const [cash, todays, appointments, liveChatEnabled] = await Promise.all([
-    getScopedCashPositionForAdminView(runtimeScope, now),
+  const [liveChatEnabled, advancedFinanceEnabled] = await Promise.all([
+    hasTenantFeature(tenant, "optional.live_chat"),
+    hasTenantFeature(tenant, "optional.finance_advanced"),
+  ]);
+  const [cash, todays, appointments] = await Promise.all([
+    advancedFinanceEnabled
+      ? getScopedCashPositionForAdminView(runtimeScope, now)
+      : Promise.resolve({ reception: 0, homeTreasury: 0, bank: 0, total: 0 }),
     getTodaysCollection(now, tenant.organizationId, tenant.clinicId),
     getAppointmentsForContext(context, runtimeScope, today, tenant.organizationId, tenant.clinicId),
-    hasTenantFeature(tenant, "optional.live_chat"),
   ]);
   const collectedToday = departments.includes("Dental") && departments.includes("Physio")
     ? todays.combined
@@ -148,54 +153,54 @@ export default async function HomePage() {
 
           {exceptions > 0 && (
             <Section title="Needs attention" subtitle="Only items that need an Owner decision">
-              {exceptions > 0 && (
-                <ActionRow
-                  href={`/appointments?date=${encodeURIComponent(today)}&scope=${runtimeScope}&focus=exceptions`}
-                  icon="calendar"
-                  title="No-show / cancelled"
-                  subtitle="Review today’s appointment exceptions"
-                  meta={exceptions}
-                />
-              )}
+              <ActionRow
+                href={`/appointments?date=${encodeURIComponent(today)}&scope=${runtimeScope}&focus=exceptions`}
+                icon="calendar"
+                title="No-show / cancelled"
+                subtitle="Review today’s appointment exceptions"
+                meta={exceptions}
+              />
             </Section>
           )}
 
-          <Section title="Cash custody" subtitle="Current position · transfers are not expenses">
-            <div className="grid grid-cols-3 gap-2 px-4 pb-4 text-center">
-              <div className="rounded-lg bg-blue-50 p-3">
-                <p className="text-[10px] text-blue-700">Reception</p>
-                <p className="mt-1 text-sm font-bold tabular-nums text-blue-950">
-                  {formatBDT(cash.reception)}
-                </p>
+          {advancedFinanceEnabled && (
+            <Section title="Cash custody" subtitle="Current position · transfers are not expenses">
+              <div className="grid grid-cols-3 gap-2 px-4 pb-4 text-center">
+                <div className="rounded-lg bg-blue-50 p-3">
+                  <p className="text-[10px] text-blue-700">Reception</p>
+                  <p className="mt-1 text-sm font-bold tabular-nums text-blue-950">
+                    {formatBDT(cash.reception)}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-emerald-50 p-3">
+                  <p className="text-[10px] text-emerald-700">Treasury</p>
+                  <p className="mt-1 text-sm font-bold tabular-nums text-emerald-950">
+                    {formatBDT(cash.homeTreasury)}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-slate-100 p-3">
+                  <p className="text-[10px] text-slate-500">Bank</p>
+                  <p className="mt-1 text-sm font-bold tabular-nums text-slate-950">
+                    {formatBDT(cash.bank)}
+                  </p>
+                </div>
               </div>
-              <div className="rounded-lg bg-emerald-50 p-3">
-                <p className="text-[10px] text-emerald-700">Treasury</p>
-                <p className="mt-1 text-sm font-bold tabular-nums text-emerald-950">
-                  {formatBDT(cash.homeTreasury)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-slate-100 p-3">
-                <p className="text-[10px] text-slate-500">Bank</p>
-                <p className="mt-1 text-sm font-bold tabular-nums text-slate-950">
-                  {formatBDT(cash.bank)}
-                </p>
-              </div>
-            </div>
-            <Link
-              href="/finance"
-              className="flex min-h-12 items-center justify-between border-t border-slate-100 px-4 text-xs font-semibold text-blue-800"
-            >
-              <span>Open Finance</span>
-              <span aria-hidden="true">→</span>
-            </Link>
-            <Link
-              href="/finance#approvals"
-              className="flex min-h-12 items-center justify-between border-t border-slate-100 px-4 text-xs font-semibold text-blue-800"
-            >
-              <span>Review approvals</span>
-              <span aria-hidden="true">→</span>
-            </Link>
-          </Section>
+              <Link
+                href="/finance"
+                className="flex min-h-12 items-center justify-between border-t border-slate-100 px-4 text-xs font-semibold text-blue-800"
+              >
+                <span>Open Finance</span>
+                <span aria-hidden="true">→</span>
+              </Link>
+              <Link
+                href="/finance#approvals"
+                className="flex min-h-12 items-center justify-between border-t border-slate-100 px-4 text-xs font-semibold text-blue-800"
+              >
+                <span>Review approvals</span>
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Section>
+          )}
         </div>
 
         <HomeActionSlide href="/patients/new" icon="userPlus" label="Patient" subtitle="Register a new patient" />
