@@ -10,9 +10,9 @@ import { canPerform } from "@/lib/webos/access";
 import { getChamberSnapshot } from "@/lib/webos/chamber";
 import { getChamberCommsSnapshot } from "@/lib/webos/chamberComms";
 import { enrichChamberSnapshotWithPatientProfiles } from "@/lib/webos/chamberPatientProfile";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getVisiblePatients, todayDhaka } from "@/lib/webos/reception";
-import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
+import { listTenantScopedWebStaffDirectory } from "@/lib/webos/tenantStaffDirectory";
 
 type ChamberTab = "schedule" | "live" | "team";
 
@@ -30,7 +30,8 @@ export default async function ChamberPage({
 }: {
   searchParams?: Promise<{ date?: string; tab?: string; team?: string }>;
 }) {
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
   const params = searchParams ? await searchParams : {};
   const today = todayDhaka();
   const selectedDate = validDate(params.date) ? params.date : today;
@@ -129,7 +130,7 @@ export default async function ChamberPage({
     const [comms, chamber, staffDirectory] = await Promise.all([
       getChamberCommsSnapshot(context),
       getChamberSnapshot(context),
-      getWebStaffDirectory(),
+      listTenantScopedWebStaffDirectory(tenantContext.tenant),
     ]);
     pendingTeam = comms.pendingUrgentCount;
     statusLabel = pendingTeam ? `${pendingTeam} urgent` : "Team ready";

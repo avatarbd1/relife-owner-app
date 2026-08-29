@@ -103,7 +103,9 @@ export async function GET(
     const report = await getPatientReportForContext(
       access,
       patient,
-      decodeURIComponent(reportId)
+      decodeURIComponent(reportId),
+      tenant.organizationId,
+      tenant.clinicId,
     );
     if (!report) return new NextResponse("Not found", { status: 404 });
     const fileName = safeFilename(report.fileName, report.reportId);

@@ -15,6 +15,9 @@ import {
   replaceEntityRowWithAudit,
 } from "@/lib/webos/sheetTransaction";
 import { withMutationLock } from "@/lib/webos/mutationLock";
+import type { StaffTenantContext } from "@/lib/domain/tenancy/staffTenantContext";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
+import { listTenantScopedWebStaffDirectory } from "@/lib/webos/tenantStaffDirectory";
 
 export type AttendanceAction = "check_in" | "break_out" | "break_in" | "check_out";
 
@@ -406,12 +409,14 @@ function attendanceState(record: AttendanceRecord | undefined): DailyStaffStatus
 
 export async function getDailyOperationsSnapshot(
   context: AccessContext,
-  scope: Scope
+  scope: Scope,
+  tenant?: StaffTenantContext,
 ): Promise<DailyOperationsSnapshot> {
+  const legacyRelife = tenant ? isRelifeLegacyTenant(tenant) : true;
   const [appointments, attendanceRows, directory] = await Promise.all([
-    getAppointmentsForContext(context, scope, todayDhaka()),
-    getTodayAttendance(),
-    getWebStaffDirectory(),
+    getAppointmentsForContext(context, scope, todayDhaka(), tenant?.organizationId, tenant?.clinicId),
+    legacyRelife ? getTodayAttendance() : Promise.resolve([]),
+    tenant ? listTenantScopedWebStaffDirectory(tenant) : getWebStaffDirectory(),
   ]);
   const own = attendanceRows.find((row) => row.staffId === context.staffId) || null;
   const canReadTeam = canPerform(context, "attendance.read_team", context.primaryDepartment);

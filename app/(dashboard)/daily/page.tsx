@@ -7,10 +7,11 @@ import type { Department, Scope } from "@/lib/types";
 import { canPerform } from "@/lib/webos/access";
 import { getDailyOperationsSnapshot } from "@/lib/webos/attendance";
 import { getDailyRegisterSnapshot } from "@/lib/webos/dailyRegister";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { getDailyClinicalActivity } from "@/lib/webos/dailyClinicalActivity";
 import { getPhysioInventorySnapshot } from "@/lib/webos/inventory";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 
 function department(value: string): Department | null {
   if (value === "Physio" || value === "Dental" || value === "All") return value;
@@ -31,13 +32,15 @@ function scopeDepartments(scope: Scope): Array<"Physio" | "Dental"> {
 
 export default async function DailyPage() {
   const cookieStore = await cookies();
-  const context = await requireCurrentAccessContext();
+  const tenantContext = await requireCurrentTenantAccessContext();
+  const context = tenantContext.access;
+  const legacyRelife = isRelifeLegacyTenant(tenantContext.tenant);
   const scope = resolveAuthorizedScope(
     context,
     cookieStore.get("relife_scope")?.value
   );
 
-  const snapshot = await getDailyOperationsSnapshot(context, scope);
+  const snapshot = await getDailyOperationsSnapshot(context, scope, tenantContext.tenant);
 
   const safeSnapshot = snapshot.attendance.canReadTeam
     ? {
@@ -58,8 +61,8 @@ export default async function DailyPage() {
     scope !== "dental" && canPerform(context, "inventory.read", "Physio");
 
   const [clinicalActivity, registerData, inventory] = await Promise.all([
-    getDailyClinicalActivity(scope, safeSnapshot.date),
-    getDailyRegisterSnapshot(context, scope, safeSnapshot.date).catch((error) => {
+    legacyRelife ? getDailyClinicalActivity(scope, safeSnapshot.date) : Promise.resolve({ patients: 0, sessions: 0 }),
+    getDailyRegisterSnapshot(context, scope, tenantContext.tenant.clinicId, safeSnapshot.date).catch((error) => {
       console.error("Daily register summary failed:", error);
       return {
         date: safeSnapshot.date,
@@ -70,7 +73,7 @@ export default async function DailyPage() {
         unavailable: true,
       };
     }),
-    canReadPhysioInventory
+    canReadPhysioInventory && legacyRelife
       ? getPhysioInventorySnapshot(context).catch((error) => {
           console.error("Daily inventory alert read failed:", error);
           return null;

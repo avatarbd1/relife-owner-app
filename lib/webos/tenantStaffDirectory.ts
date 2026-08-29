@@ -1,6 +1,8 @@
 import "server-only";
 
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
 import { listStoredStaffProvisioning } from "@/lib/data/staffProvisioning";
+import { clinicRuntimeDepartments } from "@/lib/domain/tenancy/clinicRuntime";
 import {
   requireTenantScope,
   type TenantRoleCode,
@@ -8,10 +10,7 @@ import {
 } from "@/lib/domain/tenancy/policy";
 import type { Department } from "@/lib/types";
 import type { WebRole } from "@/lib/webos/access";
-import {
-  getActiveWebStaffById,
-  type WebStaffIdentity,
-} from "@/lib/webos/staffDirectory";
+import type { WebStaffIdentity } from "@/lib/webos/staffDirectory";
 
 const ROLE_MAP: Readonly<Record<TenantRoleCode, WebRole>> = {
   owner: "Owner",
@@ -34,36 +33,38 @@ function tenantRoles(values: TenantRoleCode[]): WebRole[] {
   return [...new Set(values.map((value) => ROLE_MAP[value]).filter(Boolean))];
 }
 
-function primaryDepartment(
-  legacy: WebStaffIdentity | null,
-  departments: Department[],
-): Department | null {
-  if (
-    legacy?.primaryDepartment &&
-    (departments.includes("All") || departments.includes(legacy.primaryDepartment))
-  ) {
-    return legacy.primaryDepartment;
-  }
+function canonicalPrimaryDepartment(departments: Department[]): Department | null {
   if (departments.includes("All")) return "All";
   return departments[0] || null;
 }
 
-async function legacyIdentity(staffId: string): Promise<WebStaffIdentity | null> {
-  try {
-    return await getActiveWebStaffById(staffId);
-  } catch {
+function clampIdentityToClinic(
+  identity: WebStaffIdentity,
+  departments: readonly ("Physio" | "Dental")[],
+): WebStaffIdentity | null {
+  if (departments.length !== 1) return null;
+  const department = departments[0];
+  if (
+    (department === "Physio" && identity.roles.some((role) => role === "Dentist" || role === "Dental_Assistant")) ||
+    (department === "Dental" && identity.roles.includes("Therapist"))
+  ) {
     return null;
   }
+  return {
+    ...identity,
+    primaryDepartment: department,
+    departmentAccess: [department],
+  };
 }
 
 /**
- * Resolve authorization only after an exact active tenant binding exists.
+ * Resolve staff authorization exclusively from the exact Supabase tenant
+ * binding plus its canonical role and department children. Legacy Relife
+ * Sheets data is never an authorization or identity fallback here.
  *
- * Fully provisioned SaaS staff take role/department authority exclusively from
- * Supabase tenant bindings. During the bounded Relife cutover, an exact-bound
- * legacy staff row whose role AND department children have not been migrated
- * yet may temporarily reuse its Sheet authorization. That compatibility path
- * can never grant an unbound staff member access to a tenant.
+ * Incomplete canonical provisioning fails closed. The clinic configuration
+ * then narrows the resolved identity to the one live department allowed by
+ * that clinic type before any caller receives it.
  */
 export async function getTenantScopedWebStaffIdentity(
   rawStaffId: string,
@@ -81,15 +82,7 @@ export async function getTenantScopedWebStaffIdentity(
 
   const hasTenantRoles = binding.roleCodes.length > 0;
   const hasTenantDepartments = binding.departmentIds.length > 0;
-  if (hasTenantRoles !== hasTenantDepartments) return null;
-
-  const legacy = await legacyIdentity(staffId);
-
-  if (!hasTenantRoles && !hasTenantDepartments) {
-    // Transitional Relife compatibility is permitted only behind the exact
-    // active binding found above. No global Sheet-only tenant fallback exists.
-    return legacy;
-  }
+  if (!hasTenantRoles || !hasTenantDepartments) return null;
 
   const roles = tenantRoles(binding.roleCodes);
   const departmentAccess = tenantDepartments(binding.departmentIds);
@@ -102,22 +95,42 @@ export async function getTenantScopedWebStaffIdentity(
     return null;
   }
 
-  const primary = primaryDepartment(legacy, departmentAccess);
+  const primary = canonicalPrimaryDepartment(departmentAccess);
   if (!primary) return null;
 
-  return {
+  const identity: WebStaffIdentity = {
     staffId,
-    fullName: legacy?.fullName || staffId,
-    phone: legacy?.phone || "",
-    telegramId: legacy?.telegramId || "",
+    fullName: staffId,
+    phone: "",
+    telegramId: "",
     status: "Active",
     primaryDepartment: primary,
     roles,
     departmentAccess,
-    // Legacy policy flags are not tenant-keyed, so they cannot widen a fully
-    // migrated tenant membership. Transitional Relife rows return the legacy
-    // identity above until their tenant children are populated.
     clinicalWriteScope: "",
     financialAccess: "",
   };
+
+  const configuration = await readClinicConfiguration(tenant);
+  return clampIdentityToClinic(
+    identity,
+    clinicRuntimeDepartments(configuration.profile?.clinicType),
+  );
+}
+
+/** List only canonically provisioned staff in the exact requested tenant. */
+export async function listTenantScopedWebStaffDirectory(
+  scope: TenantScope,
+): Promise<WebStaffIdentity[]> {
+  const tenant = requireTenantScope(scope);
+  const provisioning = await listStoredStaffProvisioning(tenant);
+  const staffIds = [...new Set(
+    provisioning
+      .filter((row) => row.status === "active" && row.staffId.trim())
+      .map((row) => row.staffId.trim()),
+  )];
+  const identities = await Promise.all(
+    staffIds.map((staffId) => getTenantScopedWebStaffIdentity(staffId, tenant)),
+  );
+  return identities.filter((identity): identity is WebStaffIdentity => Boolean(identity));
 }
