@@ -62,7 +62,7 @@ export default async function DailyPage() {
 
   const [clinicalActivity, registerData, inventory] = await Promise.all([
     legacyRelife ? getDailyClinicalActivity(scope, safeSnapshot.date) : Promise.resolve({ patients: 0, sessions: 0 }),
-    getDailyRegisterSnapshot(context, scope, tenantContext.tenant.clinicId, safeSnapshot.date).catch((error) => {
+    getDailyRegisterSnapshot(context, scope, tenantContext.tenant, safeSnapshot.date).catch((error) => {
       console.error("Daily register summary failed:", error);
       return {
         date: safeSnapshot.date,
