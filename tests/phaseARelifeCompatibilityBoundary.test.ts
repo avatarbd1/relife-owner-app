@@ -52,7 +52,7 @@ const FIXED_IDENTIFIER =
 /** file -> number of fixed-identifier occurrences currently accepted. */
 const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
   // Named Sheets ledger identity module. Leaves last, with the Sheets boundary.
-  ["lib/config/relifeSystem.ts", 4],
+  ["lib/config/relifeSystem.ts", 5],
 
   // Sheets readers/writers that still hardcode the ledger tenant. Phase B.
   ["lib/data/index.ts", 24],
@@ -93,7 +93,7 @@ const COMPATIBILITY_LEDGER: ReadonlyMap<string, number> = new Map([
 ]);
 
 /** Total accepted compatibility debt at the close of Phase A. */
-const LEDGER_TOTAL = 105;
+const LEDGER_TOTAL = 106;
 
 const ROOTS = ["lib", "app", "supabase/functions"];
 const REPO_ROOT = new URL("..", import.meta.url).pathname;

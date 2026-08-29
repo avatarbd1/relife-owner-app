@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
+import { isRelifeLegacyTenant, legacyLedgerTenant } from "@/lib/config/relifeSystem";
 import {
   getCashMovements,
   getExpenses,
@@ -17,43 +17,51 @@ export type FinanceTenantContext = {
 };
 
 async function relifePayments(scope: Scope) {
-  if (scope === "physio") return getPayments("RELIFE", "RELIFE-PHYSIO");
-  if (scope === "dental") return getPayments("RELIFE", "RELIFE-DENTAL");
-  const [physio, dental] = await Promise.all([
-    getPayments("RELIFE", "RELIFE-PHYSIO"),
-    getPayments("RELIFE", "RELIFE-DENTAL"),
+  const physioTenant = legacyLedgerTenant("Physio");
+  const dentalTenant = legacyLedgerTenant("Dental");
+  if (scope === "physio") return getPayments(physioTenant.organizationId, physioTenant.clinicId);
+  if (scope === "dental") return getPayments(dentalTenant.organizationId, dentalTenant.clinicId);
+  const [physioRows, dentalRows] = await Promise.all([
+    getPayments(physioTenant.organizationId, physioTenant.clinicId),
+    getPayments(dentalTenant.organizationId, dentalTenant.clinicId),
   ]);
-  return [...physio, ...dental];
+  return [...physioRows, ...dentalRows];
 }
 
 async function relifeExpenses(scope: Scope) {
-  if (scope === "physio") return getExpenses("RELIFE", "RELIFE-PHYSIO");
-  if (scope === "dental") return getExpenses("RELIFE", "RELIFE-DENTAL");
-  const [physio, dental] = await Promise.all([
-    getExpenses("RELIFE", "RELIFE-PHYSIO"),
-    getExpenses("RELIFE", "RELIFE-DENTAL"),
+  const physioTenant = legacyLedgerTenant("Physio");
+  const dentalTenant = legacyLedgerTenant("Dental");
+  if (scope === "physio") return getExpenses(physioTenant.organizationId, physioTenant.clinicId);
+  if (scope === "dental") return getExpenses(dentalTenant.organizationId, dentalTenant.clinicId);
+  const [physioRows, dentalRows] = await Promise.all([
+    getExpenses(physioTenant.organizationId, physioTenant.clinicId),
+    getExpenses(dentalTenant.organizationId, dentalTenant.clinicId),
   ]);
-  return [...physio, ...dental];
+  return [...physioRows, ...dentalRows];
 }
 
 async function relifeCashMovements(scope: Scope) {
-  if (scope === "physio") return getCashMovements("RELIFE", "RELIFE-PHYSIO");
-  if (scope === "dental") return getCashMovements("RELIFE", "RELIFE-DENTAL");
-  const [physio, dental] = await Promise.all([
-    getCashMovements("RELIFE", "RELIFE-PHYSIO"),
-    getCashMovements("RELIFE", "RELIFE-DENTAL"),
+  const physioTenant = legacyLedgerTenant("Physio");
+  const dentalTenant = legacyLedgerTenant("Dental");
+  if (scope === "physio") return getCashMovements(physioTenant.organizationId, physioTenant.clinicId);
+  if (scope === "dental") return getCashMovements(dentalTenant.organizationId, dentalTenant.clinicId);
+  const [physioRows, dentalRows] = await Promise.all([
+    getCashMovements(physioTenant.organizationId, physioTenant.clinicId),
+    getCashMovements(dentalTenant.organizationId, dentalTenant.clinicId),
   ]);
-  return [...physio, ...dental];
+  return [...physioRows, ...dentalRows];
 }
 
 async function relifeSalaryPayments(scope: Scope) {
-  if (scope === "physio") return getSalaryPayments("RELIFE", "RELIFE-PHYSIO");
-  if (scope === "dental") return getSalaryPayments("RELIFE", "RELIFE-DENTAL");
-  const [physio, dental] = await Promise.all([
-    getSalaryPayments("RELIFE", "RELIFE-PHYSIO"),
-    getSalaryPayments("RELIFE", "RELIFE-DENTAL"),
+  const physioTenant = legacyLedgerTenant("Physio");
+  const dentalTenant = legacyLedgerTenant("Dental");
+  if (scope === "physio") return getSalaryPayments(physioTenant.organizationId, physioTenant.clinicId);
+  if (scope === "dental") return getSalaryPayments(dentalTenant.organizationId, dentalTenant.clinicId);
+  const [physioRows, dentalRows] = await Promise.all([
+    getSalaryPayments(physioTenant.organizationId, physioTenant.clinicId),
+    getSalaryPayments(dentalTenant.organizationId, dentalTenant.clinicId),
   ]);
-  return [...physio, ...dental];
+  return [...physioRows, ...dentalRows];
 }
 
 export async function readTenantPayments(tenant: FinanceTenantContext, scope: Scope) {

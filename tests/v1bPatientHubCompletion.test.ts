@@ -35,7 +35,7 @@ test("Dental registration explicitly keeps phone optional and blank phones bypas
 
 test("Patient registration serializes the full department create path and invalidates read cache", () => {
   const route = source("app/api/patients/route.ts");
-  const lock = route.indexOf("patient-register:${department || \"unknown\"}");
+  const lock = route.indexOf("patient-register:${tenant.organizationId}:${tenant.clinicId}:${department || \"unknown\"}");
   const register = route.indexOf("registerPatientSerial(access");
   const invalidate = route.indexOf("invalidatePatientsCache()");
 

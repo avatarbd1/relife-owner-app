@@ -19,10 +19,10 @@ test("finance ledger and mixed history use one tenant-scoped data boundary", () 
 
 test("tenant finance data preserves Relife department mapping but exact-matches every SaaS tenant", () => {
   const data = source("lib/webos/tenantFinanceData.ts");
-  assert.match(data, /getPayments\("RELIFE", "RELIFE-PHYSIO"\)/);
-  assert.match(data, /getPayments\("RELIFE", "RELIFE-DENTAL"\)/);
-  assert.match(data, /getCashMovements\("RELIFE", "RELIFE-PHYSIO"\)/);
-  assert.match(data, /getCashMovements\("RELIFE", "RELIFE-DENTAL"\)/);
+  assert.match(data, /legacyLedgerTenant\("Physio"\)/);
+  assert.match(data, /legacyLedgerTenant\("Dental"\)/);
+  assert.match(data, /getPayments\(physioTenant\.organizationId, physioTenant\.clinicId\)/);
+  assert.match(data, /getCashMovements\(dentalTenant\.organizationId, dentalTenant\.clinicId\)/);
   assert.match(data, /getPayments\(tenant\.organizationId, tenant\.clinicId\)/);
   assert.match(data, /getExpenses\(tenant\.organizationId, tenant\.clinicId\)/);
   assert.match(data, /getCashMovements\(tenant\.organizationId, tenant\.clinicId\)/);

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
+import { isRelifeLegacyTenant, legacyLedgerTenant } from "@/lib/config/relifeSystem";
 import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
 import type { Scope } from "@/lib/types";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
@@ -79,7 +79,8 @@ function tenantMatches(
   clinicId: string
 ): boolean {
   if (isRelifeLegacyTenant(tenant)) {
-    return organizationId === "RELIFE" && clinicId === (department === "Dental" ? "RELIFE-DENTAL" : "RELIFE-PHYSIO");
+    const legacyTenant = legacyLedgerTenant(department);
+    return organizationId === legacyTenant.organizationId && clinicId === legacyTenant.clinicId;
   }
   return organizationId === tenant.organizationId && clinicId === tenant.clinicId;
 }

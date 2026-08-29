@@ -3,6 +3,7 @@ import {
   createCapacityBooking,
   type CapacityBookingValidation,
 } from "@/lib/domain/appointments/capacityBooking";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import { recordActorWorkGamification } from "@/lib/domain/gamification/events";
 import { validateDepartmentAccess, validateTenantScope } from "@/lib/domain/tenancy/validators";
 import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
           therapist: String(body.therapist || ""),
           remarks: String(body.remarks || ""),
           resourceCode: String(body.resourceCode || "").trim() || undefined,
-        });
+        }, isRelifeLegacyTenant(tenant));
       }
       return createAppointment(access, tenant.organizationId, tenant.clinicId, {
         patientId: patient.patientId,

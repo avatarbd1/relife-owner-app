@@ -23,7 +23,6 @@ const boundedLedgerCompatibility = new Map<string, { importPath: string; allowed
     {
       importPath: "@/lib/webos/appointmentScheduling",
       allowedImporters: new Set([
-        "app/(dashboard)/appointments/new/page.tsx",
         "lib/domain/appointments/create.ts",
         "lib/domain/appointments/therapistCapacity.ts",
       ]),
@@ -43,10 +42,7 @@ const boundedLedgerCompatibility = new Map<string, { importPath: string; allowed
     "lib/webos/financeOps.ts",
     {
       importPath: "@/lib/webos/financeOps",
-      allowedImporters: new Set([
-        "app/(dashboard)/finance/operations/page.tsx",
-        "app/(dashboard)/payments/page.tsx",
-      ]),
+      allowedImporters: new Set([]),
     },
   ],
   [

@@ -81,3 +81,21 @@ test("legacy-only reports, approvals, salary, daily and exports fail closed outs
   assert.match(source("app/(dashboard)/more/page.tsx"), /const canTools = legacyRelife/);
   assert.match(source("lib/webos/reports.ts"), /String\(row\.Organization_ID \|\| ""\)\.trim\(\) === organizationId/);
 });
+
+test("legacy Physio planning is enabled only after the active tenant is identified as Relife", () => {
+  const capacity = source("lib/domain/appointments/capacityBooking.ts");
+  assert.match(capacity, /async function loadState\(includeLegacyPlanning: boolean\)/);
+  assert.match(capacity, /\.\.\.\(includeLegacyPlanning \? \[PLAN_SHEET, RESOURCE_SHEET\] : \[\]\)/);
+  assert.match(capacity, /legacyPlanningEnabled = false/);
+
+  for (const path of [
+    "app/api/appointments/route.ts",
+    "app/api/appointments/validate/route.ts",
+    "app/api/appointments/capacity-booking/route.ts",
+    "app/api/chamber/schedule/handler.ts",
+  ]) {
+    const caller = source(path);
+    assert.match(caller, /isRelifeLegacyTenant\(/, path);
+    assert.match(caller, /(validate|create)CapacityBooking\([\s\S]*isRelifeLegacyTenant\(|legacyPlanningEnabled/, path);
+  }
+});

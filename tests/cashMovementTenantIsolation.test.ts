@@ -80,14 +80,19 @@ test("dashboard pages use the authenticated dashboard cash boundary", () => {
 
 test("finance history resolves the active tenant and never falls back to Relife legacy rows for another clinic", () => {
   const ledgers = source("lib/webos/financeLedgers.ts");
+  const tenantData = source("lib/webos/tenantFinanceData.ts");
   const ledgerPage = source("components/FinanceLedgerPage.tsx");
   const recordsPage = source("app/(dashboard)/finance/records/page.tsx");
 
-  assert.match(ledgers, /isRelifeLegacyTenant\(tenant\)/);
-  assert.match(ledgers, /getPayments\(tenant\.organizationId, tenant\.clinicId\)/);
-  assert.match(ledgers, /getExpenses\(tenant\.organizationId, tenant\.clinicId\)/);
-  assert.match(ledgers, /getCashMovements\(tenant\.organizationId, tenant\.clinicId\)/);
-  assert.match(ledgers, /getSalaryPayments\(tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(ledgers, /readTenantPayments\(tenant, scope\)/);
+  assert.match(ledgers, /readTenantExpenses\(tenant, scope\)/);
+  assert.match(ledgers, /readTenantCashMovements\(tenant, scope\)/);
+  assert.match(ledgers, /readTenantSalaryPayments\(tenant, scope\)/);
+  assert.match(tenantData, /isRelifeLegacyTenant\(tenant\)/);
+  assert.match(tenantData, /getPayments\(tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(tenantData, /getExpenses\(tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(tenantData, /getCashMovements\(tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(tenantData, /getSalaryPayments\(tenant\.organizationId, tenant\.clinicId\)/);
 
   for (const page of [ledgerPage, recordsPage]) {
     assert.match(page, /requireCurrentTenantAccessContext\(\)/);
@@ -102,6 +107,8 @@ test("admin utilities use compatibility helpers for legacy access patterns", () 
   const history = source("lib/webos/financeHistory.ts");
   assert.match(calculations, /getScopedCashPositionForAdminView\("combined", now\)/);
   assert.match(calculations, /getCashMovementsForAdminView\(\)/);
-  assert.match(ledgers, /getCashMovementsForAdminView\(\)/);
-  assert.match(history, /getCashMovementsForAdminView\(\)/);
+  assert.match(ledgers, /readTenantCashMovements\(tenant, scope\)/);
+  assert.match(history, /readTenantCashMovements\(tenant, scope\)/);
+  assert.doesNotMatch(ledgers, /getCashMovementsForAdminView\(\)/);
+  assert.doesNotMatch(history, /getCashMovementsForAdminView\(\)/);
 });

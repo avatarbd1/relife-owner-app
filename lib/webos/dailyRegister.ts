@@ -74,6 +74,8 @@ export async function getDailyRegisterSnapshot(
     const sessionsMatch = /Sessions:\s*(\d+)/i.exec(remarks);
     const serviceMatch = /Service:\s*([^|]+)/i.exec(remarks);
     const sessions = Number(sessionsMatch?.[1] || (department === "Physio" ? 1 : 0));
+    const status: WebDailyRegisterRow["status"] =
+      payment.due <= 0 ? "Paid" : payment.amount > 0 ? "Partial" : "Due";
     return [{
       receiptNo: payment.receiptNo,
       sl: "",
@@ -88,7 +90,7 @@ export async function getDailyRegisterSnapshot(
       due: payment.due,
       paymentMethod: payment.paymentMethod,
       receivedBy: payment.receivedBy,
-      status: payment.due <= 0 ? "Paid" : payment.amount > 0 ? "Partial" : "Due",
+      status,
     }];
   }).sort((a, b) => a.receiptNo.localeCompare(b.receiptNo));
 
