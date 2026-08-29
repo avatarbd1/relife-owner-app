@@ -2,7 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import PaymentsWorkspaceClient from "@/components/PaymentsWorkspaceClient";
 import { StatusBadge } from "@/components/FeedbackUI";
-import { getFinanceOperationsSnapshot } from "@/lib/webos/financeOps";
+import { getTenantFinanceOperationsSnapshot } from "@/lib/webos/tenantFinanceOps";
 import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
@@ -20,7 +20,7 @@ export default async function PaymentsPage({
   const context = tenantContext.access;
   await requireTenantFeature(tenantContext.tenant, "core.finance_basic");
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
-  const snapshot = await getFinanceOperationsSnapshot(context, scope);
+  const snapshot = await getTenantFinanceOperationsSnapshot(context, scope, tenantContext.tenant);
 
   if (!snapshot.capabilities.paymentCreate) {
     return (
@@ -42,7 +42,7 @@ export default async function PaymentsPage({
           <StatusBadge tone="info" className="border-white/10">Online write</StatusBadge>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/finance/history" className="min-h-10 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/15">History</Link>
+          <Link href="/finance/records" className="min-h-10 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/15">History</Link>
           {context.roles.includes("Owner") && (
             <Link href="/finance" className="min-h-10 rounded-lg bg-blue-400/15 px-3 py-2.5 text-xs font-semibold text-blue-100 ring-1 ring-blue-300/20">Finance dashboard</Link>
           )}
