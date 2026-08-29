@@ -1,8 +1,11 @@
 import "server-only";
 
-import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
 import type { Scope } from "@/lib/types";
 import { canPerform, type AccessContext } from "@/lib/webos/access";
+import {
+  readTenantPayments,
+  type FinanceTenantContext,
+} from "@/lib/webos/tenantFinanceData";
 
 type ClinicDepartment = "Physio" | "Dental";
 
@@ -27,28 +30,6 @@ function normalize(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function normalized(value: unknown): string {
-  return normalize(value).toLowerCase().replace(/\s+/g, " ");
-}
-
-function numberValue(value: unknown): number {
-  const parsed = Number(normalize(value).replace(/[৳,]/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function headerIndex(headers: string[], ...names: string[]): number {
-  const values = headers.map(normalized);
-  for (const name of names) {
-    const index = values.indexOf(name.toLowerCase());
-    if (index >= 0) return index;
-  }
-  return -1;
-}
-
-function at(row: string[], index: number): string {
-  return index >= 0 ? normalize(row[index]) : "";
-}
-
 function todayDhaka(ref = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Dhaka",
@@ -70,71 +51,10 @@ function scopeAllows(scope: Scope, department: ClinicDepartment): boolean {
   return department === (scope === "physio" ? "Physio" : "Dental");
 }
 
-function parseRows(
-  rows: string[][],
-  department: ClinicDepartment,
-  date: string,
-  clinicId: string
-): WebDailyRegisterRow[] {
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  const idx = (...names: string[]) => headerIndex(headers, ...names);
-  const departmentIdx = idx("Department");
-  const clinicIdIdx = idx("Clinic_ID");
-
-  return rows.slice(1).flatMap((row) => {
-    if (at(row, idx("Date")) !== date) return [];
-    const rowDepartment = at(row, departmentIdx);
-    if (rowDepartment && normalized(rowDepartment) !== normalized(department)) return [];
-    const rowClinicId = at(row, clinicIdIdx);
-    if (rowClinicId && rowClinicId !== clinicId) return [];
-    const receiptNo = at(row, idx("Receipt_No", "Receipt"));
-    if (!receiptNo) return [];
-    const remarks = at(row, idx("Remarks"));
-    const sessionsMatch = /Sessions:\s*(\d+)/i.exec(remarks);
-    const serviceMatch = /Service:\s*([^|]+)/i.exec(remarks);
-    const amount = numberValue(at(row, idx("Amount")));
-    const due = numberValue(at(row, idx("Due")));
-    const sessionText = at(row, idx("Sessions"));
-    const sessions = Number(sessionText || sessionsMatch?.[1] || (department === "Physio" ? 1 : 0));
-
-    return [{
-      receiptNo,
-      sl: at(row, idx("SL")),
-      date,
-      patientId: at(row, idx("Patient_ID")),
-      patientName: at(row, idx("Patient_Name")),
-      department,
-      sessions: Number.isFinite(sessions) ? sessions : 0,
-      service:
-        serviceMatch?.[1]?.trim() ||
-        at(row, idx("Session_Type", "Service", "Procedure")),
-      amount,
-      discount: numberValue(at(row, idx("Discount"))),
-      due,
-      paymentMethod: at(row, idx("Payment_Method")),
-      receivedBy: at(row, idx("Received_By")),
-      status: due <= 0 ? "Paid" : amount > 0 ? "Partial" : "Due",
-    }];
-  });
-}
-
-async function readDepartment(
-  context: AccessContext,
-  department: ClinicDepartment,
-  date: string,
-  clinicId: string
-): Promise<WebDailyRegisterRow[]> {
-  if (!canPerform(context, "register.read", department)) return [];
-  const workbook: Workbook = department === "Dental" ? "dental" : "physio";
-  const snapshot = await fetchSheetRanges(workbook, ["06_Payments"]);
-  return parseRows(snapshot["06_Payments"] || [], department, date, clinicId);
-}
-
 export async function getDailyRegisterSnapshot(
   context: AccessContext,
   scope: Scope,
-  clinicId: string,
+  tenant: FinanceTenantContext,
   requestedDate?: string
 ) {
   const date = registerDate(requestedDate);
@@ -143,18 +63,34 @@ export async function getDailyRegisterSnapshot(
       scopeAllows(scope, department) &&
       canPerform(context, "register.read", department)
   );
+  const payments = await readTenantPayments(tenant, scope);
 
-  const groups = await Promise.all(
-    departments.map((department) => readDepartment(context, department, date, clinicId))
-  );
-  const rows = groups
-    .flat()
-    .sort((a, b) => {
-      const slA = Number(a.sl || 0);
-      const slB = Number(b.sl || 0);
-      if (slA && slB && slA !== slB) return slA - slB;
-      return a.receiptNo.localeCompare(b.receiptNo);
-    });
+  const rows: WebDailyRegisterRow[] = payments.flatMap((payment) => {
+    if (payment.date !== date) return [];
+    if (payment.department !== "Physio" && payment.department !== "Dental") return [];
+    const department = payment.department;
+    if (!departments.includes(department)) return [];
+    const remarks = normalize(payment.remarks);
+    const sessionsMatch = /Sessions:\s*(\d+)/i.exec(remarks);
+    const serviceMatch = /Service:\s*([^|]+)/i.exec(remarks);
+    const sessions = Number(sessionsMatch?.[1] || (department === "Physio" ? 1 : 0));
+    return [{
+      receiptNo: payment.receiptNo,
+      sl: "",
+      date: payment.date,
+      patientId: payment.patientId,
+      patientName: payment.patientName,
+      department,
+      sessions: Number.isFinite(sessions) ? sessions : 0,
+      service: serviceMatch?.[1]?.trim() || "",
+      amount: payment.amount,
+      discount: payment.discount,
+      due: payment.due,
+      paymentMethod: payment.paymentMethod,
+      receivedBy: payment.receivedBy,
+      status: payment.due <= 0 ? "Paid" : payment.amount > 0 ? "Partial" : "Due",
+    }];
+  }).sort((a, b) => a.receiptNo.localeCompare(b.receiptNo));
 
   const moneyVisible = new Set(
     departments.filter((department) =>
