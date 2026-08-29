@@ -7,7 +7,9 @@ import {
   updateSheetValues,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import { updateAppointmentStatusRow } from "@/lib/data/supabaseOperational";
 import { recordAppointmentCompletionGamification } from "@/lib/domain/gamification/events";
+import { isTenantNativeClinic } from "@/lib/domain/operations/store";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
 export const APPOINTMENT_STATUSES = [
@@ -124,6 +126,16 @@ export async function updateAppointmentStatus(
   if (!(["Physio", "Dental"] as string[]).includes(department)) throw new Error("INVALID_DEPARTMENT");
   if (!APPOINTMENT_STATUSES.includes(status)) throw new Error("INVALID_APPOINTMENT_STATUS");
   assertCanPerform(context, "appointment.update", department);
+
+  if (await isTenantNativeClinic({ organizationId, clinicId })) {
+    const updated = await updateAppointmentStatusRow(
+      { organizationId, clinicId },
+      context.staffId,
+      appointmentId,
+      status,
+    );
+    return { appointmentId: updated.appointmentId, status: updated.status as AppointmentStatus };
+  }
 
   const workbook = workbookForDepartment(department);
   const snapshot = await fetchSheetRanges(workbook, ["04_Appointments"]);

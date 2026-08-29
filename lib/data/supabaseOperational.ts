@@ -37,7 +37,7 @@ function ensure(error: { message?: string } | null, operation: string): void {
   // (`DUPLICATE_PHONE:PT-0007`, `APPOINTMENT_DUPLICATE`, `PATIENT_NOT_FOUND`).
   // Callers already handle those strings, so they are rethrown unchanged rather
   // than buried inside a generic storage error.
-  const known = /(DUPLICATE_PHONE:[^\s"]*|APPOINTMENT_DUPLICATE|PATIENT_NOT_FOUND|TENANT_NOT_FOUND|TENANT_SCOPE_REQUIRED|REQUEST_ID_REQUIRED)/.exec(message);
+  const known = /(DUPLICATE_PHONE:[^\s"]*|DUPLICATE_PHONE|APPOINTMENT_DUPLICATE|APPOINTMENT_NOT_FOUND|PATIENT_NOT_FOUND|TENANT_NOT_FOUND|TENANT_SCOPE_REQUIRED|REQUEST_ID_REQUIRED|OPERATIONAL_STORE_MISMATCH:[a-z]+|OPERATIONAL_STORE_NOT_CONFIGURED)/.exec(message);
   if (known) throw new Error(known[1]);
   throw new Error(`OPERATIONAL_${operation}_FAILED:${message}`);
 }
@@ -68,6 +68,7 @@ function toPatientRecord(row: Record<string, unknown>, tenant: TenantScope): Pat
     totalBill: money(row.total_bill),
     paid,
     due: money(row.due),
+    advance: money(row.advance),
     status: text(row.status),
     lastUpdated: text(row.updated_at),
     organizationId: tenant.organizationId,
@@ -273,6 +274,60 @@ export async function insertAppointment(
   return { appointmentId: data.appointmentId, duplicate: Boolean(data.duplicate) };
 }
 
+export interface UpdatePatientProfileRow {
+  fullName?: string;
+  phone?: string;
+  age?: string;
+  gender?: string;
+  address?: string;
+  diagnosis?: string;
+  therapist?: string;
+  status?: string;
+}
+
+export async function updatePatientProfileRow(
+  scope: TenantScope,
+  actorId: string,
+  patientId: string,
+  row: UpdatePatientProfileRow,
+  client = adminClient(),
+): Promise<{ patientId: string }> {
+  const tenant = requireTenantScope(scope);
+  // Only the keys the caller actually supplied are forwarded, so the writer can
+  // tell "leave unchanged" from "set to empty".
+  const payload = Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined),
+  );
+  const result = await client.schema("relife").rpc("update_patient_profile_v1", {
+    p_organization_id: tenant.organizationId,
+    p_clinic_id: tenant.clinicId,
+    p_actor_id: actorId,
+    p_patient_id: patientId,
+    p_payload: payload,
+  });
+  ensure(result.error, "PATIENT_UPDATE");
+  return { patientId };
+}
+
+export async function updateAppointmentStatusRow(
+  scope: TenantScope,
+  actorId: string,
+  appointmentId: string,
+  status: string,
+  client = adminClient(),
+): Promise<{ appointmentId: string; status: string }> {
+  const tenant = requireTenantScope(scope);
+  const result = await client.schema("relife").rpc("update_appointment_status_v1", {
+    p_organization_id: tenant.organizationId,
+    p_clinic_id: tenant.clinicId,
+    p_actor_id: actorId,
+    p_appointment_id: appointmentId,
+    p_status: status,
+  });
+  ensure(result.error, "APPOINTMENT_STATUS_UPDATE");
+  return { appointmentId, status };
+}
+
 export interface RecordPaymentRow {
   patientId: string;
   date?: string;
@@ -280,6 +335,8 @@ export interface RecordPaymentRow {
   discount?: number;
   /** Patient balance after this receipt, decided by the finance domain. */
   due: number;
+  /** Carried-forward overpayment after this receipt, also decided upstream. */
+  advance?: number;
   paymentStatus: string;
   paymentMethod: Payment["paymentMethod"];
   sessions?: number;

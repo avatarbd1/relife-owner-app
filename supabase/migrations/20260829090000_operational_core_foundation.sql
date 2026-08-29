@@ -130,6 +130,9 @@ create table if not exists relife.patients (
   total_bill numeric(12,2) not null default 0 check (total_bill >= 0),
   paid numeric(12,2) not null default 0 check (paid >= 0),
   due numeric(12,2) not null default 0,
+  -- Overpayment carried forward. Kept distinct from `paid` because money held
+  -- against future sessions is not the same fact as money already earned.
+  advance numeric(12,2) not null default 0 check (advance >= 0),
   payment_status text not null default 'Due',
   status text not null default 'Active' check (status in ('Active', 'Inactive')),
   request_id text not null default '',
@@ -181,7 +184,7 @@ create table if not exists relife.appointments (
   duration_min smallint not null default 60 check (duration_min between 5 and 480),
   therapist text not null default '',
   status text not null default 'Scheduled'
-    check (status in ('Scheduled', 'Arrived', 'Waiting', 'In Treatment', 'Completed', 'Cancelled', 'No Show')),
+    check (status in ('Scheduled', 'Arrived', 'Waiting', 'In Treatment', 'Completed', 'No-show', 'Cancelled')),
   remarks text not null default '',
   request_id text not null default '',
   created_by text not null,
@@ -209,7 +212,7 @@ create unique index if not exists appointments_request_uidx
 -- the same slot. Cancelled/No Show rows are excluded so a slot can be rebooked.
 create unique index if not exists appointments_active_duplicate_uidx
   on relife.appointments (organization_id, clinic_id, patient_id, appointment_date, start_minute)
-  where status not in ('Cancelled', 'No Show');
+  where status not in ('Cancelled', 'No-show');
 
 create index if not exists appointments_clinic_date_idx
   on relife.appointments (organization_id, clinic_id, appointment_date, start_minute);
@@ -316,6 +319,36 @@ where o.slug = 'relife' and c.slug = 'amtali-main'
 -- tenant enforcement. The tenant check is repeated inside the function because
 -- service_role bypasses RLS, so this is the boundary that actually holds.
 
+-- A clinic whose record still lives in Sheets must never gain a row here, or
+-- its operational history silently splits across two stores with neither one
+-- complete. Enforcing that in the writer rather than only at the call site
+-- means a mistake in application routing cannot corrupt the data.
+create or replace function relife.assert_tenant_native_store(
+  p_organization_id uuid,
+  p_clinic_id uuid
+)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = relife, pg_catalog
+as $$
+declare
+  v_store text;
+begin
+  select operational_store into v_store
+  from relife.clinic_settings
+  where organization_id = p_organization_id and clinic_id = p_clinic_id;
+
+  if v_store is null then
+    raise exception 'OPERATIONAL_STORE_NOT_CONFIGURED';
+  end if;
+  if v_store <> 'supabase' then
+    raise exception 'OPERATIONAL_STORE_MISMATCH:supabase';
+  end if;
+end;
+$$;
+
 create or replace function relife.register_patient_v1(
   p_organization_id uuid,
   p_clinic_id uuid,
@@ -339,6 +372,7 @@ begin
   if btrim(coalesce(p_request_id, '')) = '' then
     raise exception 'REQUEST_ID_REQUIRED';
   end if;
+  perform relife.assert_tenant_native_store(p_organization_id, p_clinic_id);
   if not exists (
     select 1 from relife.clinics
     where organization_id = p_organization_id and id = p_clinic_id
@@ -430,6 +464,7 @@ begin
   if btrim(coalesce(p_request_id, '')) = '' then
     raise exception 'REQUEST_ID_REQUIRED';
   end if;
+  perform relife.assert_tenant_native_store(p_organization_id, p_clinic_id);
 
   select appointment_id into v_existing
   from relife.appointments
@@ -458,7 +493,7 @@ begin
       and patient_id = v_patient_id
       and appointment_date = v_date
       and start_minute = v_start_minute
-      and status not in ('Cancelled', 'No Show')
+      and status not in ('Cancelled', 'No-show')
   ) then
     raise exception 'APPOINTMENT_DUPLICATE';
   end if;
@@ -525,6 +560,7 @@ begin
   if btrim(coalesce(p_request_id, '')) = '' then
     raise exception 'REQUEST_ID_REQUIRED';
   end if;
+  perform relife.assert_tenant_native_store(p_organization_id, p_clinic_id);
 
   select receipt_no, due into v_existing
   from relife.payments
@@ -567,6 +603,7 @@ begin
   update relife.patients
   set paid = paid + v_amount,
       due = v_due,
+      advance = coalesce((p_payload ->> 'advance')::numeric, advance),
       payment_status = v_status,
       updated_at = now()
   where organization_id = p_organization_id
@@ -589,10 +626,137 @@ begin
 end;
 $$;
 
+create or replace function relife.update_patient_profile_v1(
+  p_organization_id uuid,
+  p_clinic_id uuid,
+  p_actor_id text,
+  p_patient_id text,
+  p_payload jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = relife, pg_catalog
+as $$
+declare
+  v_current record;
+  v_phone text;
+begin
+  if p_organization_id is null or p_clinic_id is null then
+    raise exception 'TENANT_SCOPE_REQUIRED';
+  end if;
+  perform relife.assert_tenant_native_store(p_organization_id, p_clinic_id);
+
+  select * into v_current
+  from relife.patients
+  where organization_id = p_organization_id
+    and clinic_id = p_clinic_id
+    and patient_id = p_patient_id;
+  if not found then
+    raise exception 'PATIENT_NOT_FOUND';
+  end if;
+
+  -- An omitted key means "leave unchanged"; an explicit null or empty string is
+  -- a real edit. `?` distinguishes the two, which `coalesce` alone cannot.
+  v_phone := case when p_payload ? 'phone'
+    then btrim(coalesce(p_payload ->> 'phone', '')) else v_current.phone end;
+
+  if v_phone <> '' and v_phone <> v_current.phone and exists (
+    select 1 from relife.patients
+    where organization_id = p_organization_id
+      and clinic_id = p_clinic_id
+      and patient_id <> p_patient_id
+      and phone = v_phone
+      and status = 'Active'
+  ) then
+    raise exception 'DUPLICATE_PHONE';
+  end if;
+
+  update relife.patients
+  set full_name = case when p_payload ? 'fullName'
+        then btrim(coalesce(p_payload ->> 'fullName', '')) else full_name end,
+      phone = v_phone,
+      age = case when p_payload ? 'age' then btrim(coalesce(p_payload ->> 'age', '')) else age end,
+      gender = case when p_payload ? 'gender' then btrim(coalesce(p_payload ->> 'gender', '')) else gender end,
+      address = case when p_payload ? 'address' then btrim(coalesce(p_payload ->> 'address', '')) else address end,
+      diagnosis = case when p_payload ? 'diagnosis' then btrim(coalesce(p_payload ->> 'diagnosis', '')) else diagnosis end,
+      therapist = case when p_payload ? 'therapist' then btrim(coalesce(p_payload ->> 'therapist', '')) else therapist end,
+      status = case when p_payload ? 'status'
+        then coalesce(nullif(btrim(p_payload ->> 'status'), ''), status) else status end,
+      updated_at = now()
+  where organization_id = p_organization_id
+    and clinic_id = p_clinic_id
+    and patient_id = p_patient_id;
+
+  insert into relife.audit_events (
+    organization_id, clinic_id, request_id, actor_id, action,
+    entity_type, entity_id, patient_id, payload
+  ) values (
+    p_organization_id, p_clinic_id,
+    'patient.update:' || p_patient_id || ':' || extract(epoch from clock_timestamp())::bigint,
+    p_actor_id, 'patient.update', 'Patient', p_patient_id, p_patient_id, p_payload
+  );
+
+  return jsonb_build_object('patientId', p_patient_id);
+end;
+$$;
+
+create or replace function relife.update_appointment_status_v1(
+  p_organization_id uuid,
+  p_clinic_id uuid,
+  p_actor_id text,
+  p_appointment_id text,
+  p_status text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = relife, pg_catalog
+as $$
+declare
+  v_patient_id text;
+begin
+  if p_organization_id is null or p_clinic_id is null then
+    raise exception 'TENANT_SCOPE_REQUIRED';
+  end if;
+  perform relife.assert_tenant_native_store(p_organization_id, p_clinic_id);
+
+  select patient_id into v_patient_id
+  from relife.appointments
+  where organization_id = p_organization_id
+    and clinic_id = p_clinic_id
+    and appointment_id = p_appointment_id;
+  if v_patient_id is null then
+    raise exception 'APPOINTMENT_NOT_FOUND';
+  end if;
+
+  update relife.appointments
+  set status = p_status, updated_at = now()
+  where organization_id = p_organization_id
+    and clinic_id = p_clinic_id
+    and appointment_id = p_appointment_id;
+
+  insert into relife.audit_events (
+    organization_id, clinic_id, request_id, actor_id, action,
+    entity_type, entity_id, patient_id, payload
+  ) values (
+    p_organization_id, p_clinic_id,
+    'appointment.status:' || p_appointment_id || ':' || extract(epoch from clock_timestamp())::bigint,
+    p_actor_id, 'appointment.update', 'Appointment', p_appointment_id, v_patient_id,
+    jsonb_build_object('appointmentId', p_appointment_id, 'status', p_status)
+  );
+
+  return jsonb_build_object('appointmentId', p_appointment_id, 'status', p_status);
+end;
+$$;
+
 do $$
 declare
   fn text;
   operational_functions text[] := array[
+    'relife.assert_tenant_native_store(uuid,uuid)',
+    'relife.update_patient_profile_v1(uuid,uuid,text,text,jsonb)',
+    'relife.update_appointment_status_v1(uuid,uuid,text,text,text)',
     'relife.register_patient_v1(uuid,uuid,text,text,jsonb)',
     'relife.book_appointment_v1(uuid,uuid,text,text,jsonb)',
     'relife.record_payment_v1(uuid,uuid,text,text,jsonb)'

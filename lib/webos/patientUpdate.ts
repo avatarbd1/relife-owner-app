@@ -2,6 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
+import { updatePatientProfileRow } from "@/lib/data/supabaseOperational";
+import { isTenantNativeClinic } from "@/lib/domain/operations/store";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { getPatientForContext } from "@/lib/webos/reception";
 import {
@@ -126,6 +128,19 @@ export async function updatePatientProfile(
   if (!patient || patient.department === "All") throw new Error("PATIENT_NOT_FOUND");
   const department = patient.department as ClinicDepartment;
   assertCanPerform(context, "patient.update", department);
+
+  if (await isTenantNativeClinic({ organizationId, clinicId })) {
+    return updatePatientProfileRow({ organizationId, clinicId }, context.staffId, patient.patientId, {
+      fullName: input.fullName === undefined ? undefined : normalize(input.fullName),
+      phone: input.phone === undefined ? undefined : normalizePhone(input.phone),
+      age: input.age === undefined ? undefined : normalize(input.age),
+      gender: input.gender === undefined ? undefined : normalize(input.gender),
+      address: input.address === undefined ? undefined : normalize(input.address),
+      diagnosis: input.diagnosis === undefined ? undefined : normalize(input.diagnosis),
+      therapist: input.therapist === undefined ? undefined : normalize(input.therapist),
+      status: input.status === undefined ? undefined : normalize(input.status),
+    });
+  }
 
   const workbook = workbookForDepartment(department);
   const snapshot = await fetchSheetRanges(workbook, ["02_Patients"]);

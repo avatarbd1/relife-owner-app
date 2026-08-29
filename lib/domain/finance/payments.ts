@@ -13,7 +13,9 @@ import {
   type SpreadsheetBatchRequest,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import { insertPayment, readPatient } from "@/lib/data/supabaseOperational";
 import type { ClinicDepartment } from "@/lib/domain/finance/expenses";
+import { isTenantNativeClinic } from "@/lib/domain/operations/store";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 
 type SheetValue = string | number | boolean;
@@ -165,6 +167,40 @@ export async function createPayment(
   }
 
   const requestId = validateRequestId(input.requestId);
+
+  if (await isTenantNativeClinic({ organizationId, clinicId })) {
+    const patient = await readPatient({ organizationId, clinicId }, patientId);
+    if (!patient) throw new Error("PATIENT_NOT_FOUND");
+
+    // Deliberately the same arithmetic as the Sheets writer below. The balance
+    // rule is finance policy, so both stores must reach the same number; only
+    // where the result is persisted differs.
+    const currentDue = Math.max(0, Number(patient.due) || 0);
+    const discountedDue = Math.max(0, currentDue - discount);
+    const newDue = Math.max(0, discountedDue - amount);
+    const overpayment = currentDue > 0 ? Math.max(0, amount - discountedDue) : 0;
+    const newAdvance = Math.max(0, Number(patient.advance) || 0) + overpayment;
+
+    const recorded = await insertPayment(
+      { organizationId, clinicId },
+      context.staffId,
+      requestId,
+      {
+        patientId,
+        amount,
+        discount,
+        due: newDue,
+        advance: newAdvance,
+        paymentStatus: newDue <= 0 ? "Paid" : "Due",
+        paymentMethod: method,
+        sessions,
+        sessionType: normalize(input.sessionType),
+        remarks: normalize(input.remarks),
+      },
+    );
+    return { receiptNo: recorded.receiptNo, due: recorded.due, duplicate: recorded.duplicate };
+  }
+
   const marker = `WEBREQ:${requestId}`;
   const workbook = workbookForDepartment(department);
   const snapshot = await fetchSheetRanges(workbook, ["02_Patients", "06_Payments"]);

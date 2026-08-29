@@ -8,6 +8,8 @@ import type {
   Scope,
   Department,
 } from "@/lib/types";
+import { readPayments } from "@/lib/data/supabaseOperational";
+import { isTenantNativeClinic } from "@/lib/domain/operations/store";
 import {
   getPayments,
   getExpenses,
@@ -101,7 +103,10 @@ export async function getTodaysCollection(
   clinicId?: string
 ): Promise<TodaysCollection> {
   if ((organizationId && !clinicId) || (!organizationId && clinicId)) throw new Error("TENANT_SCOPE_REQUIRED");
-  const payments = await getPayments(organizationId, clinicId);
+  const payments = organizationId && clinicId &&
+    (await isTenantNativeClinic({ organizationId, clinicId }))
+    ? await readPayments({ organizationId, clinicId })
+    : await getPayments(organizationId, clinicId);
   const today = payments.filter((p) => isSameDay(p.date, now));
   const physio = today
     .filter((p) => p.department === "Physio")

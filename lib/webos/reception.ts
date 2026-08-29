@@ -5,6 +5,15 @@ import {
   fetchSheetRanges,
   type Workbook,
 } from "@/lib/data/googleSheets";
+import {
+  insertAppointment,
+  insertPatient,
+  readAppointments,
+  readPatient,
+  readPatients,
+} from "@/lib/data/supabaseOperational";
+import { minuteFromDisplayTime } from "@/lib/domain/operations/appointmentTime";
+import { isTenantNativeClinic } from "@/lib/domain/operations/store";
 import { resolveStaffTenantContext } from "@/lib/domain/tenancy/staffTenantContext";
 import { getPatients, type PatientRecord } from "@/lib/patients";
 import type { Scope } from "@/lib/types";
@@ -38,6 +47,8 @@ export interface PatientCreateInput {
   therapist?: string;
   referral?: string;
   remarks?: string;
+  /** Idempotency key; a retry returns the original patient rather than a twin. */
+  requestId?: string;
 }
 
 export interface AppointmentCreateInput {
@@ -47,6 +58,8 @@ export interface AppointmentCreateInput {
   time: string;
   therapist: string;
   remarks?: string;
+  /** Idempotency key; a retry returns the original booking. */
+  requestId?: string;
 }
 
 export interface AppointmentRecord {
@@ -284,6 +297,16 @@ export async function getVisiblePatients(
   clinicId?: string
 ): Promise<PatientRecord[]> {
   const tenant = await tenantForContext(context, organizationId, clinicId);
+  // A tenant-native clinic has no Sheets workbook. Reading one here would show
+  // it either nothing or, worse, another clinic's ledger.
+  if (await isTenantNativeClinic(tenant)) {
+    return (await readPatients(tenant)).filter(
+      (patient) =>
+        patient.department !== "All" &&
+        scopeAllows(scope, patient.department) &&
+        canPerform(context, "patient.read", patient.department)
+    );
+  }
   const patients = await getPatients();
   return patients.filter(
     (patient) =>
@@ -301,6 +324,14 @@ export async function getPatientForContext(
   clinicId?: string
 ): Promise<PatientRecord | null> {
   const tenant = await tenantForContext(context, organizationId, clinicId);
+  if (await isTenantNativeClinic(tenant)) {
+    // The lookup is already tenant-scoped in the adapter, so a patient id from
+    // another clinic simply does not resolve.
+    const row = await readPatient(tenant, normalize(patientId));
+    if (!row) return null;
+    assertCanPerform(context, "patient.read", row.department);
+    return row;
+  }
   const patient = (await getPatients()).find(
     (row) =>
       row.patientId.toLowerCase() === normalize(patientId).toLowerCase() &&
@@ -332,6 +363,28 @@ export async function registerPatient(
 
   const fullName = normalize(input.fullName);
   if (fullName.length < 2) throw new Error("INVALID_PATIENT_NAME");
+
+  if (await isTenantNativeClinic({ organizationId, clinicId })) {
+    if (department !== "Physio") throw new Error("INVALID_DEPARTMENT");
+    return insertPatient(
+      { organizationId, clinicId },
+      context.staffId,
+      normalize(input.requestId) || randomUUID(),
+      {
+        fullName,
+        fatherHusbandName: normalize(input.fatherHusbandName),
+        phone: normalizePhone(input.phone),
+        alternativePhone: normalize(input.alternativePhone),
+        age: normalize(input.age),
+        gender: normalize(input.gender),
+        address: normalize(input.address),
+        diagnosis: normalize(input.diagnosis),
+        therapist: normalize(input.therapist),
+        referral: normalize(input.referral),
+        remarks: normalize(input.remarks),
+      },
+    );
+  }
 
   const workbook = workbookForDepartment(department);
   const snapshot = await fetchSheetRanges(workbook, ["02_Patients"]);
@@ -481,7 +534,9 @@ export async function getAppointmentsForContext(
   clinicId?: string
 ): Promise<AppointmentRecord[]> {
   const tenant = await tenantForContext(context, organizationId, clinicId);
-  const rows = await loadAppointments(tenant.organizationId, tenant.clinicId);
+  const rows = (await isTenantNativeClinic(tenant))
+    ? await readAppointments(tenant, date ? { date } : {})
+    : await loadAppointments(tenant.organizationId, tenant.clinicId);
   return rows
     .filter((row) =>
       scopeAllows(scope, row.department) &&
@@ -503,7 +558,9 @@ export async function getPatientAppointmentsForContext(
   const tenant = await tenantForContext(context, organizationId, clinicId);
   if (!patientMatchesTenant(patient, tenant)) return [];
   assertCanPerform(context, "appointment.read", patient.department);
-  const rows = await loadAppointments(tenant.organizationId, tenant.clinicId);
+  const rows = (await isTenantNativeClinic(tenant))
+    ? await readAppointments(tenant, { patientId: patient.patientId })
+    : await loadAppointments(tenant.organizationId, tenant.clinicId);
   return rows
     .filter((row) =>
       row.patientId === patient.patientId &&
@@ -629,6 +686,24 @@ export async function createAppointment(
   const time = sheetTimeFromInput(input.time);
   const therapist = normalize(input.therapist);
   if (!therapist) throw new Error("INVALID_THERAPIST");
+
+  if (await isTenantNativeClinic({ organizationId, clinicId })) {
+    // `time` is the sheet display form produced above; the core stores minutes
+    // so ordering and overlap stay arithmetic.
+    return insertAppointment(
+      { organizationId, clinicId },
+      context.staffId,
+      normalize(input.requestId) || randomUUID(),
+      {
+        patientId: patient.patientId,
+        date,
+        startMinute: minuteFromDisplayTime(time),
+        therapist,
+        remarks: normalize(input.remarks),
+      },
+    );
+  }
+
   const workbook = workbookForDepartment(department);
   const ranges = department === "Physio" ? ["04_Appointments", "12_Treatment_Plans"] : ["04_Appointments"];
   const snapshot = await fetchSheetRanges(workbook, ranges);

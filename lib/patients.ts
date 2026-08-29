@@ -18,6 +18,11 @@ export interface PatientRecord {
   totalBill: number;
   paid: number;
   due: number;
+  /**
+   * Carried-forward overpayment. Optional because the legacy Sheets reader
+   * does not project it; the tenant-native core always does.
+   */
+  advance?: number;
   status: string;
   lastUpdated: string;
   organizationId?: string;

@@ -25,6 +25,25 @@ function ensure(error: { message?: string } | null, operation: string): void {
   if (error) throw new Error(`CONFIGURATION_${operation}_FAILED:${error.message || "unknown"}`);
 }
 
+/**
+ * Targeted read of the clinic's operational-store routing switch.
+ *
+ * Every tenant-owned read and write consults this, so it deliberately does not
+ * go through `readClinicConfiguration`, which fans out ten queries to assemble
+ * a full snapshot nobody needs here.
+ */
+export async function readOperationalStore(scope: TenantScope, client = adminClient()): Promise<unknown> {
+  const tenant = requireTenantScope(scope);
+  const result = await client
+    .schema("relife")
+    .from("clinic_settings")
+    .select("operational_store")
+    .match(dbScope(tenant))
+    .maybeSingle();
+  ensure(result.error, "OPERATIONAL_STORE_READ");
+  return (result.data as { operational_store?: unknown } | null)?.operational_store;
+}
+
 export async function readClinicConfiguration(scope: TenantScope, client = adminClient()): Promise<ClinicConfigurationSnapshot> {
   const tenant = requireTenantScope(scope);
   const relife = client.schema("relife");

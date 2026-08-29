@@ -2,6 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { fetchSheetRanges, type Workbook } from "@/lib/data/googleSheets";
+import { insertPatient } from "@/lib/data/supabaseOperational";
+import { isTenantNativeClinic } from "@/lib/domain/operations/store";
 import { assertCanPerform, type AccessContext } from "@/lib/webos/access";
 import { appendEntityWithAudit } from "@/lib/webos/sheetTransaction";
 
@@ -22,6 +24,13 @@ export interface SerialPatientCreateInput {
   therapist?: string;
   referral?: string;
   remarks?: string;
+  /**
+   * Caller-supplied idempotency key. When present a retry returns the original
+   * patient instead of registering a second one. Absent, the tenant-native path
+   * still cannot create a duplicate: the active-phone uniqueness guarantee
+   * catches the case a retry would actually produce.
+   */
+  requestId?: string;
 }
 
 function normalize(value: unknown): string {
@@ -171,6 +180,30 @@ export async function registerPatientSerial(
 
   const fullName = normalize(input.fullName);
   if (fullName.length < 2) throw new Error("INVALID_PATIENT_NAME");
+
+  // Authorization and input rules above are the same for every clinic. Only
+  // where the record lands differs, and a clinic has exactly one store.
+  if (await isTenantNativeClinic({ organizationId, clinicId })) {
+    if (department !== "Physio") throw new Error("INVALID_DEPARTMENT");
+    return insertPatient(
+      { organizationId, clinicId },
+      context.staffId,
+      normalize(input.requestId) || randomUUID(),
+      {
+        fullName,
+        fatherHusbandName: normalize(input.fatherHusbandName),
+        phone: normalizePhone(input.phone),
+        alternativePhone: normalize(input.alternativePhone),
+        age: normalize(input.age),
+        gender: normalize(input.gender),
+        address: normalize(input.address),
+        diagnosis: normalize(input.diagnosis),
+        therapist: normalize(input.therapist),
+        referral: normalize(input.referral),
+        remarks: normalize(input.remarks),
+      },
+    );
+  }
 
   const workbook = workbookForDepartment(department);
   const snapshot = await fetchSheetRanges(workbook, ["02_Patients"]);
