@@ -80,3 +80,85 @@ test("new appointment setup exposes only this clinic's departments and staff", (
   assert.match(clinicians, /listTenantScopedWebStaffDirectory\(tenant\)/);
   assert.doesNotMatch(clinicians, /getWebStaffDirectory/);
 });
+
+test("Relife Supabase Chamber cutover cannot be merged into another tenant", () => {
+  const read = source("lib/domain/appointments/read.ts");
+  assert.match(read, /isRelifeLegacyTenant\(tenant\)/);
+  assert.match(read, /getAppointmentsForContext\([\s\S]*tenant\.organizationId,[\s\S]*tenant\.clinicId/);
+  assert.match(read, /!isRelifeLegacyTenant\(tenant\) \|\| !needsSupabasePhysio/);
+});
+
+test("staff home reads active tenant only and applies feature flags before exposing actions", () => {
+  const home = source("lib/webos/staffHome.ts");
+  const client = source("components/StaffHomeWorkspace.tsx");
+
+  assert.match(home, /resolveStaffTenantContext\(context\.staffId\)/);
+  assert.match(home, /getAppointmentsForContext\(context, scope, date, tenant\.organizationId, tenant\.clinicId\)/);
+  assert.match(home, /listTenantScopedWebStaffDirectory\(tenant\)/);
+  assert.match(home, /hasTenantFeature\(tenant, "optional\.finance_advanced"\)/);
+  assert.match(home, /hasTenantFeature\(tenant, "optional\.inventory"\)/);
+  assert.match(home, /hasTenantFeature\(tenant, "optional\.live_chamber"\)/);
+  assert.match(home, /hasTenantFeature\(tenant, "optional\.live_chat"\)/);
+  assert.doesNotMatch(home, /getWebStaffDirectory/);
+  assert.doesNotMatch(home, /getDailyClinicalActivity/);
+  assert.match(client, /if \(capabilities\.liveChat\)/);
+});
+
+test("audit page and audit reader fail closed by tenant and feature", () => {
+  const page = source("app/(dashboard)/audit/page.tsx");
+  const overview = source("lib/webos/adminOverview.ts");
+
+  assert.match(page, /requireTenantFeature\(tenantContext\.tenant, "optional\.audit_viewer"\)/);
+  assert.match(page, /getAuditOverview\(context, scope, tenantContext\.tenant\)/);
+  assert.match(overview, /if \(organizationIdx < 0 \|\| clinicIdx < 0\) return \[\]/);
+  assert.match(overview, /organizationId === tenant\.organizationId && clinicId === tenant\.clinicId/);
+  assert.match(overview, /isRelifeLegacyTenant\(tenant\)/);
+});
+
+test("patient registration cannot decrement Relife inventory for SaaS tenants", () => {
+  const route = source("app/api/patients/route.ts");
+  assert.match(route, /isRelifeLegacyTenant\(tenant\)/);
+  assert.match(route, /hasTenantFeature\(tenant, "optional\.inventory"\)/);
+  assert.match(route, /if \(legacyInventoryEnabled\)/);
+  assert.match(route, /consumePhysioInventorySystem/);
+});
+
+test("legacy inventory page and mutation fail closed outside canonical Relife", () => {
+  const page = source("app/(dashboard)/inventory/page.tsx");
+  const actions = source("app/(dashboard)/inventory/actions.ts");
+
+  assert.match(page, /requireTenantFeature\(tenant, "optional\.inventory"\)/);
+  assert.match(page, /if \(!isRelifeLegacyTenant\(tenant\)\)/);
+  assert.match(actions, /requireTenantFeature\(tenant, "optional\.inventory"\)/);
+  assert.match(actions, /if \(!isRelifeLegacyTenant\(tenant\)\) throw new Error\("LEGACY_INVENTORY_NOT_AVAILABLE"\)/);
+});
+
+test("owner home hides advanced cash and live chat when tenant features are disabled", () => {
+  const page = source("app/(dashboard)/home/page.tsx");
+  assert.match(page, /hasTenantFeature\(tenant, "optional\.finance_advanced"\)/);
+  assert.match(page, /hasTenantFeature\(tenant, "optional\.live_chat"\)/);
+  assert.match(page, /advancedFinanceEnabled[\s\S]*getScopedCashPositionForAdminView/);
+  assert.match(page, /\{advancedFinanceEnabled && \(/);
+  assert.match(page, /\{liveChatEnabled && <QuickButton/);
+});
+
+test("daily register is derived from tenant finance data instead of raw Relife sheet reads", () => {
+  const register = source("lib/webos/dailyRegister.ts");
+  const page = source("app/(dashboard)/register/page.tsx");
+  const daily = source("app/(dashboard)/daily/page.tsx");
+
+  assert.match(register, /readTenantPayments\(tenant, scope\)/);
+  assert.doesNotMatch(register, /fetchSheetRanges/);
+  assert.match(page, /getDailyRegisterSnapshot\(access, scope, tenant, params\.date\)/);
+  assert.match(daily, /getDailyRegisterSnapshot\(context, scope, tenantContext\.tenant, safeSnapshot\.date\)/);
+});
+
+test("legacy same-day corrections cannot read or mutate Relife rows from another tenant", () => {
+  const page = source("app/(dashboard)/corrections/page.tsx");
+  const route = source("app/api/corrections/route.ts");
+
+  assert.match(page, /if \(!isRelifeLegacyTenant\(tenant\)\)/);
+  assert.match(page, /listOwnTodayCorrectionEntries\(context\)/);
+  assert.match(route, /requireTenantFeature\(tenant, "core\.finance_basic"\)/);
+  assert.match(route, /if \(!isRelifeLegacyTenant\(tenant\)\) throw new Error\("LEGACY_CORRECTION_NOT_AVAILABLE"\)/);
+});
