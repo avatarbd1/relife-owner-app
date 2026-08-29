@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import {
   chamberDbMode,
   chamberSupabaseConfigured,
@@ -104,11 +105,9 @@ async function currentTenant(context: AccessContext) {
 
 /**
  * Transitional appointment read model used by the main appointments workspace.
- * Legacy Sheets rows remain visible; tenant-scoped Supabase Physio rows are
- * merged only after the explicit cutover mode is enabled.
- *
- * Supabase failures are deliberately not converted into a Sheets-only result in
- * cutover mode, because doing so could silently hide new Supabase-only bookings.
+ * Relife's legacy Supabase Chamber cutover is intentionally available only to
+ * the canonical Relife tenant. Every SaaS clinic reads only rows matching its
+ * exact organization_id + clinic_id from the shared Sheets boundary.
  */
 export async function getUnifiedAppointmentsForContext(
   context: AccessContext,
@@ -129,7 +128,9 @@ export async function getUnifiedAppointmentsForContext(
       tenant.clinicId
     )
   ).filter((row) => row.date >= startDate && row.date <= endDate);
-  if (!needsSupabasePhysio(context, scope)) return sortAscending(sheetRows);
+  if (!isRelifeLegacyTenant(tenant) || !needsSupabasePhysio(context, scope)) {
+    return sortAscending(sheetRows);
+  }
   requireConfiguredCutover();
 
   const supabaseRows = await querySupabaseChamberAppointments({ startDate, endDate });
@@ -138,18 +139,12 @@ export async function getUnifiedAppointmentsForContext(
   );
 }
 
-/** Patient file history parity for Supabase-created Chamber appointments. */
+/** Patient file history parity for Relife Supabase-created Chamber appointments. */
 export async function getUnifiedPatientAppointmentsForContext(
   context: AccessContext,
   patient: PatientRecord
 ): Promise<AppointmentRecord[]> {
   const tenant = await currentTenant(context);
-  if (
-    patient.organizationId !== tenant.organizationId ||
-    patient.clinicId !== tenant.clinicId
-  ) {
-    return [];
-  }
   const sheetRows = await getPatientAppointmentsForContext(
     context,
     patient,
@@ -157,6 +152,7 @@ export async function getUnifiedPatientAppointmentsForContext(
     tenant.clinicId
   );
   if (
+    !isRelifeLegacyTenant(tenant) ||
     patient.department !== "Physio" ||
     chamberDbMode() !== "supabase" ||
     !canPerform(context, "appointment.read", "Physio")
