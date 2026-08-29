@@ -14,9 +14,6 @@ import {
   type WebStaffIdentity,
 } from "@/lib/webos/staffDirectory";
 import { getTenantScopedWebStaffIdentity } from "@/lib/webos/tenantStaffDirectory";
-import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
-import { clinicRuntimeDepartments } from "@/lib/domain/tenancy/clinicRuntime";
-import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 
 async function currentSessionStaffId(): Promise<string | null> {
   const cookieStore = await cookies();
@@ -50,36 +47,13 @@ async function resolveCurrentTenantForStaff(staffId: string): Promise<StaffTenan
   }
 }
 
-async function scopeIdentityToClinic(
-  identity: WebStaffIdentity,
-  tenant: StaffTenantContext,
-): Promise<WebStaffIdentity | null> {
-  if (isRelifeLegacyTenant(tenant)) return identity;
-  const configuration = await readClinicConfiguration(tenant);
-  const departments = clinicRuntimeDepartments(configuration.profile?.clinicType);
-  if (departments.length !== 1) return null;
-  const department = departments[0];
-  if (
-    (department === "Physio" && identity.roles.some((role) => role === "Dentist" || role === "Dental_Assistant")) ||
-    (department === "Dental" && identity.roles.includes("Therapist"))
-  ) {
-    return null;
-  }
-  return {
-    ...identity,
-    primaryDepartment: department,
-    departmentAccess: [department],
-  };
-}
-
 export async function getCurrentStaffIdentity(): Promise<WebStaffIdentity | null> {
   const staffId = await currentSessionStaffId();
   if (!staffId || isPlatformOwner(staffId)) return null;
 
   const tenant = await resolveCurrentTenantForStaff(staffId);
   if (!tenant) return null;
-  const identity = await getTenantScopedWebStaffIdentity(staffId, tenant);
-  return identity ? scopeIdentityToClinic(identity, tenant) : null;
+  return getTenantScopedWebStaffIdentity(staffId, tenant);
 }
 
 export async function getCurrentAccessContext(): Promise<AccessContext | null> {
@@ -123,8 +97,7 @@ export async function getCurrentTenantAccessContext(): Promise<CurrentTenantAcce
 
   const tenant = await resolveCurrentTenantForStaff(staffId);
   if (!tenant) return null;
-  const rawIdentity = await getTenantScopedWebStaffIdentity(staffId, tenant);
-  const identity = rawIdentity ? await scopeIdentityToClinic(rawIdentity, tenant) : null;
+  const identity = await getTenantScopedWebStaffIdentity(staffId, tenant);
   if (!identity) return null;
   const access = toAccessContext(identity);
   if (!access) return null;

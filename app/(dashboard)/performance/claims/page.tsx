@@ -5,7 +5,7 @@ import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { performanceWeekRange } from "@/lib/webos/performance";
 import { getPerformanceRewardPolicy } from "@/lib/webos/performanceRewards";
 import { todayDhaka } from "@/lib/webos/reception";
-import { getWebStaffDirectory } from "@/lib/webos/staffDirectory";
+import { listTenantScopedWebStaffDirectory } from "@/lib/webos/tenantStaffDirectory";
 import { RewardClaimsClient } from "./RewardClaimsClient";
 
 const CLAIMANT_ROLES = new Set(["Manager", "Receptionist", "Therapist", "Dentist"]);
@@ -24,7 +24,7 @@ export default async function RewardClaimsPage() {
 
   const [rewardPolicy, directory, claimsResult, ledgerResult] = await Promise.all([
     getPerformanceRewardPolicy(tenantContext.tenant),
-    getWebStaffDirectory().catch(() => []),
+    listTenantScopedWebStaffDirectory(tenantContext.tenant).catch(() => []),
     rewardClaimsConfigured()
       ? listRewardClaims({
           actorId: context.staffId,

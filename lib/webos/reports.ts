@@ -34,7 +34,9 @@ function workbookForDepartment(department: "Physio" | "Dental"): Workbook {
 
 export async function getPatientReportsForContext(
   context: AccessContext,
-  patient: PatientRecord
+  patient: PatientRecord,
+  organizationId?: string,
+  clinicId?: string,
 ): Promise<PatientReport[]> {
   if (patient.department !== "Physio" && patient.department !== "Dental") return [];
   const department: "Physio" | "Dental" = patient.department;
@@ -48,6 +50,8 @@ export async function getPatientReportsForContext(
     .filter(
       (row) =>
         String(row.Patient_ID || "").trim() === patient.patientId &&
+        (!organizationId || String(row.Organization_ID || "").trim() === organizationId) &&
+        (!clinicId || String(row.Clinic_ID || "").trim() === clinicId) &&
         String(row.Report_ID || "").trim()
     )
     .map((row) => ({
@@ -67,8 +71,10 @@ export async function getPatientReportsForContext(
 export async function getPatientReportForContext(
   context: AccessContext,
   patient: PatientRecord,
-  reportId: string
+  reportId: string,
+  organizationId?: string,
+  clinicId?: string,
 ): Promise<PatientReport | null> {
-  const reports = await getPatientReportsForContext(context, patient);
+  const reports = await getPatientReportsForContext(context, patient, organizationId, clinicId);
   return reports.find((report) => report.reportId === reportId) || null;
 }

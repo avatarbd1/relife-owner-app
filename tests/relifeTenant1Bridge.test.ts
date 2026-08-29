@@ -64,21 +64,23 @@ test("server adapter never silently falls back to Relife tenant IDs", () => {
   assert.doesNotMatch(adapter, /bc77ffb9-3379-40cc-a1eb-89b0e988fe94/i);
 });
 
-test("legacy Relife staff identity is tenant-bound before transitional fallback", () => {
+test("Relife staff authorization is canonical-only and fails closed without Supabase role/department children", () => {
   assert.match(currentUser, /isPlatformOwner\(staffId\)[\s\S]*?return null/);
   assert.match(currentUser, /resolveStaffTenantContext\(staffId, await currentTenantSelection\(\)\)/);
   assert.match(currentUser, /if \(message === "TENANT_BINDING_NOT_FOUND"\) return null/);
   assert.match(currentUser, /getTenantScopedWebStaffIdentity\(staffId, tenant\)/);
   assert.doesNotMatch(currentUser, /identity\.roles\.includes\("Owner"\)/);
+  assert.doesNotMatch(currentUser, /isRelifeLegacyTenant|scopeIdentityToClinic/);
   assert.doesNotMatch(currentUser, /organizationSlug\s*:\s*["']relife["']/);
   assert.doesNotMatch(currentUser, /clinicSlug\s*:\s*["']amtali-main["']/);
 
   assert.match(tenantStaffDirectory, /listStoredStaffProvisioning\(tenant\)/);
   assert.match(tenantStaffDirectory, /row\.staffId === staffId && row\.status === "active"/);
   assert.match(tenantStaffDirectory, /if \(!binding\) return null/);
-  assert.match(tenantStaffDirectory, /if \(!hasTenantRoles && !hasTenantDepartments\)/);
-  assert.match(tenantStaffDirectory, /return legacy/);
-  assert.match(tenantStaffDirectory, /No global Sheet-only tenant fallback exists/);
+  assert.match(tenantStaffDirectory, /if \(!hasTenantRoles \|\| !hasTenantDepartments\) return null/);
+  assert.match(tenantStaffDirectory, /clinicRuntimeDepartments/);
+  assert.match(tenantStaffDirectory, /departmentAccess: \[department\]/);
+  assert.doesNotMatch(tenantStaffDirectory, /getActiveWebStaffById|legacyIdentity|return legacy|isRelifeLegacyTenant/);
 
   assert.match(auth, /export const DEFAULT_OWNER_STAFF_ID = "ST001"/);
   assert.match(auth, /createSessionToken\(staffId: string = DEFAULT_OWNER_STAFF_ID\)/);

@@ -4,14 +4,18 @@ import { redirect } from "next/navigation";
 import OwnerControlsClient from "@/components/OwnerControlsClient";
 import { StatusBadge } from "@/components/FeedbackUI";
 import { getOwnerControlSnapshot } from "@/lib/controls";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 export default async function FinanceApprovalsPage() {
-  const [context, cookieStore] = await Promise.all([requireCurrentAccessContext(), cookies()]);
+  const [tenantContext, cookieStore] = await Promise.all([requireCurrentTenantAccessContext(), cookies()]);
+  const context = tenantContext.access;
   if (!context.roles.includes("Owner")) redirect("/finance/records");
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
-  const controls = await getOwnerControlSnapshot();
+  const controls = isRelifeLegacyTenant(tenantContext.tenant)
+    ? await getOwnerControlSnapshot()
+    : { privateSheets: false, writeEnabled: false, pendingExpenses: [], pendingCashMovements: [] };
   const snapshot = {
     ...controls,
     pendingExpenses: controls.pendingExpenses.filter((item) => scope === "combined" || item.workbook === scope),

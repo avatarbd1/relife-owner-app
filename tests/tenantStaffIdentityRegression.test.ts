@@ -4,13 +4,15 @@ import { readFileSync } from "node:fs";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("tenant staff identity requires an exact active binding before any legacy compatibility", () => {
+test("tenant staff identity requires exact active canonical Supabase role and department bindings", () => {
   const resolver = source("lib/webos/tenantStaffDirectory.ts");
   assert.match(resolver, /listStoredStaffProvisioning\(tenant\)/);
   assert.match(resolver, /row\.staffId === staffId && row\.status === "active"/);
-  assert.match(resolver, /if \(!binding\) return null;[\s\S]*const legacy = await legacyIdentity\(staffId\);/);
-  assert.match(resolver, /if \(!hasTenantRoles && !hasTenantDepartments\)/);
-  assert.match(resolver, /if \(hasTenantRoles !== hasTenantDepartments\) return null/);
+  assert.match(resolver, /if \(!binding\) return null/);
+  assert.match(resolver, /if \(!hasTenantRoles \|\| !hasTenantDepartments\) return null/);
+  assert.doesNotMatch(resolver, /getActiveWebStaffById|legacyIdentity|return legacy/);
+  assert.match(resolver, /clinicRuntimeDepartments/);
+  assert.match(resolver, /clampIdentityToClinic/);
 });
 
 test("platform owner authority cannot fall through into clinic staff access", () => {

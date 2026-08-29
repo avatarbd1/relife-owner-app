@@ -8,12 +8,14 @@ import {
   getTodaysCollection,
 } from "@/lib/calculations";
 import { getPayments } from "@/lib/data";
-import { getPatients } from "@/lib/patients";
 import RangeReports from "./RangeReports";
 import type { Department, Scope } from "@/lib/types";
 import { actionsForRoles, canPerform } from "@/lib/webos/access";
-import { requireCurrentAccessContext } from "@/lib/webos/currentUser";
-import { allowedScopesForContext, resolveAuthorizedScope } from "@/lib/webos/scope";
+import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
+import { getVisiblePatients } from "@/lib/webos/reception";
+import { clinicRuntimeDepartments, clinicRuntimeScopes, resolveClinicRuntimeScope } from "@/lib/domain/tenancy/clinicRuntime";
+import { readClinicConfiguration } from "@/lib/data/clinicConfiguration";
+import { isRelifeLegacyTenant } from "@/lib/config/relifeSystem";
 
 function scopeAllows(scope: Scope, department: Department): boolean {
   if (scope === "combined") return department === "Physio" || department === "Dental";
@@ -31,7 +33,8 @@ function pct(value: number): number {
 }
 
 export default async function ReportsPage() {
-  const [cookieStore, context] = await Promise.all([cookies(), requireCurrentAccessContext()]);
+  const [cookieStore, tenantContext] = await Promise.all([cookies(), requireCurrentTenantAccessContext()]);
+  const context = tenantContext.access;
   const actions = new Set(actionsForRoles(context.roles));
   const canReadOperational = actions.has("report.read_operational");
   const canReadFinancial = actions.has("report.read_financial");
@@ -40,17 +43,26 @@ export default async function ReportsPage() {
     return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">এই account-এর জন্য Reports access দেওয়া নেই।</div>;
   }
 
-  const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
-  const allowedScopes = allowedScopesForContext(context);
+  const configuration = await readClinicConfiguration(tenantContext.tenant);
+  const departments = clinicRuntimeDepartments(configuration.profile?.clinicType);
+  const allowedScopes = clinicRuntimeScopes(context, departments);
+  const scope = resolveClinicRuntimeScope(allowedScopes, cookieStore.get("relife_scope")?.value);
+  const legacyRelife = isRelifeLegacyTenant(tenantContext.tenant);
   const now = new Date();
   const monthKey = bdMonthKey(now);
 
   const [allPatients, financial, payments] = await Promise.all([
-    canReadOperational ? getPatients() : Promise.resolve([]),
+    canReadOperational
+      ? getVisiblePatients(context, scope, tenantContext.tenant.organizationId, tenantContext.tenant.clinicId)
+      : Promise.resolve([]),
     canReadFinancial
-      ? Promise.all([getTodaysCollection(now), getMonthBusinessPosition(scope, now), getSalaryStatus(scope, now)])
+      ? Promise.all([
+          getTodaysCollection(now, tenantContext.tenant.organizationId, tenantContext.tenant.clinicId),
+          legacyRelife ? getMonthBusinessPosition(scope, now) : Promise.resolve({ monthCollection: 0, variableClinicExpense: 0, fixedOverhead: 0, fixedSalaryCommitment: 0, totalBusinessLiability: 0, surplusOrUncovered: 0 }),
+          legacyRelife ? getSalaryStatus(scope, now) : Promise.resolve({ fixedCommitment: 0, salaryPaid: 0, salaryAdvance: 0, legacyUnclassified: 0, legacyExpenseSettlement: 0, legacyPayrollConflictCount: 0, settlementTotal: 0, ledgerPaid: 0, paidOrAdvance: 0, remainingDue: 0, excessAmount: 0 }),
+        ])
       : Promise.resolve(null),
-    canReadFinancial ? getPayments() : Promise.resolve([]),
+    canReadFinancial ? getPayments(tenantContext.tenant.organizationId, tenantContext.tenant.clinicId) : Promise.resolve([]),
   ]);
 
   const patients = allPatients.filter(
@@ -137,7 +149,7 @@ export default async function ReportsPage() {
         </>
       )}
 
-      {canReadFinancial && <RangeReports scope={scope} />}
+      {canReadFinancial && legacyRelife && <RangeReports scope={scope} />}
     </div>
   );
 }
