@@ -1,4 +1,5 @@
 import { clinicMayServe, resolveFeature, validateBookingConfig, type ClinicBookingConfig, type ClinicEntitlement, type ClinicFeatureFlag, type ClinicResource, type FeatureCatalogEntry } from "./clinicConfiguration.ts";
+import type { OperationalStore } from "./operationalStore.ts";
 import { requireTenantScope, type TenantScope } from "./policy.ts";
 
 export type ConfigurationFailure =
@@ -15,6 +16,12 @@ export type ConfigurationResult<T> =
 export interface ClinicProfileConfiguration extends TenantScope {
   clinicName: string;
   clinicType: "physiotherapy" | "dental" | "doctor_chamber" | "other";
+  /**
+   * Which store is authoritative for this clinic's operational record. Exactly
+   * one authority per clinic: legacy Relife stays on `sheets`, every new clinic
+   * uses the tenant-native `supabase` core. Never both for one action.
+   */
+  operationalStore: OperationalStore;
   branchName: string;
   address: string;
   phone: string;
