@@ -2,12 +2,27 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import FinanceLedgerClient from "@/components/FinanceLedgerClient";
 import { StatusBadge } from "@/components/FeedbackUI";
+import { requireTenantFeature } from "@/lib/domain/tenancy/featureGuard";
 import type { FinanceLedgerKind } from "@/lib/webos/financeLedgers";
 import { canOpenFinanceLedger, getFinanceLedgerSnapshot } from "@/lib/webos/financeLedgers";
 import { requireCurrentTenantAccessContext } from "@/lib/webos/currentUser";
 import { resolveAuthorizedScope } from "@/lib/webos/scope";
 
 const SCOPE_LABEL = { combined: "Combined", physio: "Physio", dental: "Dental" } as const;
+
+async function requireLedgerFeature(
+  tenant: Parameters<typeof requireTenantFeature>[0],
+  kind: FinanceLedgerKind
+): Promise<void> {
+  await requireTenantFeature(tenant, "core.finance_basic");
+  if (kind === "cash-history") {
+    await requireTenantFeature(tenant, "optional.finance_advanced");
+  } else if (kind === "salary-history") {
+    await requireTenantFeature(tenant, "optional.salary");
+  } else if (kind === "audit") {
+    await requireTenantFeature(tenant, "optional.audit_viewer");
+  }
+}
 
 export default async function FinanceLedgerPage({
   kind,
@@ -20,6 +35,7 @@ export default async function FinanceLedgerPage({
 }) {
   const [tenantContext, cookieStore] = await Promise.all([requireCurrentTenantAccessContext(), cookies()]);
   const context = tenantContext.access;
+  await requireLedgerFeature(tenantContext.tenant, kind);
   const scope = resolveAuthorizedScope(context, cookieStore.get("relife_scope")?.value);
   const snapshot = await getFinanceLedgerSnapshot(context, scope, tenantContext.tenant);
 
