@@ -32,7 +32,7 @@ export default async function RegisterPage({
   ]);
   const { access, tenant } = tenantContext;
   const scope = resolveAuthorizedScope(access, cookieStore.get("relife_scope")?.value);
-  const snapshot = await getDailyRegisterSnapshot(access, scope, tenant.clinicId, params.date);
+  const snapshot = await getDailyRegisterSnapshot(access, scope, tenant, params.date);
 
   return (
     <div className="space-y-4">
